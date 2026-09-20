@@ -29,7 +29,8 @@
     "measure:argon2": "tsx scripts/measure-argon2.ts",
     "test:ci": "vitest run --reporter=default --reporter=junit --outputFile=reports/unit.junit.xml",
     "test:e2e:ci": "vitest run --config ./vitest.config.e2e.ts --reporter=default --reporter=junit --outputFile=reports/e2e.junit.xml",
-    "typecheck": "tsc -p tsconfig.build.json --noEmit"
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "user:create": "tsx scripts/create-user.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

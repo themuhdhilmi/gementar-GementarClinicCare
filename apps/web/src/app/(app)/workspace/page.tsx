@@ -19,7 +19,10 @@ export default function WorkspacePage() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h1 className="text-xl font-semibold">Good day, {me.user.name.split(' ')[0]}</h1>
+        {/* No first-name guessing: "Dr Farid" and "Puan Zana" both start with a
+            title, and Malaysian names often carry bin or binti. Greet people
+            with the name they were given. */}
+        <h1 className="text-xl font-semibold">Good day, {me.user.name}</h1>
         <p className="text-sm text-muted">
           Signed in at {branch?.name ?? 'an unknown branch'} as{' '}
           {me.roles.map((role) => ROLE_LABEL[role]).join(', ').toLowerCase() || 'no role'}.
