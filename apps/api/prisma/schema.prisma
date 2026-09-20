@@ -117,6 +117,10 @@ model Branch {
   operatingHours Json         @map("operating_hours") @db.JsonB
   settings       Json         @db.JsonB
   letterhead     Json?        @db.JsonB
+  /// TEN-F-10. Its own columns, so a branch read never carries the image.
+  letterheadLogo          Bytes?    @map("letterhead_logo")
+  letterheadLogoMime      String?   @map("letterhead_logo_mime") @db.VarChar(60)
+  letterheadLogoUpdatedAt DateTime? @map("letterhead_logo_updated_at") @db.Timestamptz(3)
   status         BranchStatus
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)

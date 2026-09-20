@@ -6,7 +6,16 @@ import { scopeStorage, type ScopeStore, type TenantScope } from './tenant-scope.
 
 export type { Tx };
 
-type TxOptions = { timeoutMs?: number; maxWaitMs?: number; independent?: boolean };
+type TxOptions = {
+  timeoutMs?: number;
+  maxWaitMs?: number;
+  independent?: boolean;
+  /** What the work is, for the log if it runs out of time (TEN-N-05). */
+  label?: string;
+};
+
+/** Prisma's code for "the interactive transaction ran out of time". */
+const TRANSACTION_TIMED_OUT = 'P2028';
 
 /**
  * Every unit of work runs inside one transaction with the tenant fixed for its
@@ -67,6 +76,28 @@ export class DbService {
 
   withTenant<T>(tenantId: string, fn: (tx: Tx) => Promise<T>, options?: TxOptions): Promise<T> {
     return this.run({ kind: 'tenant', tenantId }, fn, options);
+  }
+
+  /**
+   * Something resolved once per unit of work (TEN-N-04).
+   *
+   * The cache is the transaction's, so it cannot outlive it: a setting changed
+   * by one request is read fresh by the next. Outside a scope there is nothing
+   * to cache against and the work simply runs.
+   */
+  async once<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const store = scopeStorage.getStore();
+    if (!store) return fn();
+    store.cache ??= new Map<string, unknown>();
+    if (store.cache.has(key)) return store.cache.get(key) as T;
+    const value = await fn();
+    store.cache.set(key, value);
+    return value;
+  }
+
+  /** Drops a cached value, for the request that has just changed it. */
+  forget(key: string): void {
+    scopeStorage.getStore()?.cache?.delete(key);
   }
 
   /**
@@ -147,7 +178,11 @@ export class DbService {
       return fn(existing.tx as Tx);
     }
 
-    const store: ScopeStore = { scope, pendingEvents: [] };
+    const label =
+      options?.label ?? (scope.kind === 'platform' ? scope.reason : `tenant ${scope.tenantId}`);
+    const store: ScopeStore = { scope, pendingEvents: [], label };
+    const timeout = options?.timeoutMs ?? this.config.database.transactionTimeoutMs;
+    const startedAt = Date.now();
 
     const result = await scopeStorage.run(store, () =>
       this.prisma.client.$transaction(
@@ -172,12 +207,20 @@ export class DbService {
             store.tx = undefined;
           }
         },
-        {
-          timeout: options?.timeoutMs ?? 10_000,
-          maxWait: options?.maxWaitMs ?? 5_000,
-        },
+        { timeout, maxWait: options?.maxWaitMs ?? 5_000 },
       ),
-    );
+    ).catch((error: unknown) => {
+      // TEN-N-05: a transaction that overran is a bug in the handler, not a
+      // slow database, so the log has to say which handler it was.
+      if ((error as { code?: string })?.code === TRANSACTION_TIMED_OUT) {
+        this.logger.error(
+          `${label} held a transaction for ${Date.now() - startedAt} ms and was aborted ` +
+            `at the ${timeout} ms limit. Slow work does not belong inside a tenant scope: ` +
+            'gather what you need, leave the transaction, then do it.',
+        );
+      }
+      throw error;
+    });
 
     for (const emit of store.pendingEvents) {
       try {

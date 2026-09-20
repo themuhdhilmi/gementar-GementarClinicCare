@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../../config/app-config.js';
+import { assertOutsideScope } from '../../../shared/prisma/tenant-scope.js';
 
 export type OutboundMail = {
   to: string;
@@ -34,6 +35,11 @@ export class MailerService {
   }
 
   async send(mail: OutboundMail): Promise<void> {
+    // TEN-F-17: someone else's SMTP endpoint must never be on the far side of
+    // an open transaction. Checked before the transport, so the rule holds in
+    // tests and in development too, where the transport does nothing.
+    assertOutsideScope('Sending mail');
+
     const { transport } = this.config.mail;
     if (transport === 'noop') return;
 

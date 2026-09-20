@@ -45,7 +45,11 @@ export function createPrismaClient(config: AppConfig) {
 
   return new PrismaClient({
     adapter,
-    log: config.nodeEnv === 'development' ? ['warn', 'error'] : ['error'],
+    log: config.database.logQueries
+      ? ['query', 'warn', 'error']
+      : config.nodeEnv === 'development'
+        ? ['warn', 'error']
+        : ['error'],
   }).$extends(tenantScopeExtension);
 }
 

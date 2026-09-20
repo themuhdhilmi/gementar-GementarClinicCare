@@ -17,6 +17,8 @@ export interface TenantContext {
   readonly roles: readonly Role[];
   /** Roles anywhere in the tenant. Used for MFA policy, never for permissions. */
   readonly rolesAnywhere: readonly Role[];
+  /** Every branch this person holds a role at, which is where they may work. */
+  readonly branchesWithRole: readonly string[];
   readonly permissions: ReadonlySet<Permission>;
   readonly permissionVersion: number;
   readonly mfaVerified: boolean;

@@ -23,6 +23,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const links = [
     { href: '/workspace', label: 'Workspace', show: true },
     { href: '/admin/users', label: 'Staff', show: can('admin.users') },
+    { href: '/admin/branches', label: 'Branches', show: can('admin.settings') },
+    { href: '/admin/clinic', label: 'Clinic', show: can('admin.settings') },
     { href: '/admin/audit', label: 'Audit', show: can('audit.read') },
     { href: '/account', label: 'My account', show: true },
   ].filter((link) => link.show);

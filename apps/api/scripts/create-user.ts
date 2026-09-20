@@ -10,7 +10,7 @@
  * Options:
  *   --tenant   tenant slug                      (default: klinik-pilot)
  *   --branch   branch code                      (default: the tenant's first)
- *   --role     ADMIN | DOCTOR | NURSE | FRONTDESK, repeatable
+ *   --role     ADMIN | DOCTOR | NURSE | RECEPTION | DISPENSER | CASHIER, repeatable
  *   --password at least 12 characters           (default: generated and printed)
  *   --mfa-off  clear any existing second factor
  */
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   const email = arg('email')?.trim().toLowerCase();
   const name = arg('name') ?? 'Test User';
   const branchCode = arg('branch')?.toUpperCase();
-  const roles = (args('role').length > 0 ? args('role') : ['FRONTDESK']).map(
+  const roles = (args('role').length > 0 ? args('role') : ['RECEPTION']).map(
     (r) => r.toUpperCase() as Role,
   );
   const password = arg('password') ?? `ujian-${newId().slice(-12)}`;

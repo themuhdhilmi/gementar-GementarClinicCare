@@ -14,7 +14,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "lint": "oxlint src/ test/ scripts/ && npm run lint:routes && npm run lint:dto",
+    "lint": "oxlint src/ test/ scripts/ && npm run lint:routes && npm run lint:dto && npm run lint:slow",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
@@ -30,7 +30,9 @@
     "test:ci": "vitest run --reporter=default --reporter=junit --outputFile=reports/unit.junit.xml",
     "test:e2e:ci": "vitest run --config ./vitest.config.e2e.ts --reporter=default --reporter=junit --outputFile=reports/e2e.junit.xml",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "user:create": "tsx scripts/create-user.ts"
+    "user:create": "tsx scripts/create-user.ts",
+    "tenant": "tsx scripts/tenant.ts",
+    "lint:slow": "tsx scripts/check-slow-work.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

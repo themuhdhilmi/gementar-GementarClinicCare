@@ -170,9 +170,10 @@ pipeline {
       parallel {
         stage('API — lint and types') {
           steps {
-            // `npm run lint` also runs the two authorisation checks: every
-            // mutating route declares a permission (IAM-F-22), and no DTO
-            // accepts a tenant id (IAM-R-01).
+            // `npm run lint` also runs three checks of its own: every
+            // mutating route declares a permission (IAM-F-22), no DTO accepts
+            // a tenant id (IAM-R-01), and no slow client is called inside a
+            // database transaction (TEN-F-17).
             sh 'npm run lint --workspace @gementar/api'
             sh 'npm run typecheck --workspace @gementar/api'
           }

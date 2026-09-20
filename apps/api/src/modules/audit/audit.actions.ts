@@ -25,6 +25,19 @@ export const AuditAction = {
   TrustedDeviceAdded: 'device.trusted',
   TrustedDeviceRevoked: 'device.revoked',
   BreakGlass: 'audit.break_glass',
+  BranchCreated: 'branch.created',
+  BranchUpdated: 'branch.updated',
+  BranchDeactivated: 'branch.deactivated',
+  BranchActivated: 'branch.activated',
+  TenantCreated: 'tenant.created',
+  TenantSuspended: 'tenant.suspended',
+  TenantResumed: 'tenant.resumed',
+  TenantPlanChanged: 'tenant.plan_changed',
+  TenantModulesChanged: 'tenant.modules_changed',
+  TenantUpdated: 'tenant.updated',
+  TenantSettingsChanged: 'tenant.settings_changed',
+  BranchSettingsChanged: 'branch.settings_changed',
+  BranchLetterheadChanged: 'branch.letterhead_changed',
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

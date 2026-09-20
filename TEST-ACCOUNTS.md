@@ -60,7 +60,7 @@ immediately in the header and on the workspace page.
 | | Doctor | Nurse | Reception | Dispenser | Cashier | Administrator |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | Permissions at this branch | 24 | 14 | 12 | 13 | 15 | 34 |
-| Staff and Audit tabs | – | – | – | – | – | ✓ |
+| Staff, Branches, Clinic and Audit tabs | – | – | – | – | – | ✓ |
 | Write clinical notes | ✓ | – | – | – | – | – |
 | Dispense medicine | ✓ | ✓ | – | ✓ | – | ✓ |
 | Take payment | – | – | – | – | ✓ | ✓ |
@@ -84,6 +84,16 @@ immediately in the header and on the workspace page.
 - **Read clinical data as the administrator.** It is allowed, and it appears on
   the Audit page as a break-glass entry. A doctor doing the same thing is
   routine and is not flagged.
+- **As the administrator, open Clinic.** The settings form is generated from
+  the schema the API serves, so every field carries its own help text and
+  default. Change the front desk discount limit and it applies everywhere.
+- **Then open Branches and override it for one branch.** Tick the box beside
+  the setting, give it a different number, and save. Untick it later and that
+  branch follows the clinic again, including any change made since — only the
+  difference is ever stored.
+- **Upload a logo on a branch.** PNG, JPEG or SVG up to 512 KB. Try renaming
+  something that is not an image to `.png`: it is refused, because the file is
+  judged by its bytes rather than by its name.
 - **Change your own password from My account.** It asks for your password again
   first, and signs out your other devices afterwards.
 - **Get a password wrong five times.** The sixth attempt is refused with a
@@ -108,6 +118,22 @@ immediately in the header and on the workspace page.
 - **The administrator cannot disable themselves,** and cannot drop their own
   ADMIN role while they are the only administrator. A clinic locking itself out
   at 6pm is a worse outcome than the inconvenience.
+
+## Suspending the clinic, and other platform jobs
+
+Creating a clinic, suspending one and switching a module on are done on the
+box rather than in the app, because in V0 there is no self-serve signup.
+
+```bash
+npm run tenant --workspace @gementar/api -- list
+npm run tenant --workspace @gementar/api -- suspend --slug klinik-pilot --reason "Testing"
+npm run tenant --workspace @gementar/api -- resume  --slug klinik-pilot
+npm run tenant --workspace @gementar/api -- modules --slug klinik-pilot --on appointments
+```
+
+While suspended, everyone signed in is refused on their next request and sees
+a page saying the clinic is suspended and that nothing has been deleted.
+Signing in again is refused too. `resume` puts it back exactly as it was.
 
 ## Recreating or adding accounts
 

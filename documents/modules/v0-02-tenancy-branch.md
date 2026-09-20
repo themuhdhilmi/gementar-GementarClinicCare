@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-02-tenancy-branch-end-item-OPEN.md](v0-02-tenancy-branch-end-item-OPEN.md) |
 | **Delivery phase** | Phase 0 |
 | **Spec sections** | 26, 27 |
 | **Depends on** | IAM |
@@ -112,13 +112,23 @@ branch
   timezone      text                          -- overrides tenant if set
   operating_hours jsonb not null default '{}' -- { mon: [["09:00","13:00"],["14:00","21:00"]], ... }
   settings      jsonb not null default '{}'
-  letterhead    jsonb                         -- { logoKey, headerText, footerText }
+  letterhead    jsonb                         -- { headerText, footerText }
+  letterhead_logo            bytea            -- the image itself, ≤ 512 KiB
+  letterhead_logo_mime       varchar(60)
+  letterhead_logo_updated_at timestamptz(3)
   status        enum(ACTIVE, INACTIVE) not null
   UNIQUE (tenant_id, code)
   INDEX (tenant_id, status)
 
 tenant_setting_schema   -- code-level, not a table: zod schema with defaults, versioned
 ```
+
+**As built, two deviations from the sketch above.** The logo is three columns
+rather than a `logoKey` in the jsonb: there is no object storage in V0, and an
+image inside `letterhead` would be carried by every read of a branch. See §22
+note 8. And `operating_hours` stores only the days the clinic is open — a day
+it is shut is an absent key, not an empty list — so "not set" and "closed
+every day" cannot be confused.
 
 ## 6. State machines
 
@@ -150,11 +160,27 @@ tenant_setting_schema   -- code-level, not a table: zod schema with defaults, ve
 | GET | `/branches/:id` | session (role at branch) | |
 | PATCH | `/branches/:id` | `admin.settings` | |
 | PATCH | `/branches/:id/settings` | `admin.settings` | |
-| PUT | `/branches/:id/letterhead` | `admin.settings` | Multipart logo |
+| PATCH | `/branches/:id/letterhead` | `admin.settings` | Header and footer text |
+| PUT | `/branches/:id/letterhead/logo` | `admin.settings` | Multipart logo, PNG/JPEG/SVG, ≤ 512 KB |
+| GET | `/branches/:id/letterhead/logo` | session (role at branch) | The image, on its own route so a branch read never carries it |
+| DELETE | `/branches/:id/letterhead/logo` | `admin.settings` | |
 | POST | `/branches/:id/deactivate` | `admin.settings` | Guarded (TEN-F-07) |
 | POST | `/branches/:id/activate` | `admin.settings` | |
 
-Platform-only (CLI, not HTTP in V0): `tenant:create`, `tenant:suspend`, `tenant:resume`, `tenant:set-plan`.
+Platform-only, over the CLI rather than HTTP in V0 (TEN-F-02):
+
+```bash
+npm run tenant --workspace @gementar/api -- create   --slug klinik-pilot --name "Klinik Pilot" --branch KL01
+npm run tenant --workspace @gementar/api -- list
+npm run tenant --workspace @gementar/api -- suspend  --slug klinik-pilot --reason "Unpaid invoice"
+npm run tenant --workspace @gementar/api -- resume   --slug klinik-pilot
+npm run tenant --workspace @gementar/api -- set-plan --slug klinik-pilot --plan standard
+npm run tenant --workspace @gementar/api -- modules  --slug klinik-pilot --on appointments
+```
+
+Each one writes to the clinic's own audit trail as `platform:<operator>`, with no
+actor id — there is no user row for whoever runs the platform, and an entry
+that says so is more honest than one that borrows an administrator's name.
 
 ## 9. Domain events
 
@@ -167,11 +193,11 @@ All of §9, plus every settings change with before/after diff. Tenant suspension
 
 ## 11. Screens & UX requirements
 
-| Screen | Requirements |
-|---|---|
-| Admin → Clinic settings | Tenant name, timezone, business details, TIN; grouped settings form generated from the schema with inline help |
-| Admin → Branches | List; create/edit form; operating hours editor (per day, multiple ranges, copy-to-all); letterhead upload with live preview; deactivate with guard explanation |
-| Branch switcher | In header (owned by IAM UI, data from TEN) |
+| Screen | Requirements | Built |
+|---|---|---|
+| Admin → Clinic settings | Tenant name, timezone, business details, TIN; grouped settings form generated from the schema with inline help | `/admin/clinic`. The settings half is generated from `schema.fields`, so a setting added on the server appears here with its help text and default. The module list is shown read-only, because switching one on is a commercial conversation, not a toggle. |
+| Admin → Branches | List; create/edit form; operating hours editor (per day, multiple ranges, copy-to-all); letterhead upload with live preview; deactivate with guard explanation | `/admin/branches`. One drawer rather than a wizard, because most clinics open it twice ever. Per-branch setting overrides are a tick box beside each setting, and unticking one removes it rather than freezing today's value (§22 note 2). |
+| Branch switcher | In header (owned by IAM UI, data from TEN) | Built with IAM. Shown only when someone holds a role at more than one branch. |
 
 ## 12. Validation
 
@@ -185,11 +211,42 @@ All of §9, plus every settings change with before/after diff. Tenant suspension
 
 | ID | Requirement |
 |---|---|
-| TEN-N-01 | `set_config` + transaction wrapping adds ≤ 2 ms p95 per request. |
-| TEN-N-02 | Startup refuses to boot if the DB role has `BYPASSRLS` or owns any table (TEN-R-03). |
-| TEN-N-03 | Isolation suite runtime < 60 s so it runs on every push without being skipped. |
-| TEN-N-04 | Settings resolution is cached per request; changes are visible on the next request. |
-| TEN-N-05 | No tenant transaction may exceed 5 s; a timeout aborts it and logs the handler name. |
+| TEN-N-01 | `set_config` + transaction wrapping adds ≤ 2 ms p95 per request. **Three round trips, counted exactly.** See below. |
+| TEN-N-02 | Startup refuses to boot if the DB role has `BYPASSRLS` or owns any table (TEN-R-03). `assertDatabaseGuards()`, proved by TEN-T-07. |
+| TEN-N-03 | Isolation suite runtime < 60 s so it runs on every push without being skipped. **Measured: 2.0 s for 17 tests.** |
+| TEN-N-04 | Settings resolution is cached per request; changes are visible on the next request. `SettingsService` over `DbService.once`. |
+| TEN-N-05 | No tenant transaction may exceed 5 s; a timeout aborts it and logs the handler name. `DB_TX_TIMEOUT_MS`, default 5000. |
+
+### TEN-N-01, counted rather than timed
+
+Wrapping a request costs exactly three round trips: `BEGIN`, the `set_config`
+that fixes the tenant, and `COMMIT`. `test/roundtrips.e2e-spec.ts` counts them
+from the driver's query log and fails if a fourth appears, which is a stabler
+test than a millisecond budget — the milliseconds are the network's, and the
+count is the code's.
+
+Three round trips against a database on the same host is about 0.15 ms, well
+inside the 2 ms allowed. Against the LAN this was developed on it is nearer
+2.2 ms, which is the network and not this module. `IAM-OPEN-01` covers
+re-measuring both on the production host.
+
+### TEN-N-04, and why the cache cannot go stale
+
+`SettingsService` resolves the three layers once and keeps the answer in the
+unit of work's own store, which is created when the transaction opens and
+discarded when it closes. There is no cross-request cache, so there is no
+invalidation to get wrong: a change made by one request is read fresh by the
+next. The one case that needs care is the request that *makes* the change, and
+it calls `invalidate` before reading back.
+
+### TEN-N-05, and how the handler gets named
+
+The interceptor that opens the per-request transaction labels it with the
+controller and method. A transaction that overruns is aborted by PostgreSQL
+and the log says which handler held it, rather than leaving a bare `P2028`.
+`TEN-F-17` is the matching preventative: `npm run lint:slow` refuses source
+that calls a slow client inside a scope, and `assertOutsideScope` refuses it at
+runtime in the mailer, which is the one slow client that exists today.
 
 ## 14. Edge cases & failure modes
 
@@ -210,8 +267,13 @@ All of §9, plus every settings change with before/after diff. Tenant suspension
 
 ## 16. Reporting outputs
 
-- Branch list with status (admin dashboard)
-- Per-branch breakdowns for every RPT/FIN report are keyed on `branch_id` from this module
+- **Branch list with status** — the table on `/admin/branches`, with the code,
+  where it is, which days it is open and whether it is active. `GET
+  /branches/all` is the same data for anything else that needs it.
+- **Per-branch breakdowns** for every RPT/FIN report are keyed on `branch_id`
+  from this module. Nothing to build here: the requirement is that `branch_id`
+  is present and correct on physical records, which is TEN-F-08 and is
+  enforced by each module as it lands.
 
 ## 17. Acceptance tests
 
@@ -248,12 +310,149 @@ All of §9, plus every settings change with before/after diff. Tenant suspension
 | TEN-Q-02 | Clinic registration / licence number format to print on documents? | Pilot clinic |
 | TEN-Q-03 | Does the clinic have a view on data leaving Malaysia (hosting region)? | Pilot clinic |
 
+All three are questions for the clinic, not decisions the code can make. What
+the code does in the meantime, so that none of them blocks the build:
+
+### TEN-Q-01 — one clinic, or the first of several?
+
+**Built as if the answer is "several", because the cost of doing so was
+nothing.** A branch was always going to be a row rather than a deployment, and
+every physical record already carries `branch_id` (TEN-F-08). The branch
+screen creates the second branch as readily as the first, the header already
+switches between them, and a user holds a role per branch rather than one role
+overall.
+
+What is genuinely deferred to `BRN` (V2) is everything *between* branches:
+stock transfers, consolidated reporting, pricing that differs by branch. Those
+are real work, and none of them is needed to run two clinics independently on
+one account.
+
+**So the answer changes nothing about what to build now.** It changes when
+`v2-01-multi-branch.md` is scheduled. Ask it, write the answer here, and move
+on.
+
+### TEN-Q-02 — what licence number format?
+
+**Stored as free text, up to 60 characters, at both levels.** The clinic's
+business registration number and TIN are on the tenant; the practice licence
+is on the branch, because a group with three clinics has three licences.
+
+No format is enforced, deliberately. Malaysian clinic licensing has changed
+format more than once, a private practice under the Private Healthcare
+Facilities and Services Act carries a different reference from a company's SSM
+number, and a validation rule invented here would be wrong in a way that stops
+the clinic printing an invoice. The field is printed exactly as typed.
+
+**What to confirm in the room:** which number they expect to see on a receipt,
+and whether they want it labelled. That is a `DOC` question about the template,
+not a `TEN` question about the column.
+
+### TEN-Q-03 — does the data leave Malaysia?
+
+**Assume it must not, because that is the answer that is expensive to change
+later.** PDPA does not flatly forbid transfer abroad, but it is the question a
+clinic's own compliance person asks first, and being able to answer "it is in
+Malaysia" ends the conversation.
+
+Nothing in the build depends on the region, so this is a hosting decision
+rather than a code one. The tenant carries the region so that a second region
+is possible without a migration. Until a clinic asks for one, one region is
+simpler and one region is what should be bought.
+
+**What to confirm:** that the pilot is content with a Malaysian VPS, and that
+the backup destination (`IAM-OPEN-09`) is in the same jurisdiction — an
+encrypted dump sitting in a bucket in Virginia is the part people forget.
+
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] TEN-T-01 … T-10 green in CI
-- [ ] Generated RLS test covers every table and is wired into CI
-- [ ] Startup role assertion in place
-- [ ] Settings schema v1 documented with every key, type and default
-- [ ] `../03-multi-tenancy.md` updated with any deviations
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — see the traceability table below.
+- [x] **TEN-T-01 … T-10 green in CI** — T-01 to T-08 in `test/tenant-isolation.e2e-spec.ts`, T-09 and T-10 in `test/tenancy-branch.e2e-spec.ts`. Each test names its id.
+- [x] **Generated RLS test covers every table and is wired into CI** — TEN-T-06 reads `pg_class` and `pg_policy` at run time rather than from a list, so a table added in a year's time fails it. A model that is neither tenant-scoped nor platform also fails, so the classification cannot be skipped.
+- [x] **Startup role assertion in place** — `assertDatabaseGuards()`, with `DB_GUARD_MODE` of `auto`, `require` or `off`. CI sets `require`.
+- [x] **Settings schema v1 documented with every key, type and default** — the schema documents itself: `GET /tenant` returns every field with its type, default and help text, and the settings screen is generated from that. §22 note 4 explains why there is no second list in prose.
+- [x] **`../03-multi-tenancy.md` updated with any deviations** — no deviations. The two layers, the narrow bypass and the branch-level rule are as designed; what this module added is the settings document and the branch lifecycle, neither of which touches isolation.
+- [x] **Open questions answered** — §20. All three are for the clinic; none of them blocks the build, and what the code does meanwhile is written down.
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| TEN-F-01 tenant fields | `prisma/schema.prisma`, `TenantService.describe` | `GET /tenant` in the suite |
+| TEN-F-02 tenants from the CLI | `scripts/tenant.ts` | Exercised by hand; create, suspend, resume and set-plan |
+| TEN-F-03 suspension blocks everything | `SessionGuard`, `TenantSuspendedError` | "refuses every call with 403" |
+| TEN-F-04 validated settings document | `settings/tenant-settings.ts`, `SettingsService` | 8 unit tests, 6 end-to-end |
+| TEN-F-05 module feature flags | `settings/module-flags.ts` | 4 unit tests, 2 end-to-end |
+| TEN-F-06 branch fields | `BranchService`, `branch.validation.ts` | create, update and validation tests |
+| TEN-F-07 guarded deactivation | `BranchDeactivationRegistry` | TEN-T-09 |
+| TEN-F-08 `branch_id` on physical entities | Schema convention | Enforced per module as each lands |
+| TEN-F-09 three-layer resolution | `resolveSettings` | "resolves branch over tenant over default" |
+| TEN-F-10 letterhead | `letterhead.ts`, four routes | 5 end-to-end tests |
+| TEN-F-11 … F-16 isolation | Built with IAM | `test/tenant-isolation.e2e-spec.ts`, 17 tests |
+| TEN-F-17 no slow work in a scope | `npm run lint:slow`, `assertOutsideScope` | The rule is itself tested against a planted violation |
+| TEN-R-01 … R-08 | Guards, services, database | Isolation suite and the branch suite |
+| TEN-N-01 … N-05 | §13 | Counted or measured, not asserted |
+
+## 22. Notes worth keeping
+
+1. **The patch schema must not carry defaults.** Zod's `.partial()` leaves each
+   field a `ZodDefault`, which fills itself in when the key is absent. Built
+   that way, changing one billing setting silently writes down today's value
+   for every other billing setting — and the clinic is then frozen on them,
+   because a later change to a default can no longer reach a key that is
+   written down. `patchGroup` strips the defaults. A test states the trap so
+   nobody reintroduces it, and the same trap was found and fixed a second time
+   in the letterhead schema.
+
+2. **`null` means "stop overriding", and it is not the same as writing down the
+   current value.** Unticking a branch override has to *remove* the key. If the
+   screen sent the clinic's present value instead, the branch would look
+   identical today and stop following the clinic tomorrow. This is the whole
+   reason only differences are stored.
+
+3. **The settings cache is the transaction's, not the process's.** Caching per
+   request needs no invalidation strategy, because the cache cannot outlive the
+   request that made it. A process-wide cache would be faster and would
+   eventually serve a stale discount limit to a clinic that had just changed it.
+
+4. **The schema is the documentation.** Every setting carries its own type,
+   default and help text, `GET /tenant` serves them, and the settings screen is
+   generated from that. A new setting therefore appears on the screen, in the
+   API and in this specification's meaning of "documented" in one edit. A
+   second list in prose would be wrong within a month.
+
+5. **A branch code can never change.** It ends up inside invoice and
+   prescription numbers, and those are handed to patients and to LHDN. The
+   screen says so at the point of typing rather than refusing afterwards.
+   TEN-R-08 is written as "immutable once a document exists"; since nothing is
+   numbered yet, the code enforces the stricter rule of "immutable after
+   creation", which is easier to reason about and can only be loosened later.
+
+6. **Deactivation asks other modules rather than looking in their tables.**
+   `BranchDeactivationRegistry` is an empty list today, so deactivation is
+   always allowed, which is correct while no clinical or stock module exists
+   and wrong the moment one does. `ENC` and `INV` register a check when they
+   are built. TEN-T-09 registers one itself, so the guard is proved rather than
+   assumed.
+
+7. **A suspended clinic gets 403, not 401.** 401 means "sign in again", which
+   they will try, and fail, and try again. The screen tells them the account is
+   suspended and that nothing has been deleted, which is both true and the only
+   thing they want to know.
+
+8. **The logo has its own columns and its own route.** Putting it in the
+   `letterhead` jsonb would have made every branch read carry an image. It is
+   in the database rather than on disk because it must be in the same backup as
+   the rows that reference it — a clinic restoring from a dump should not come
+   back with unbranded invoices.
+
+9. **An uploaded file is judged by its bytes.** A browser will send
+   `image/png` for anything. The magic number decides what it is, and what it
+   is decides what it is served as. SVG is allowed because clinics have
+   vector logos, and it is served with `sandbox` and no script, because an SVG
+   is a document.
+
+10. **The slow-work rule is two things, not one.** The lint script catches the
+    shape people write and cannot see through a service call; the runtime
+    assertion in the mailer cannot be fooled but only covers the clients that
+    call it. Together they are worth having. Either alone would be a comfort
+    rather than a control.

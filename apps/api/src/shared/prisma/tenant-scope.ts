@@ -62,12 +62,42 @@ export type ScopeStore = {
   tx?: unknown;
   /** Domain events published during the unit of work, emitted after commit. */
   pendingEvents: Array<() => void>;
+  /**
+   * TEN-N-04: values resolved once per unit of work. It lives and dies with
+   * the transaction, so a change made by one request is visible to the next
+   * one without any invalidation to get wrong.
+   */
+  cache?: Map<string, unknown>;
+  /** What this transaction is doing, named for the log if it times out. */
+  label?: string;
 };
 
 export const scopeStorage = new AsyncLocalStorage<ScopeStore>();
 
 export function currentStore(): ScopeStore | undefined {
   return scopeStorage.getStore();
+}
+
+/**
+ * TEN-F-17: slow work must not happen inside a tenant transaction.
+ *
+ * A transaction holds a connection and, often, row locks. Rendering a PDF or
+ * waiting on someone else's HTTP endpoint inside one turns a 20 ms request
+ * into a 2 s request that is also blocking other people. Gather what is
+ * needed, leave the transaction, then do the slow thing — `afterCommit` exists
+ * for exactly this.
+ *
+ * The lint rule catches the obvious shapes; this catches the rest, at the one
+ * place that knows for certain.
+ */
+export function assertOutsideScope(what: string): void {
+  const store = scopeStorage.getStore();
+  if (store?.tx) {
+    throw new TenantScopeError(
+      `${what} was attempted inside an open database transaction (${store.label ?? 'unnamed'}). ` +
+        'Slow work belongs outside: use DbService.afterCommit(), or do it before the scope opens.',
+    );
+  }
 }
 
 export function currentScope(): TenantScope | undefined {

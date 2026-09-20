@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { scopeStorage, scopedOperation, type ScopeStore } from './tenant-scope.js';
+import {
+  assertOutsideScope,
+  scopeStorage,
+  scopedOperation,
+  type ScopeStore,
+} from './tenant-scope.js';
 
 const TENANT = '01a00000-0000-7000-8000-000000000001';
 const OTHER = '01a00000-0000-7000-8000-000000000002';
@@ -162,5 +167,33 @@ describe('tenant scoping extension', () => {
     const { seen, query } = capture();
     await scopedOperation({ operation: '$queryRaw', args: { sql: 'SELECT 1' }, query });
     expect(seen[0]).toEqual({ sql: 'SELECT 1' });
+  });
+});
+
+describe('Slow work outside the transaction (TEN-F-17)', () => {
+  it('allows it when nothing is open', () => {
+    expect(() => assertOutsideScope('Sending mail')).not.toThrow();
+  });
+
+  it('allows it inside a scope whose transaction has already closed', () => {
+    // This is what afterCommit handlers see, and it is the intended path.
+    scopeStorage.run({ scope: { kind: 'platform', reason: 'test' }, pendingEvents: [] }, () => {
+      expect(() => assertOutsideScope('Sending mail')).not.toThrow();
+    });
+  });
+
+  it('refuses it while a transaction is open, and names the handler', () => {
+    scopeStorage.run(
+      {
+        scope: { kind: 'tenant', tenantId: 'a' },
+        pendingEvents: [],
+        tx: {},
+        label: 'BranchesController.create',
+      },
+      () => {
+        expect(() => assertOutsideScope('Sending mail')).toThrow(/BranchesController.create/);
+        expect(() => assertOutsideScope('Sending mail')).toThrow(/afterCommit/);
+      },
+    );
   });
 });

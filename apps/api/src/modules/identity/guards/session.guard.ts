@@ -8,6 +8,7 @@ import {
   MfaEnrolmentRequiredError,
   MfaRequiredError,
   SessionInvalidError,
+  TenantSuspendedError,
 } from '../../../shared/errors/domain-errors.js';
 import { permissionsFor, requiresMfa } from '../../../shared/access/permissions.js';
 import { DbService } from '../../../shared/prisma/db.service.js';
@@ -107,7 +108,9 @@ export class SessionGuard implements CanActivate {
         throw new SessionInvalidError('This account is no longer active.');
       }
       if (session.user.tenant.status !== TenantStatus.ACTIVE) {
-        throw new SessionInvalidError('This clinic account is not active.');
+        // TEN-F-03: 403, so the screen can say why rather than bouncing the
+        // user to a login that will not help them.
+        throw new TenantSuspendedError();
       }
 
       await becomeTenant(session.tenantId);
@@ -148,6 +151,7 @@ export class SessionGuard implements CanActivate {
         userEmail: session.user.email,
         roles,
         rolesAnywhere: assignments.map((a) => a.role),
+        branchesWithRole: [...new Set(assignments.map((a) => a.branchId))],
         permissions: new Set(permissionsFor(roles)),
         permissionVersion,
         mfaVerified: session.mfaVerified,

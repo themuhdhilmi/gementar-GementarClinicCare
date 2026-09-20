@@ -35,6 +35,20 @@ export class SessionInvalidError extends AppError {
   }
 }
 
+/**
+ * TEN-F-03: a suspended clinic is refused with 403, not 401. The distinction
+ * matters to whoever is holding the screen: 401 means "sign in again", which
+ * they will try, and fail, and try again. 403 with this message tells them the
+ * truth, which is that signing in is not the problem. The data is untouched.
+ */
+export class TenantSuspendedError extends AppError {
+  constructor(
+    detail = 'This clinic account is suspended. Nothing has been deleted. Please contact support to restore access.',
+  ) {
+    super(403, 'tenant_suspended', 'Clinic suspended', detail);
+  }
+}
+
 export class MfaRequiredError extends AppError {
   constructor(detail = 'Multi-factor authentication is required before continuing.') {
     super(403, 'mfa_required', 'MFA required', detail);

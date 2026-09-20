@@ -9,6 +9,12 @@ type SessionState = {
   me: Me | null;
   loading: boolean;
   error: string | null;
+  /**
+   * TEN-F-03: set when the clinic itself is suspended. Distinct from `error`,
+   * because nothing the person does will fix it and signing in again is not
+   * worth suggesting.
+   */
+  suspended: string | null;
   refresh: () => Promise<Me | null>;
   logout: () => Promise<void>;
   can: (permission: string) => boolean;
@@ -26,12 +32,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [suspended, setSuspended] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const next = await api<Me>('/auth/me');
       setMe(next);
       setError(null);
+      setSuspended(null);
       if (next.mfa.required && !next.mfa.enabled) {
         router.replace('/enrol-mfa');
         return next;
@@ -53,6 +61,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         }
         if (caught.code === 'mfa_required') {
           router.replace('/mfa');
+          return null;
+        }
+        // TEN-F-03: a suspended clinic is not a broken session. Sending them
+        // to the login page would have them try their password over and over.
+        if (caught.code === 'tenant_suspended') {
+          setSuspended(caught.message);
           return null;
         }
         setError(caught.message);
@@ -81,11 +95,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       me,
       loading,
       error,
+      suspended,
       refresh,
       logout,
       can: (permission: string) => Boolean(me?.permissions.includes(permission)),
     }),
-    [me, loading, error, refresh, logout],
+    [me, loading, error, suspended, refresh, logout],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

@@ -19,6 +19,10 @@ export class TenantScopeInterceptor implements NestInterceptor {
     const ctx = request.tenantContext;
     if (!ctx) return next.handle();
 
-    return from(this.db.withTenant(ctx.tenantId, () => firstValueFrom(next.handle())));
+    // Named, so TEN-N-05 can say which handler held the transaction too long.
+    const label = `${context.getClass().name}.${context.getHandler().name}`;
+    return from(
+      this.db.withTenant(ctx.tenantId, () => firstValueFrom(next.handle()), { label }),
+    );
   }
 }

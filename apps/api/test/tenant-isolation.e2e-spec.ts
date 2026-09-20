@@ -42,7 +42,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
 
   // ------------------------------------------------- layer 1: the extension
 
-  it('a query in tenant A never returns tenant B rows', async () => {
+  it('TEN-T-01: a query in tenant A never returns tenant B rows', async () => {
     const users = await harness.db.withTenant(a.tenantId, (tx) =>
       tx.user.findMany({ select: { id: true, tenantId: true } }),
     );
@@ -51,7 +51,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
     expect(users.some((u) => u.id === b.admin.id)).toBe(false);
   });
 
-  it("reading tenant B's user by its real id, from tenant A, finds nothing", async () => {
+  it("TEN-T-02: reading tenant B's user by its real id, from tenant A, finds nothing", async () => {
     expect(
       await harness.db.withTenant(a.tenantId, (tx) => tx.user.findFirst({ where: { id: b.admin.id } })),
     ).toBeNull();
@@ -60,7 +60,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
     ).toBeNull();
   });
 
-  it("updating tenant B's user from tenant A changes nothing", async () => {
+  it("TEN-T-03: updating tenant B's user from tenant A changes nothing", async () => {
     const before = await harness.db.withTenant(b.tenantId, (tx) =>
       tx.user.findFirst({ where: { id: b.admin.id }, select: { name: true } }),
     );
@@ -74,7 +74,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
     expect(after?.name).toBe(before?.name);
   });
 
-  it('a write that carries another tenant id is refused before it reaches the database', async () => {
+  it('TEN-T-04: a write carrying another tenant id is refused before the database', async () => {
     await expect(
       harness.db.withTenant(a.tenantId, (tx) =>
         tx.user.create({
@@ -114,7 +114,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
     expect(branches.every((r) => r.tenant_id === a.tenantId)).toBe(true);
   });
 
-  it('raw SQL inserting another tenant’s row is rejected by the database', async () => {
+  it('TEN-T-04: raw SQL inserting another tenant’s row is rejected by the database', async () => {
     await expect(
       harness.db.withTenant(a.tenantId, (tx) =>
         tx.$executeRawUnsafe(
@@ -127,7 +127,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
     ).rejects.toThrow(/row-level security/i);
   });
 
-  it('with app.tenant_id unset, tenant tables return nothing and reject inserts (TEN-R-04)', async () => {
+  it('TEN-T-05: with app.tenant_id unset, tenant tables return nothing and reject inserts (TEN-R-04)', async () => {
     await harness.db.raw.$transaction(async (tx) => {
       // No set_config at all: this is what a forgotten scope looks like.
       const branches = await tx.$queryRawUnsafe<Array<{ n: number }>>(
@@ -231,7 +231,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
 
   // ------------------------------------------------------- the API surface
 
-  it('the API refuses cross-tenant identifiers', async () => {
+  it('TEN-T-08: the API refuses cross-tenant identifiers, including a branch switch', async () => {
     const otherUser = await request(harness.server)
       .get(`${API}/users/${b.admin.id}`)
       .set('Cookie', cookieA);
@@ -282,7 +282,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
 
   // --------------------------------------------------- the generated test
 
-  it('every tenant-owned table has row-level security enabled and forced', async () => {
+  it('TEN-T-06: every tenant-owned table has row-level security enabled and forced', async () => {
     // TEN-R-02, checked against the live schema: a table added in eighteen
     // months cannot silently ship unprotected.
     const status = await harness.app.get(
@@ -294,7 +294,7 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
     expect(status.protected.sort()).toEqual([...RLS_PROTECTED_TABLES].sort());
   });
 
-  it('the application role cannot bypass row-level security (TEN-R-03)', async () => {
+  it('TEN-T-07: the application role cannot bypass row-level security (TEN-R-03)', async () => {
     const { PrismaService } = await import('../src/shared/prisma/prisma.service.js');
     const status = await harness.app.get(PrismaService).readRlsStatus();
     expect(status.role.bypassRls).toBe(false);

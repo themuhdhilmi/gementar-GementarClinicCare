@@ -70,6 +70,24 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       };
     }
 
+    // An upload stopped at the limit reaches here as a bare 413, whether it
+    // came from multer directly or was wrapped on the way. 413 is the right
+    // status; "Payload Too Large" is not a useful sentence.
+    const tooLarge =
+      (exception as { code?: string })?.code === 'LIMIT_FILE_SIZE' ||
+      (exception instanceof HttpException && exception.getStatus() === 413);
+    if (tooLarge) {
+      return {
+        type: 'https://cliniccare.gementar.com/problems/file_too_large',
+        title: 'File too large',
+        status: 413,
+        detail:
+          'That file is larger than this accepts. A logo for a printed page needs at most 512 KB.',
+        code: 'file_too_large',
+        traceId,
+      };
+    }
+
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();

@@ -170,3 +170,128 @@ export const ROLE_DESCRIPTION: Record<Role, string> = {
   DISPENSER: 'Dispenses medicine and receives stock.',
   CASHIER: 'Issues invoices, takes payment and closes the day.',
 };
+
+// ------------------------------------------------------- tenancy (TEN, v0-02)
+
+export type SettingValue = number | boolean | string;
+
+/** One row of the settings form, generated from the schema the API serves. */
+export type SettingField = {
+  group: 'billing' | 'queue' | 'clinical';
+  key: string;
+  type: 'number' | 'boolean' | 'string';
+  help: string;
+  default: SettingValue;
+};
+
+/** `null` in a patch means "stop overriding this", never a stored value. */
+export type SettingsDocument = Record<string, Record<string, SettingValue | null>>;
+
+export type ModuleDescriptor = { key: string; label: string };
+
+export type TenantOverview = {
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
+    plan: string;
+    timezone: string;
+    currency: string;
+    tin: string | null;
+    businessRegNo: string | null;
+  };
+  settings: SettingsDocument;
+  schema: { version: number; fields: SettingField[]; modules: ModuleDescriptor[] };
+  modules: Record<string, boolean>;
+};
+
+/** `HH:MM` pairs, per weekday. A day the clinic is shut is simply absent. */
+export type OperatingHours = Partial<Record<Weekday, Array<[string, string]>>>;
+
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+];
+
+export type BranchDetail = {
+  id: string;
+  code: string;
+  name: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postcode: string | null;
+  phone: string | null;
+  email: string | null;
+  licenceNo: string | null;
+  timezone: string | null;
+  operatingHours: OperatingHours;
+  settings: SettingsDocument;
+  letterhead: { headerText: string; footerText: string };
+  hasLogo: boolean;
+};
+
+/**
+ * Turns a settings key into a label. The schema is the source of truth for
+ * what exists, so the screen must be able to render a setting nobody has
+ * written a label for yet.
+ */
+const SETTING_LABEL: Record<string, string> = {
+  maxDiscountPctFrontdesk: 'Largest discount the front desk may give',
+  roundCashTo5Sen: 'Round cash totals to 5 sen',
+  numberPrefix: 'Queue number prefix',
+  resetDaily: 'Restart queue numbers each day',
+  requireDiagnosisToSign: 'Require a diagnosis before signing',
+};
+
+export function settingLabel(key: string): string {
+  const known = SETTING_LABEL[key];
+  if (known) return known;
+  const spaced = key.replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+export const SETTINGS_GROUP_LABEL: Record<string, string> = {
+  billing: 'Billing',
+  queue: 'Queue',
+  clinical: 'Clinical',
+};
+
+/**
+ * Uploads go as multipart, which the JSON wrapper above cannot express, so
+ * this is the one other way out of the browser.
+ */
+export async function upload<T>(path: string, field: string, file: File): Promise<T> {
+  const body = new FormData();
+  body.append(field, file);
+  const response = await fetch(new URL(`/api/v1${path}`, window.location.origin), {
+    method: 'PUT',
+    credentials: 'same-origin',
+    body,
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new ApiError(
+      payload ?? {
+        type: 'about:blank',
+        title: 'Upload failed',
+        status: response.status,
+        detail: 'The image could not be uploaded.',
+        code: 'unknown',
+        traceId: '',
+      },
+    );
+  }
+  return payload as T;
+}

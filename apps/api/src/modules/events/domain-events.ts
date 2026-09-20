@@ -15,6 +15,11 @@ export const DomainEvent = {
   MfaEnrolled: 'mfa.enrolled',
   MfaDisabled: 'mfa.disabled',
   BreakGlass: 'audit.break_glass',
+  BranchCreated: 'branch.created',
+  BranchUpdated: 'branch.updated',
+  BranchDeactivated: 'branch.deactivated',
+  TenantSettingsChanged: 'tenant.settings_changed',
+  TenantSuspended: 'tenant.suspended',
 } as const;
 
 export type DomainEventName = (typeof DomainEvent)[keyof typeof DomainEvent];

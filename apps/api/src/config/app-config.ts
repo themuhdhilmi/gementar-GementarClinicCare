@@ -34,6 +34,10 @@ const schema = z.object({
   DATABASE_POOL_SIZE: z.coerce.number().int().positive().max(100).default(10),
   /** `require` refuses to boot unless the DBA hardening script is installed. */
   DB_GUARD_MODE: z.enum(['auto', 'require', 'off']).default('auto'),
+  /** Logs every statement. For counting round trips, not for production. */
+  DB_LOG_QUERIES: boolish.default(false),
+  /** TEN-N-05: the longest any one unit of work may hold a transaction. */
+  DB_TX_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(5000),
 
   APP_KEK_ACTIVE: z.string().regex(/^v\d+$/).default('v1'),
   APP_KEK_V1: base64Key,
@@ -76,7 +80,13 @@ export type AppConfig = {
   port: number;
   webOrigins: string[];
   appBaseUrl: string;
-  database: { url: string; poolSize: number; guardMode: 'auto' | 'require' | 'off' };
+  database: {
+    url: string;
+    poolSize: number;
+    guardMode: 'auto' | 'require' | 'off';
+    logQueries: boolean;
+    transactionTimeoutMs: number;
+  };
   crypto: { keks: Record<string, Buffer>; activeKekId: string; hashPepper: Buffer };
   cookie: {
     sessionName: string;
@@ -149,7 +159,13 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .map((o) => o.trim())
       .filter(Boolean),
     appBaseUrl: c.APP_BASE_URL.replace(/\/$/, ''),
-    database: { url: c.DATABASE_URL, poolSize: c.DATABASE_POOL_SIZE, guardMode: c.DB_GUARD_MODE },
+    database: {
+      url: c.DATABASE_URL,
+      poolSize: c.DATABASE_POOL_SIZE,
+      guardMode: c.DB_GUARD_MODE,
+      logQueries: c.DB_LOG_QUERIES,
+      transactionTimeoutMs: c.DB_TX_TIMEOUT_MS,
+    },
     crypto: { keks, activeKekId: c.APP_KEK_ACTIVE, hashPepper: c.APP_HASH_PEPPER },
     cookie: {
       sessionName: 'cc_session',
