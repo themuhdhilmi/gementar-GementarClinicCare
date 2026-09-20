@@ -625,3 +625,104 @@ export const WAIT_TONE: Record<'normal' | 'amber' | 'red', string> = {
   amber: 'text-warning font-medium',
   red: 'text-danger font-semibold',
 };
+
+// ---------------------------------------------------- triage (TRI, v0-05)
+
+export type FlagLevel = 'NONE' | 'ABNORMAL' | 'CRITICAL';
+
+export type VitalFlag = {
+  param: string;
+  level: 'ABNORMAL' | 'CRITICAL';
+  value: number;
+  threshold: string;
+  label: string;
+};
+
+export type TriageRecord = {
+  id: string;
+  encounterId: string;
+  patientId: string;
+  sequence: number;
+  systolic: number | null;
+  diastolic: number | null;
+  heartRate: number | null;
+  respRate: number | null;
+  temperature: number | null;
+  spo2: number | null;
+  weightKg: number | null;
+  heightCm: number | null;
+  bmi: number | null;
+  glucose: number | null;
+  glucoseFasting: boolean | null;
+  painScore: number | null;
+  complaint: string | null;
+  notes: string | null;
+  flags: VitalFlag[];
+  maxFlagLevel: FlagLevel;
+  recordedAt: string;
+  locked: boolean;
+};
+
+/** One reading's bands, in the units the form uses. */
+export type Band = {
+  low?: number;
+  high?: number;
+  criticalLow?: number;
+  criticalHigh?: number;
+};
+
+export type TriageForm = {
+  records: TriageRecord[];
+  prefill: { heightCm: number | null; lastReading: TriageRecord | null };
+  allergyPromptNeeded: boolean;
+  thresholds: Record<string, Band | undefined>;
+  isChild: boolean;
+};
+
+/**
+ * The fields a nurse fills in, in the order they take them.
+ *
+ * `stored` is the key the thresholds come back under, which is in the
+ * stored unit; `scale` converts what is typed into it so the screen can
+ * colour a value with the same numbers the server will use.
+ */
+export const VITAL_FIELDS = [
+  { key: 'systolic', stored: 'systolic', label: 'Systolic', unit: 'mmHg', scale: 1, step: 1 },
+  { key: 'diastolic', stored: 'diastolic', label: 'Diastolic', unit: 'mmHg', scale: 1, step: 1 },
+  { key: 'heartRate', stored: 'heartRate', label: 'Pulse', unit: 'bpm', scale: 1, step: 1 },
+  { key: 'temperature', stored: 'temperatureDc', label: 'Temperature', unit: '°C', scale: 10, step: 0.1 },
+  { key: 'spo2', stored: 'spo2', label: 'Oxygen saturation', unit: '%', scale: 1, step: 1 },
+  { key: 'respRate', stored: 'respRate', label: 'Breathing rate', unit: '/min', scale: 1, step: 1 },
+  { key: 'weightKg', stored: 'weightG', label: 'Weight', unit: 'kg', scale: 1000, step: 0.1 },
+  { key: 'heightCm', stored: 'heightMm', label: 'Height', unit: 'cm', scale: 10, step: 0.1 },
+  { key: 'glucose', stored: 'glucoseX10', label: 'Blood glucose', unit: 'mmol/L', scale: 10, step: 0.1 },
+  { key: 'painScore', stored: 'painScore', label: 'Pain', unit: 'of 10', scale: 1, step: 1 },
+] as const;
+
+export type VitalFieldKey = (typeof VITAL_FIELDS)[number]['key'];
+
+/**
+ * Colours a value as it is typed, against the same bands the server holds.
+ *
+ * Advisory, exactly like the server's: it never prevents saving. A nurse
+ * who cannot record what they measured will write it on paper instead.
+ */
+export function levelFor(
+  value: number | null,
+  band: Band | undefined,
+  scale: number,
+): 'NONE' | 'ABNORMAL' | 'CRITICAL' {
+  if (value === null || !band) return 'NONE';
+  const stored = Math.round(value * scale);
+  if (band.criticalLow !== undefined && stored < band.criticalLow) return 'CRITICAL';
+  if (band.criticalHigh !== undefined && stored > band.criticalHigh) return 'CRITICAL';
+  if (band.low !== undefined && stored < band.low) return 'ABNORMAL';
+  if (band.high !== undefined && stored > band.high) return 'ABNORMAL';
+  return 'NONE';
+}
+
+export const FLAG_TONE: Record<'NONE' | 'ABNORMAL' | 'CRITICAL', string> = {
+  NONE: '',
+  ABNORMAL: 'border-warning text-warning',
+  CRITICAL: 'border-danger text-danger',
+};

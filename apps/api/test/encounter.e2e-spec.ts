@@ -633,6 +633,59 @@ describe('ENC — encounters and the queue', () => {
     });
   });
 
+  describe('The timeline is exact (ENC-R-02)', () => {
+    it('writes one event per thing that happened, and no more', async () => {
+      const patientId = await newPatient('Exact Timeline');
+      const created = await checkIn({ patientId }).expect(201);
+      const id = created.body.encounter.id;
+
+      const events = async () =>
+        (
+          await request(harness.server)
+            .get(`${API}/encounters/${id}/events`)
+            .set('Cookie', reception)
+            .expect(200)
+        ).body.items as Array<{ action: string; fromStatus: string; toStatus: string }>;
+
+      // Arrived, joined the queue.
+      expect(await events()).toHaveLength(2);
+
+      // Called: one event, not two. The call and the move it causes are one
+      // thing that happened, and the timeline is read by a person.
+      //
+      // Asserted against whoever call-next actually took, not against our
+      // own patient: the head of the queue depends on what else the suite
+      // has left waiting, and the invariant is about the encounter that was
+      // called either way.
+      const called = await request(harness.server)
+        .post(`${API}/branches/${branch}/queues/triage/call-next`)
+        .set('Cookie', nurse)
+        .expect(200);
+      const calledId = called.body.encounter.id as string;
+
+      const calledEvents = (
+        await request(harness.server)
+          .get(`${API}/encounters/${calledId}/events`)
+          .set('Cookie', reception)
+          .expect(200)
+      ).body.items as Array<{ action: string; fromStatus: string; toStatus: string }>;
+
+      const calls = calledEvents.filter((event) => event.action === 'call');
+      // One event per call, however many times this patient has been called.
+      expect(calls, 'one call event per call, not a pair').toHaveLength(
+        called.body.encounter.callCount,
+      );
+      const last = calls.at(-1)!;
+      expect(last.fromStatus).toBe('TRIAGE_WAITING');
+      expect(last.toStatus).toBe('TRIAGE_IN_PROGRESS');
+
+      // An ordinary move on our own patient: exactly one more event.
+      const beforeMove = (await events()).length;
+      await move(id, 'TRIAGE_IN_PROGRESS', nurse).expect(200);
+      expect(await events()).toHaveLength(beforeMove + 1);
+    });
+  });
+
   // ------------------------------------------- the guard tenancy was owed
 
   describe('Branch deactivation (TEN-F-07, closing TEN-OPEN-01)', () => {

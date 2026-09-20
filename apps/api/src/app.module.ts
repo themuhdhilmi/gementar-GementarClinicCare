@@ -12,6 +12,7 @@ import { IdentityModule } from './modules/identity/identity.module.js';
 import { HealthController } from './health.controller.js';
 import { PatientModule } from './modules/patient/patient.module.js';
 import { EncounterModule } from './modules/encounter/encounter.module.js';
+import { TriageModule } from './modules/triage/triage.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { EncounterModule } from './modules/encounter/encounter.module.js';
     IdentityModule,
     PatientModule,
     EncounterModule,
+    TriageModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [HealthController],

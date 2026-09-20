@@ -118,7 +118,91 @@ const patient = z
   })
   .strict();
 
-const GROUPS = { billing, queue, clinical, patient } as const;
+/**
+ * TRI-F-03: the adult bands a reading is judged against.
+ *
+ * These are settings rather than constants because the clinic's own doctor
+ * owns them, and the defaults here are a starting point for a general
+ * practice rather than a clinical standard (TRI-Q-01).
+ *
+ * Stored in the same units as the readings themselves — deci-degrees,
+ * mmol/L times ten — so that comparing a value against a threshold is
+ * integer arithmetic with nothing to round. The screen converts.
+ *
+ * Paediatric bands are code defaults, not settings, until the clinic's
+ * doctor provides theirs. Doubling this list with numbers nobody has agreed
+ * would be worse than one honest gap.
+ */
+const vitals = z
+  .object({
+    systolicLow: z.number().int().min(50).max(300).default(100)
+      .describe('Systolic blood pressure below this is noted, in mmHg.'),
+    systolicHigh: z.number().int().min(50).max(300).default(140)
+      .describe('And above this.'),
+    systolicCriticalLow: z.number().int().min(50).max(300).default(90)
+      .describe('Below this the nurse is prompted to escalate.'),
+    systolicCriticalHigh: z.number().int().min(50).max(300).default(180)
+      .describe('And above this.'),
+
+    diastolicLow: z.number().int().min(20).max(200).default(60)
+      .describe('Diastolic blood pressure below this is noted, in mmHg.'),
+    diastolicHigh: z.number().int().min(20).max(200).default(90)
+      .describe('And above this.'),
+    diastolicCriticalHigh: z.number().int().min(20).max(200).default(120)
+      .describe('Above this the nurse is prompted to escalate.'),
+
+    heartRateLow: z.number().int().min(20).max(250).default(50)
+      .describe('Heart rate below this is noted, in beats a minute.'),
+    heartRateHigh: z.number().int().min(20).max(250).default(100)
+      .describe('And above this.'),
+    heartRateCriticalLow: z.number().int().min(20).max(250).default(40)
+      .describe('Below this the nurse is prompted to escalate.'),
+    heartRateCriticalHigh: z.number().int().min(20).max(250).default(130)
+      .describe('And above this.'),
+
+    respRateLow: z.number().int().min(4).max(80).default(12)
+      .describe('Respiratory rate below this is noted, in breaths a minute.'),
+    respRateHigh: z.number().int().min(4).max(80).default(20)
+      .describe('And above this.'),
+    respRateCriticalLow: z.number().int().min(4).max(80).default(8)
+      .describe('Below this the nurse is prompted to escalate.'),
+    respRateCriticalHigh: z.number().int().min(4).max(80).default(30)
+      .describe('And above this.'),
+
+    temperatureLowDc: z.number().int().min(300).max(450).default(355)
+      .describe('Temperature below this is noted, in tenths of a degree: 355 is 35.5 °C.'),
+    temperatureHighDc: z.number().int().min(300).max(450).default(378)
+      .describe('And above this: 378 is 37.8 °C.'),
+    temperatureCriticalLowDc: z.number().int().min(300).max(450).default(350)
+      .describe('Below this the nurse is prompted to escalate.'),
+    temperatureCriticalHighDc: z.number().int().min(300).max(450).default(395)
+      .describe('And above this: 395 is 39.5 °C.'),
+
+    spo2Low: z.number().int().min(50).max(100).default(95)
+      .describe('Oxygen saturation below this is noted, as a percentage.'),
+    spo2CriticalLow: z.number().int().min(50).max(100).default(90)
+      .describe('Below this the nurse is prompted to escalate.'),
+
+    glucoseLowX10: z.number().int().min(5).max(500).default(40)
+      .describe('Blood glucose below this is noted, in tenths of mmol/L: 40 is 4.0.'),
+    glucoseHighX10: z.number().int().min(5).max(500).default(110)
+      .describe('And above this: 110 is 11.0 mmol/L.'),
+    glucoseCriticalLowX10: z.number().int().min(5).max(500).default(30)
+      .describe('Below this the nurse is prompted to escalate: 30 is 3.0 mmol/L.'),
+    glucoseCriticalHighX10: z.number().int().min(5).max(500).default(200)
+      .describe('And above this: 200 is 20.0 mmol/L.'),
+
+    bmiLowX10: z.number().int().min(100).max(700).default(185)
+      .describe('Body mass index below this is noted, in tenths: 185 is 18.5.'),
+    bmiHighX10: z.number().int().min(100).max(700).default(275)
+      .describe('And above this: 275 is 27.5.'),
+
+    painHigh: z.number().int().min(0).max(10).default(6)
+      .describe('A pain score above this is noted.'),
+  })
+  .strict();
+
+const GROUPS = { billing, queue, clinical, patient, vitals } as const;
 
 /**
  * Settings that must not differ between branches.
@@ -163,6 +247,7 @@ export const settingsPatchSchema = z
     queue: patchGroup(queue).optional(),
     clinical: patchGroup(clinical).optional(),
     patient: patchGroup(patient).optional(),
+    vitals: patchGroup(vitals).optional(),
   })
   .strict();
 
@@ -177,6 +262,7 @@ export const DEFAULT_SETTINGS: TenantSettings = {
   queue: queue.parse({}),
   clinical: clinical.parse({}),
   patient: patient.parse({}),
+  vitals: vitals.parse({}),
 };
 
 type Layer = Record<string, unknown> | null | undefined;

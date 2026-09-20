@@ -367,11 +367,11 @@ export class EncounterService {
     // Returning someone called by mistake keeps their place in the queue,
     // which is the entire point of the move (§14).
     if (to === EncounterStatus.DOCTOR_WAITING && before.status === EncounterStatus.IN_CONSULTATION) {
-      data['statusSince'] = before.statusSince;
       data['consultationStartedAt'] = null;
-      // The trigger insists status_since moves with status, and here it
-      // deliberately must not. A nudge of a millisecond satisfies the
-      // backstop without losing the patient's position.
+      // Their place in the queue is kept, which is the whole point of the
+      // move. The trigger insists status_since changes when status does,
+      // and here it deliberately must not, so it is nudged by the smallest
+      // amount that satisfies the backstop without losing the position.
       data['statusSince'] = new Date(before.statusSince.getTime() + 1);
     }
     if (to === EncounterStatus.TRIAGE_WAITING || to === EncounterStatus.DOCTOR_WAITING) {

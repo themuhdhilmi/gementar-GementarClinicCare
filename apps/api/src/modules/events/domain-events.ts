@@ -44,6 +44,11 @@ export const DomainEvent = {
   EncounterCancelled: 'encounter.cancelled',
   EncounterNoShow: 'encounter.no_show',
   EncounterReopened: 'encounter.reopened',
+
+  // Triage (TRI, v0-05).
+  TriageRecorded: 'triage.recorded',
+  TriageAbnormalFlagged: 'triage.abnormal_flagged',
+  TriageAmended: 'triage.amended',
 } as const;
 
 export type DomainEventName = (typeof DomainEvent)[keyof typeof DomainEvent];

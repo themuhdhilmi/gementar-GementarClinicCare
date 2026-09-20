@@ -74,6 +74,10 @@ export const AuditAction = {
   DisplayTokenIssued: 'display_token.issued',
   DisplayTokenRevoked: 'display_token.revoked',
   BranchRoomChanged: 'branch_room.changed',
+
+  // Triage (TRI, v0-05).
+  TriageRecorded: 'triage.recorded',
+  TriageAmended: 'triage.amended',
   BranchLetterheadChanged: 'branch.letterhead_changed',
 } as const;
 

@@ -29,6 +29,8 @@ export const RLS_PROTECTED_TABLES = [
   'branch_room',
   'queue_sequence',
   'display_token',
+  'triage',
+  'triage_amendment',
 ] as const;
 
 /**

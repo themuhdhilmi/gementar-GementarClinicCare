@@ -253,11 +253,21 @@ export default function QueuePage() {
                       )}
                     </td>
                     <td className="py-2.5 text-right whitespace-nowrap">
-                      <Link href={`/encounters/${row.id}`}>
-                        <Button variant="ghost" size="sm">
-                          Open
-                        </Button>
-                      </Link>
+                      {/* Triage-in-progress goes straight to the form:
+                          the nurse has the patient in front of them. */}
+                      {row.status === 'TRIAGE_IN_PROGRESS' && can('triage.write') ? (
+                        <Link href={`/encounters/${row.id}/triage`}>
+                          <Button variant="secondary" size="sm">
+                            Record vitals
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link href={`/encounters/${row.id}`}>
+                          <Button variant="ghost" size="sm">
+                            Open
+                          </Button>
+                        </Link>
+                      )}
                       {callable && (
                         <>
                           <Button

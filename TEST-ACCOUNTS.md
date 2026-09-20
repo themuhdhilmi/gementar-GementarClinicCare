@@ -62,6 +62,8 @@ immediately in the header and on the workspace page.
 | Permissions at this branch | 24 | 14 | 12 | 13 | 15 | 34 |
 | Staff, Branches, Clinic and Audit tabs | – | – | – | – | – | ✓ |
 | Check a patient in, run the queue | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Record vitals at triage | ✓ | ✓ | – | – | – | ✓ |
+| Read vitals | ✓ | ✓ | – | – | – | ✓ break-glass |
 | Force a stuck visit, issue a display token | – | – | – | – | – | ✓ |
 | Register and search patients | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | See a full identity number | ✓ | – | ✓ | – | ✓ | ✓ |
@@ -204,6 +206,32 @@ Worth trying:
 - **Skip somebody.** They go to the back of the same queue, not out of it.
 - **As the administrator, force a stuck visit closed.** It asks for your
   password again and a reason, and it appears on the Audit screen.
+
+## Taking vitals
+
+Sign in as the nurse, open **Today**, go to the Triage board and call the
+next patient. The row turns into a Record vitals button.
+
+The form is one column in the order a nurse actually takes readings, and
+values colour themselves as you type:
+
+- **Type 86 into oxygen saturation.** The field turns red and a banner
+  appears. Save, and it offers to move that patient to the front of every
+  queue. It offers; it does not decide.
+- **Type 1200 into systolic.** Refused, because that is a slipped finger
+  rather than a hypertensive crisis. The message says to check what was
+  typed. A genuinely alarming reading like 85 saves without complaint.
+- **Enter 70 kg and 175 cm.** The body mass index appears, worked out on the
+  server. Sending one from outside is refused rather than ignored.
+- **Try it for a child.** Register somebody born three years ago and enter a
+  pulse of 120. Nothing is flagged, because that is unremarkable in a
+  toddler. The same reading in an adult is noted.
+- **Save and keep here.** For a second set after a nebuliser. Each set is a
+  new record, and the doctor sees them in order.
+
+The form asks about allergies the first time it opens for a patient nobody
+has asked about. One click records "no known allergies" against your name,
+which is what turns the amber badge green.
 
 ## The waiting-room screen
 

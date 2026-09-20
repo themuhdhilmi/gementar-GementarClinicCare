@@ -239,8 +239,12 @@ export class QueueService {
       where: { id: encounterId },
       data: { calledAt: now, callCount: { increment: 1 } },
     });
+
+    // ENC-R-02: exactly one event. `transition` writes it, tagged as a
+    // call, because the call and the move it causes are one thing that
+    // happened. Writing a second here made every call appear twice on a
+    // timeline that a person reads.
     const moved = await this.encounters.transition(ctx, encounterId, to, { action: 'call' });
-    await this.recordCall(tx, ctx, encounterId, to, 'call', null);
 
     this.announce(before.branchId, 'call', encounterId, before.queueNo, now);
     return { encounter: moved, calledQueueNo: before.queueNo };
@@ -409,6 +413,11 @@ export class QueueService {
   async stats(branchId: string) {
     const tx = this.db.tx();
     const now = this.clock.now();
+    const branch = await tx.branch.findFirst({
+      where: { id: branchId },
+      select: { timezone: true },
+    });
+    const timezone = branch?.timezone ?? 'Asia/Kuala_Lumpur';
 
     const [row] = await tx.$queryRawUnsafe<
       Array<{
@@ -431,10 +440,14 @@ export class QueueService {
       FROM encounter e
       WHERE e.tenant_id = $1::uuid
         AND e.branch_id = $2::uuid
-        AND e.registered_at >= date_trunc('day', now())
+        -- The clinic's day, not the server's. A clinic open until 10pm in
+        -- Kuala Lumpur would otherwise see its counts reset during the
+        -- evening if this ever runs anywhere but Malaysia.
+        AND e.registered_at >= date_trunc('day', now() AT TIME ZONE $3) AT TIME ZONE $3
       `,
       requireTenantId(),
       branchId,
+      timezone,
     );
 
     return {

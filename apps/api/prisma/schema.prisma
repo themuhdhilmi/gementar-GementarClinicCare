@@ -537,6 +537,7 @@ model Patient {
   documents  PatientDocument[]
   recentlyOpened PatientRecent[]
   encounters Encounter[]
+  triages    Triage[]
 
   @@unique([tenantId, mrn], map: "patient_tenant_mrn_key")
   @@unique([id, tenantId], map: "patient_id_tenant_key")
@@ -813,6 +814,7 @@ model Encounter {
   patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
   room    BranchRoom? @relation(fields: [roomId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
   events  EncounterEvent[]
+  triages Triage[]
 
   @@unique([tenantId, encounterNo], map: "encounter_tenant_no_key")
   @@unique([id, tenantId], map: "encounter_id_tenant_key")
@@ -906,4 +908,90 @@ model DisplayToken {
   @@unique([tokenHash], map: "display_token_hash_key")
   @@index([tenantId, branchId], map: "display_token_branch_idx")
   @@map("display_token")
+}
+
+// ---------------------------------------------------------------------------
+// Triage / Nurse Station (TRI, v0-05-triage.md)
+//
+// Vitals taken once, by the nurse, and in front of the doctor before the
+// patient sits down. Everything numeric is stored as an integer in a fixed
+// unit (TRI-R-01): grams, millimetres, deci-degrees. Floating point has no
+// place in a clinical measurement that will be compared, summed or charted.
+// ---------------------------------------------------------------------------
+
+enum FlagLevel {
+  NONE
+  ABNORMAL
+  CRITICAL
+}
+
+model Triage {
+  id          String @id @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  encounterId String @map("encounter_id") @db.Uuid
+  /// Denormalised from the encounter so that a trend across visits is one
+  /// indexed read rather than a join through every encounter a patient has.
+  patientId   String @map("patient_id") @db.Uuid
+  /// The nth reading in this visit. A second set after a nebuliser is a new
+  /// record, not an edit of the first (TRI-F-06).
+  sequence    Int    @default(1)
+
+  systolic  Int? @db.SmallInt
+  diastolic Int? @db.SmallInt
+  heartRate Int? @map("heart_rate") @db.SmallInt
+  respRate  Int? @map("resp_rate") @db.SmallInt
+  /// Deci-degrees Celsius: 372 is 37.2 °C.
+  temperatureDc Int? @map("temperature_dc") @db.SmallInt
+  spo2      Int? @db.SmallInt
+  weightG   Int? @map("weight_g")
+  heightMm  Int? @map("height_mm") @db.SmallInt
+  /// Computed here, never accepted from a client (TRI-R-02). 245 is 24.5.
+  bmiX10    Int? @map("bmi_x10") @db.SmallInt
+  /// mmol/L × 10.
+  glucoseX10     Int?     @map("glucose_x10") @db.SmallInt
+  glucoseFasting Boolean? @map("glucose_fasting")
+  painScore      Int?     @map("pain_score") @db.SmallInt
+
+  complaint String? @db.VarChar(1000)
+  notes     String? @db.VarChar(1000)
+
+  /// What was out of range, and against which threshold, at the moment of
+  /// saving. Stored rather than derived so that changing a threshold next
+  /// year does not silently rewrite what a nurse saw today (TRI-R-03).
+  flags        Json      @default("[]") @db.JsonB
+  maxFlagLevel FlagLevel @default(NONE) @map("max_flag_level")
+
+  recordedBy String   @map("recorded_by") @db.Uuid
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  /// Set when the consultation is signed. After this the record is history
+  /// and changes are amendments (TRI-R-04).
+  lockedAt   DateTime? @map("locked_at") @db.Timestamptz(3)
+
+  encounter  Encounter         @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  patient    Patient           @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  amendments TriageAmendment[]
+
+  @@unique([encounterId, sequence], map: "triage_encounter_sequence_key")
+  @@unique([id, tenantId], map: "triage_id_tenant_key")
+  @@index([tenantId, patientId, recordedAt], map: "triage_patient_trend_idx")
+  @@index([tenantId, encounterId], map: "triage_encounter_idx")
+  @@map("triage")
+}
+
+/// A change made after the record was locked. The original values stay in
+/// the triage row; this says what was altered, by whom and why.
+model TriageAmendment {
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  triageId  String   @map("triage_id") @db.Uuid
+  amendedBy String   @map("amended_by") @db.Uuid
+  amendedAt DateTime @default(now()) @map("amended_at") @db.Timestamptz(3)
+  reason    String   @db.VarChar(500)
+  previous  Json     @db.JsonB
+  current   Json     @db.JsonB
+
+  triage Triage @relation(fields: [triageId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, triageId, amendedAt], map: "triage_amendment_idx")
+  @@map("triage_amendment")
 }

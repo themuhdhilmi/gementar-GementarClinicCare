@@ -120,6 +120,17 @@ export default function EncounterPage() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="flex flex-col gap-5">
+          {can('triage.write') && encounter.open && (
+            <Card title="Vitals">
+              <p className="mb-3 text-sm text-muted">
+                Blood pressure, temperature and the rest, taken at the nurse station.
+              </p>
+              <Link href={`/encounters/${id}/triage`}>
+                <Button variant="secondary">Record vitals</Button>
+              </Link>
+            </Card>
+          )}
+
           {encounter.open && can('encounter.transition') && (
             <Card title="What happens next">
               <div className="flex flex-wrap gap-2">

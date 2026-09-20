@@ -23,6 +23,7 @@ import type { TenantContext } from '../tenancy/tenant-context.js';
 import { EncounterService } from './encounter.service.js';
 import { QueueService } from './queue.service.js';
 import { QueueStreamService, type QueueEvent } from './queue-stream.service.js';
+import { QueueNumberService } from './queue-number.service.js';
 import { STATION_STATUSES, type Station } from './transitions.js';
 import {
   AssignmentDto,
@@ -209,8 +210,18 @@ export class EncountersController {
     if (encounter.status !== EncounterStatus.NO_SHOW) {
       throw new BadRequestError('This visit is not marked absent.', 'not_a_no_show');
     }
+    // The clinic's day, not the server's, and not UTC. A visit registered
+    // at 9pm in Kuala Lumpur is still today when somebody comes back at
+    // 9.30pm, and a UTC comparison would already have rolled over.
+    const tx = this.db.tx();
+    const branch = await tx.branch.findFirst({
+      where: { id: encounter.branchId },
+      select: { timezone: true },
+    });
+    const timezone = branch?.timezone ?? 'Asia/Kuala_Lumpur';
     const sameDay =
-      encounter.registeredAt.toDateString() === new Date().toDateString();
+      QueueNumberService.clinicDay(encounter.registeredAt, timezone) ===
+      QueueNumberService.clinicDay(new Date(), timezone);
     if (!sameDay) {
       throw new BadRequestError(
         'That visit was not today. Check the patient in again rather than reviving it.',
