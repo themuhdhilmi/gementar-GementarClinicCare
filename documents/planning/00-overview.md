@@ -34,6 +34,7 @@ One developer, roughly 10–15 hours a week, with a live clinic waiting. Everyth
 | `06-delivery-plan.md` | Phases, effort estimates, release gates |
 | `07-pilot-and-risks.md` | Rollout with the pilot clinic, top risks, spikes to run early |
 | `08-open-questions.md` | Decisions still needed, from you and from the clinic |
+| `09-database-roles.md` | Runbook: splitting the application's database account from the owner of its tables (TEN-F-12) |
 
 ## How to use these
 

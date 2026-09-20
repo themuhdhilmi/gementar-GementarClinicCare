@@ -365,7 +365,7 @@ encrypted dump sitting in a bucket in Virginia is the part people forget.
 
 ## 21. Definition of done
 
-- [x] **All Must requirements implemented** — see the traceability table below.
+- [ ] **All Must requirements implemented** — all but one. **TEN-F-12 is not met**: the application connects as the owner of its tables. It is neither a superuser nor able to bypass row-level security, so isolation itself holds, and because policies are FORCEd they apply to the owner too. What the owner *can* do is drop a policy. The fix is `prisma/sql/app-role.sql`, it needs an account with `CREATEROLE`, and the runbook is [`documents/planning/09-database-roles.md`](../planning/09-database-roles.md). Tracked as `IAM-OPEN-05` and `TEN-OPEN-15`, blocking go-live. Everything else in the traceability table below is done.
 - [x] **TEN-T-01 … T-10 green in CI** — T-01 to T-08 in `test/tenant-isolation.e2e-spec.ts`, T-09 and T-10 in `test/tenancy-branch.e2e-spec.ts`. Each test names its id.
 - [x] **Generated RLS test covers every table and is wired into CI** — TEN-T-06 reads `pg_class` and `pg_policy` at run time rather than from a list, so a table added in a year's time fails it. A model that is neither tenant-scoped nor platform also fails, so the classification cannot be skipped.
 - [x] **Startup role assertion in place** — `assertDatabaseGuards()`, with `DB_GUARD_MODE` of `auto`, `require` or `off`. CI sets `require`.
@@ -387,7 +387,9 @@ encrypted dump sitting in a bucket in Virginia is the part people forget.
 | TEN-F-08 `branch_id` on physical entities | Schema convention | Enforced per module as each lands |
 | TEN-F-09 three-layer resolution | `resolveSettings` | "resolves branch over tenant over default" |
 | TEN-F-10 letterhead | `letterhead.ts`, four routes | 5 end-to-end tests |
-| TEN-F-11 … F-16 isolation | Built with IAM | `test/tenant-isolation.e2e-spec.ts`, 17 tests |
+| TEN-F-11 isolation policies | Built with IAM | `test/tenant-isolation.e2e-spec.ts`, 17 tests |
+| **TEN-F-12 unprivileged database role** | **`prisma/sql/app-role.sql`, written and not yet run** | TEN-T-07 proves no `BYPASSRLS` and no superuser. It does **not** prove non-ownership, which is the unmet half. |
+| TEN-F-13 … F-16 isolation | Built with IAM | `test/tenant-isolation.e2e-spec.ts` |
 | TEN-F-17 no slow work in a scope | `npm run lint:slow`, `assertOutsideScope` | The rule is itself tested against a planted violation |
 | TEN-R-01 … R-08 | Guards, services, database | Isolation suite and the branch suite |
 | TEN-N-01 … N-05 | §13 | Counted or measured, not asserted |

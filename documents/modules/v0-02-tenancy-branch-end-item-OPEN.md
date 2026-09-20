@@ -4,8 +4,9 @@ Everything about `TEN` that is **not finished, not provable yet, or waiting on
 someone else**. The module specification says what was built; this says what is
 still owed, and how each one will be known to be done.
 
-Nothing here blocks the pilot build. Two things block **go-live**, and they are
-marked so.
+Nothing here blocks the pilot build. Three things block **go-live**, and they
+are marked so. One of them, `TEN-OPEN-15`, is a Must requirement that is not
+met, rather than something deferred.
 
 | | |
 |---|---|
@@ -21,7 +22,13 @@ from commits and from other modules.
 
 ---
 
-## A. Guards that are real but currently guard nothing
+## A. A requirement that is not met
+
+| # | Item | Done when |
+|---|---|---|
+| **TEN-OPEN-15** | **TEN-F-12: the application connects as the owner of its tables.** It is not a superuser and cannot bypass row-level security, and policies are FORCEd so they apply to the owner as well. Isolation holds. What does not hold is the second line of defence: this account could `DROP POLICY` or `ALTER TABLE ... DISABLE ROW LEVEL SECURITY`, and it is the account facing the internet. The same as `IAM-OPEN-05`, recorded here because TEN-F-12 is where the requirement is written. **Blocks go-live.** | `prisma/sql/app-role.sql` has been run by an account with `CREATEROLE`, production `DATABASE_URL` points at `cliniccare_app`, migrations run under the owner's credentials only, the end-to-end suite passes against the new role, and `/api/v1/health` reports `role: "unprivileged"`. Steps: [`../planning/09-database-roles.md`](../planning/09-database-roles.md). |
+
+## B. Guards that are real but currently guard nothing
 
 | # | Item | Done when |
 |---|---|---|
@@ -29,14 +36,14 @@ from commits and from other modules.
 | **TEN-OPEN-02** | **`branch_id` on physical entities is a convention, not a constraint (TEN-F-08).** Nothing enforces that a new physical table carries one, the way TEN-T-06 enforces row-level security. Today there are no physical tables, so there is nothing to catch. | The scoping table in `../03-multi-tenancy.md` is turned into a generated test, the way TEN-T-06 was: each new table declares itself physical or catalogue, and a physical one without `branch_id` fails CI. Do this when the third physical table lands, not before — two is not enough to see the pattern. |
 | **TEN-OPEN-03** | **The slow-work lint cannot see through a service call (TEN-F-17).** It catches a slow client written literally inside a `withTenant` block. Every request handler already runs inside one, so slow work three calls deep is invisible to it. The runtime assertion covers the mailer and nothing else. | Each slow client added — object storage, PDF rendering, MyInvois — calls `assertOutsideScope` on its way out, the way the mailer does. That is the control; the lint is the net. Check it at each of `v0-13-documents.md` and `v1-05-einvoice-myinvois.md`. |
 
-## B. Numbers to redo on the real host
+## C. Numbers to redo on the real host
 
 | # | Item | Done when |
 |---|---|---|
 | **TEN-OPEN-04** | **TEN-N-01 measured on a LAN, not on the target.** Three round trips is the counted, stable figure; what they cost is the network's business. On this machine it is ~2.2 ms against a 2 ms budget, and on the production topology it should be ~0.15 ms. | Rolled into `IAM-OPEN-01`: run `test/auth-latency.e2e-spec.ts` and `test/roundtrips.e2e-spec.ts` on the production VPS and write both numbers into §13. |
 | **TEN-OPEN-05** | **TEN-N-05 has never fired.** The 5 s cap is configured and the log message is written, but no transaction has ever hit it, so the path is unproven. | A deliberate overrun on staging has produced the log line naming the handler, once. Cheap to do; do it while setting the production environment up. |
 
-## C. Waiting on another module
+## D. Waiting on another module
 
 | # | Item | Lands with |
 |---|---|---|
@@ -46,7 +53,7 @@ from commits and from other modules.
 | **TEN-OPEN-09** | **The logo lives in the database.** Right for V0: one small file per branch, in the same backup as the rows referencing it. Wrong at scale, or the moment patient-facing attachments exist. | Object storage exists (V1). Then `letterhead_logo` becomes a key, with a one-way copy migration, and the route becomes a redirect. Do not do this earlier for tidiness. |
 | **TEN-OPEN-10** | **Settings schema migration has never been exercised.** `SETTINGS_SCHEMA_VERSION` is 1, and §14 says an upgrade transforms stored JSON with old keys mapped or dropped and a logged warning. There is no such transform, because there has been no version 2. | Version 2 happens. Write the transform with the change, not afterwards, and give it a test with a version-1 document as its input. |
 
-## D. To confirm with the pilot clinic, in the room
+## E. To confirm with the pilot clinic, in the room
 
 | # | Item | Done when |
 |---|---|---|
