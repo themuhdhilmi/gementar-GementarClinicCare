@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               classes of its own to pick the light or dark artwork. */}
           <Link href="/workspace" aria-label="ClinicCare" className="flex items-center">
             <span className="hidden sm:block">
-              <Logo className="h-9 w-auto" compact priority />
+              <Logo className="h-10 w-auto" priority />
             </span>
             <span className="sm:hidden">
               <LogoMark className="size-8" />

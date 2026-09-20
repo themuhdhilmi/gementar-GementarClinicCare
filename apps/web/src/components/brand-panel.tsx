@@ -18,12 +18,7 @@ export function BrandPanel() {
       <Pattern />
 
       <div className="relative px-12 pt-12">
-        <Logo className="h-16 w-auto" surface="dark" compact />
-        {/* The tagline is set as text rather than taken from the image: in the
-            lockup it is a few pixels tall and turns to mush. */}
-        <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.3em] text-brand-ink-muted">
-          Better care for everyone
-        </p>
+        <Logo className="h-20 w-auto" surface="dark" />
       </div>
 
       <div className="relative max-w-xl px-12">

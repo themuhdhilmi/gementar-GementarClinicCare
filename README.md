@@ -48,6 +48,9 @@ npm run db:seed --workspace @gementar/api -- \
 The seed prints a one-time link to set the administrator's password. MFA is
 mandatory for administrators, so enrolment is forced at first sign-in.
 
+Accounts for trying the system out, and what is worth trying with each role,
+are in [`TEST-ACCOUNTS.md`](TEST-ACCOUNTS.md).
+
 ## Running everything
 
 One command brings up the whole stack, applies any pending migrations and waits
@@ -100,10 +103,13 @@ dark surfaces, a compact version without the tagline for headers, the mark on
 its own, and the browser-tab icon. Re-run it whenever the logo changes.
 
 The palette in `apps/web/src/app/globals.css` is taken from the logo: red
-`#e60107`, black and white. Two things there are deliberate. Red is also the
-colour of an error, so danger uses a deeper brick on a tinted panel while the
-brand red stays on solid buttons, and the focus ring is blue so it can never be
-mistaken for either.
+`#e60107`, black and white. **Light theme only** — there is no dark variant,
+and `color-scheme: only light` stops a machine set to dark from inverting the
+form controls.
+
+Two things there are deliberate. Red is also the colour of an error, so danger
+uses a deeper brick on a tinted panel while the brand red stays on solid
+buttons, and the focus ring is blue so it can never be mistaken for either.
 
 ## Checks
 

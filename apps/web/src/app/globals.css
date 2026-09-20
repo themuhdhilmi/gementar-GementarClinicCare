@@ -8,6 +8,8 @@
  * a red button and for red text on a white page; the darker shade is used
  * where red sits on a tinted background.
  *
+ * There is no dark theme: light only, on purpose.
+ *
  * Red is also the colour of an error, which is a real problem for a red brand.
  * The answer here is separation by depth and by shape: the brand red is vivid
  * and appears on solid buttons, while danger is a deeper brick that appears on
@@ -15,6 +17,11 @@
  * because a status chip has to be readable at a glance from across a room.
  */
 :root {
+  /* Light only. The brand is red, black and white, and a clinic screen is
+     read in a bright room; telling the browser keeps form controls from
+     being auto-darkened on a machine set to a dark scheme. */
+  color-scheme: only light;
+
   --background: #f6f6f7;
   --surface: #ffffff;
   --surface-muted: #f1f1f3;
@@ -49,41 +56,6 @@
   --brand-ink: #ffffff;
   --brand-ink-muted: #b4b6bb;
   --brand-rule: #2e2e34;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b0b0c;
-    --surface: #141416;
-    --surface-muted: #1d1d20;
-    --foreground: #f4f4f5;
-    --muted: #9aa0a8;
-    --border: #2a2a2e;
-
-    --primary: #e60107;
-    --primary-hover: #f5231f;
-    --primary-ink: #ff8a80;
-    --primary-soft: #2b0e0e;
-    --on-primary: #ffffff;
-
-    --danger: #ff6b63;
-    --danger-soft: #2c1210;
-    --on-danger: #3a0f0d;
-    --warning: #f0c070;
-    --warning-soft: #33280f;
-    --success: #6bd39b;
-    --success-soft: #12301f;
-
-    --focus: #63b3ed;
-
-    --brand-from: #121214;
-    --brand-mid: #0a0a0b;
-    --brand-to: #050506;
-    --brand-glow: rgba(230, 1, 7, 0.26);
-    --brand-ink: #f4f4f5;
-    --brand-ink-muted: #9fa1a7;
-    --brand-rule: #26262b;
-  }
 }
 
 @theme inline {

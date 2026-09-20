@@ -14,7 +14,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <div className="flex min-h-screen flex-col">
         <header className="flex items-center justify-between px-6 py-6 sm:px-10">
-          <Logo className="h-10 w-auto" compact priority />
+          <Logo className="h-12 w-auto" priority />
 
           {/* A visible environment badge, so nobody types production
               credentials into staging by accident. */}
