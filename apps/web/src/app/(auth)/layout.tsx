@@ -1,4 +1,5 @@
 import { BrandPanel } from '@/components/brand-panel';
+import { Logo } from '@/components/logo';
 
 /**
  * Split sign-in layout: the form on the left, where the eye and the tab order
@@ -13,12 +14,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <div className="flex min-h-screen flex-col">
         <header className="flex items-center justify-between px-6 py-6 sm:px-10">
-          <div className="flex items-center gap-2.5">
-            <span className="grid size-8 place-items-center rounded-md bg-primary text-sm font-bold text-on-primary">
-              CC
-            </span>
-            <span className="text-[15px] font-semibold tracking-tight">ClinicCare</span>
-          </div>
+          <Logo className="h-10 w-auto" compact priority />
 
           {/* A visible environment badge, so nobody types production
               credentials into staging by accident. */}

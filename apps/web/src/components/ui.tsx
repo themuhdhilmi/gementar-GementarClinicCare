@@ -192,7 +192,7 @@ export function Chip({ children, tone }: { children: string; tone?: string }) {
     <span
       className={cx(
         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        CHIP_TONES[tone ?? children] ?? 'bg-primary-soft text-primary',
+        CHIP_TONES[tone ?? children] ?? 'bg-primary-soft text-primary-ink',
       )}
     >
       {children}

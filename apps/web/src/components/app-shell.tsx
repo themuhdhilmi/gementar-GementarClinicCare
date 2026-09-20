@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { api, ROLE_LABEL } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { Logo, LogoMark } from './logo';
 import { Button, Select } from './ui';
 
 /**
@@ -40,11 +41,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen">
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
-          <Link href="/workspace" className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-md bg-primary text-xs font-bold text-on-primary">
-              CC
+          {/* The breakpoint lives on the wrapper: Logo already uses display
+              classes of its own to pick the light or dark artwork. */}
+          <Link href="/workspace" aria-label="ClinicCare" className="flex items-center">
+            <span className="hidden sm:block">
+              <Logo className="h-9 w-auto" compact priority />
             </span>
-            <span className="font-semibold tracking-tight">ClinicCare</span>
+            <span className="sm:hidden">
+              <LogoMark className="size-8" />
+            </span>
           </Link>
 
           <nav className="flex items-center gap-1" aria-label="Main">
@@ -55,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-current={pathname.startsWith(link.href) ? 'page' : undefined}
                 className={`rounded-md px-3 py-1.5 text-sm ${
                   pathname.startsWith(link.href)
-                    ? 'bg-primary-soft font-medium text-primary'
+                    ? 'bg-primary-soft font-medium text-primary-ink'
                     : 'text-muted hover:bg-surface-muted hover:text-foreground'
                 }`}
               >

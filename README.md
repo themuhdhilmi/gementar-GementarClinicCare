@@ -86,6 +86,25 @@ with instructions rather than starting half-configured. Ports can be moved with
 The web app proxies `/api/v1/*` to the API, so the session cookie stays
 same-origin and can remain `httpOnly` and `SameSite=Lax`.
 
+## Brand
+
+The source logo is `documents/media/logos/logo.png`. The web assets are
+generated from it, never hand-edited:
+
+```bash
+npm run brand     # -> apps/web/public/brand/ and apps/web/src/app/icon.png
+```
+
+It produces the lockup with a transparent background, a white-ink version for
+dark surfaces, a compact version without the tagline for headers, the mark on
+its own, and the browser-tab icon. Re-run it whenever the logo changes.
+
+The palette in `apps/web/src/app/globals.css` is taken from the logo: red
+`#e60107`, black and white. Two things there are deliberate. Red is also the
+colour of an error, so danger uses a deeper brick on a tinted panel while the
+brand red stays on solid buttons, and the focus ring is blue so it can never be
+mistaken for either.
+
 ## Checks
 
 ```bash

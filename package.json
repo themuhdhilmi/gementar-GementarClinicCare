@@ -17,7 +17,8 @@
     "test:e2e": "npm run test:e2e --workspace @gementar/api",
     "db:migrate": "npm run db:migrate --workspace @gementar/api",
     "db:seed": "npm run db:seed --workspace @gementar/api",
-    "key": "node scripts/random-key.mjs"
+    "key": "node scripts/random-key.mjs",
+    "brand": "node scripts/build-logo-assets.mjs"
   },
   "engines": {
     "node": ">=20"

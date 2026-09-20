@@ -1,7 +1,10 @@
+import { Logo } from './logo';
+
 /**
- * The right half of the sign-in screen. Deliberately not marketing: everything
- * claimed here is something the system actually does, because the audience is
- * the clinic's own staff and they will notice if it is not true.
+ * The right half of the sign-in screen: black, with the brand red used as
+ * light rather than as paint. Deliberately not marketing — everything claimed
+ * here is something the system actually does, because the audience is the
+ * clinic's own staff and they will notice if it is not true.
  */
 export function BrandPanel() {
   return (
@@ -9,14 +12,17 @@ export function BrandPanel() {
       className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between"
       style={{
         background:
-          'linear-gradient(150deg, var(--brand-from) 0%, var(--brand-mid) 45%, var(--brand-to) 100%)',
+          'linear-gradient(155deg, var(--brand-from) 0%, var(--brand-mid) 52%, var(--brand-to) 100%)',
       }}
     >
       <Pattern />
 
       <div className="relative px-12 pt-12">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand-ink-muted">
-          Gementar ClinicCare
+        <Logo className="h-16 w-auto" surface="dark" compact />
+        {/* The tagline is set as text rather than taken from the image: in the
+            lockup it is a few pixels tall and turns to mush. */}
+        <p className="mt-3 text-[11px] font-medium uppercase tracking-[0.3em] text-brand-ink-muted">
+          Better care for everyone
         </p>
       </div>
 
@@ -26,6 +32,11 @@ export function BrandPanel() {
           <br />
           door to door.
         </h2>
+        <div
+          aria-hidden
+          className="mt-5 h-1 w-16 rounded-full"
+          style={{ background: 'var(--primary)' }}
+        />
         <p className="mt-4 max-w-md text-[15px] leading-relaxed text-brand-ink-muted">
           Register, triage, consult, prescribe, dispense, bill and take payment in one place, with
           nothing kept on paper alongside it.
@@ -74,8 +85,8 @@ function Point({
     <li className="flex gap-4">
       <span
         aria-hidden
-        className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md border border-brand-rule text-brand-ink"
-        style={{ background: 'rgba(255,255,255,0.06)' }}
+        className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md border text-brand-ink"
+        style={{ background: 'rgba(230,1,7,0.14)', borderColor: 'rgba(230,1,7,0.38)' }}
       >
         {icon}
       </span>
@@ -91,10 +102,10 @@ function Point({
 function Pattern() {
   return (
     <>
-      <svg aria-hidden className="pointer-events-none absolute inset-0 size-full opacity-[0.055]">
+      <svg aria-hidden className="pointer-events-none absolute inset-0 size-full opacity-[0.07]">
         <defs>
           <pattern id="cc-grid" width="88" height="88" patternUnits="userSpaceOnUse">
-            <path d="M44 36V52M36 44H52" fill="none" stroke="white" strokeWidth="1.25" />
+            <path d="M44 36V52M36 44H52" fill="none" stroke="#ff4b45" strokeWidth="1.4" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#cc-grid)" />
@@ -102,7 +113,7 @@ function Pattern() {
       <div
         aria-hidden
         className="pointer-events-none absolute -right-32 -top-32 size-[28rem] rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.10), transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, var(--brand-glow), transparent 68%)' }}
       />
     </>
   );
