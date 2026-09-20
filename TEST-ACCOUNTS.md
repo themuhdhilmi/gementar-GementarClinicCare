@@ -63,7 +63,9 @@ immediately in the header and on the workspace page.
 | Staff, Branches, Clinic and Audit tabs | – | – | – | – | – | ✓ |
 | Check a patient in, run the queue | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Record vitals at triage | ✓ | ✓ | – | – | – | ✓ |
-| Read vitals | ✓ | ✓ | – | – | – | ✓ break-glass |
+| Read vitals and consultations | ✓ | ✓ | – | – | – | ✓ break-glass |
+| Write and sign a consultation | ✓ | – | – | – | – | – |
+| Amend a signed record | ✓ | – | – | – | – | – |
 | Force a stuck visit, issue a display token | – | – | – | – | – | ✓ |
 | Register and search patients | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | See a full identity number | ✓ | – | ✓ | – | ✓ | ✓ |
@@ -145,16 +147,21 @@ immediately in the header and on the workspace page.
   ADMIN role while they are the only administrator. A clinic locking itself out
   at 6pm is a worse outcome than the inconvenience.
 
-## Six patients to look at
+## Seven patients to look at
 
 ```bash
 npm run patients:seed --workspace @gementar/api
 ```
 
-Adds six people to the pilot clinic, chosen so that every state worth seeing
-is present at once. Running it again is safe: it brings the six up to date
-rather than adding them twice, so it is also how you repair them after a
-change.
+Adds seven people to the pilot clinic, chosen so that every state worth
+seeing is present at once. Running it again is safe: it brings them up to
+date rather than adding them twice, so it is also how you repair them after
+a change.
+
+Run `npm run catalogue:seed --workspace @gementar/api` first, or run it
+afterwards and re-run this one. One of the allergies below is linked to a
+specific medicine in the catalogue, and the link can only be made if the
+medicine is there.
 
 | Who | Age | Worth opening because |
 |---|---|---|
@@ -163,7 +170,8 @@ change.
 | Muthu a/l Ramasamy | 51 | An allergy the counter wrote down that no clinician has confirmed. Amber, and the record says who recorded it. |
 | Chan Wei Ming | 24 | Nobody has asked about allergies. Amber, and this is the state that matters most. |
 | Nur Aisyah binti Ahmad | 1 mo | A newborn with no identity document, and a note saying whose baby she is. Her age reads in months, not years. |
-| Rahmat Santoso | 42 | An Indonesian passport rather than a MyKad, so his date of birth had to be asked for rather than read off the card. |
+| Kavitha a/p Selvam | 43 | An allergy written down as "some antibiotic, cannot remember which". Nothing can match it, so every prescription warns that it has to be checked by hand. |
+| Rahmat Santoso | 42 | An Indonesian passport rather than a MyKad, so his date of birth had to be asked for rather than read off the card. Also a severe allergy linked to a specific medicine — the one case that stops a signature. |
 
 Search for `ahmad`, `5533`, `012-345 6789`, or `ramasamy muthu` with the
 words the wrong way round.
@@ -174,6 +182,14 @@ treats those two patients differently, and a system that showed both as
 "no allergies" would be lying about one of them. **Muthu's allergy is amber
 too**, because the counter recorded what he said and no clinician has
 confirmed it; a prescriber needs to know which of those they are looking at.
+
+Three of them carry the three kinds of allergy the prescribing checks can
+tell apart. **Siti's** is against a class, so it warns on every penicillin.
+**Rahmat's** is against one specific medicine, so it is an exact match and
+at severe it stops the signature. **Kavitha's** is words nobody has linked
+to anything, so it warns that it cannot be checked at all — which is
+annoying by design, because the alternative is a screen that looks like it
+checked and did not.
 
 ## Running a clinic day
 
@@ -232,6 +248,145 @@ values colour themselves as you type:
 The form asks about allergies the first time it opens for a patient nobody
 has asked about. One click records "no known allergies" against your name,
 which is what turns the amber badge green.
+
+## Writing a consultation
+
+Sign in as the doctor, call the next patient from the Doctor board, then
+press Write the note.
+
+- **It saves itself.** The indicator at the top says when. Close the tab
+  halfway through and come back: everything is there. Pull the network out
+  and it says so in red rather than pretending.
+- **Try to sign an empty note.** Refused, naming exactly what is missing.
+  Add what brought the patient in and a diagnosis, and it signs.
+- **Signing routes the patient.** They appear on the Payment board — or on
+  the Pharmacy board if you prescribed something — and the visit's timeline
+  says why they moved.
+- **Now try to change it.** The record is read-only. The Amend button adds
+  something beside it: a correction shows the original struck through with
+  the new text under it, and an addendum is added at the foot. Both carry
+  your name and your reason, and the reason has to be a sentence.
+- **Look at the vitals afterwards.** They locked when you signed, because
+  they are part of what you signed. Editing them now needs an amendment
+  too.
+- **Make a template.** Fill in a few sections, save it as a template, then
+  open a new consultation and apply it. It fills what you left empty and
+  leaves alone anything you had already typed, and says which.
+
+Two things to notice as an administrator. A visit cannot be finished while
+a consultation is unsigned, and the message says so. And every signed
+record is fingerprinted when it is signed, then checked against that
+fingerprint nightly.
+
+## Prescribing
+
+```bash
+npm run catalogue:seed --workspace @gementar/api
+```
+
+Adds twenty-five medicines — the things a GP clinic reaches for — each with
+a generic name, and a drug class on everything an allergy is usually
+recorded against. Running it again brings them up to date.
+
+Prescribing happens inside the consultation, in the Prescription card on the
+right. Type three letters and press Enter.
+
+- **Type `amox`, press Enter.** The dose, route and frequency arrive filled
+  in from the product, and the quantity works itself out: 500 mg three times
+  a day for five days is 15 capsules, with an `auto` badge. Type over the
+  quantity and the badge goes, because it is no longer the computer's number.
+- **Read the label.** It is in Malay, and it says "Ambil 1 biji", not "Ambil
+  500 mg" — the person holding the bag is holding capsules.
+- **Prescribe amoxicillin to Siti Nurhaliza.** A red banner: she is allergic
+  to penicillin and this is in that class. Try to sign: refused. Give a
+  reason and it signs.
+- **Prescribe diclofenac to Rahmat Santoso.** Also red, and this one is worse
+  — an exact match to a severe allergy. A reason is not enough: the sign
+  dialogue makes you tick a box for that specific item, every time. Nothing
+  remembers the tick.
+- **Prescribe anything to Kavitha a/p Selvam.** An amber banner on every
+  item saying her allergy cannot be matched and has to be checked by hand.
+- **Prescribe anything at all to Chan Wei Ming.** Amber: nobody has ever
+  asked him about allergies.
+- **Prescribe the same medicine twice.** The second one says it is already
+  on the prescription. Do it on a later visit and it names the date, the
+  branch and the doctor.
+- **Sign, then change your mind.** On the signed record, Amend an item: a
+  version 2 appears, version 1 is struck through and kept. The plain edit
+  button is gone, and the API refuses one with a 409.
+- **Try 500 mg of a syrup.** Refused, and it says the quantity cannot be
+  worked out from that. It will not guess milligrams into millilitres,
+  because guessing a concentration is how a child gets ten times the dose.
+
+A patient with a prescription is routed to the pharmacy when the note is
+signed. Nothing can dispense yet, so move them along from the queue board by
+hand; that is `RX-OPEN-07`, and it lands with `v0-08-dispensing.md`.
+
+## Procedures and stock
+
+```bash
+npm run procedures:seed --workspace @gementar/api
+```
+
+Adds fifteen consumables, an opening balance of each at every branch, and
+thirteen procedures with their consumable mappings. Running it again tops
+the shelves back up rather than doubling them.
+
+**As the doctor**, in a consultation, the Procedures card is above the
+Prescription card. Type "neb", press Enter. Sign: the patient is routed to
+`PROCEDURE_WAITING` rather than to the pharmacy.
+
+**As the nurse**, open Procedures in the sidebar.
+
+- **The board lists people, not procedures.** One row per patient, with
+  what is waiting underneath. Press *Do it*.
+- **The consumables are already filled in** — a mask and a salbutamol
+  respule for a nebuliser — with how many are on the shelf beside each.
+  Change a number if more was used.
+- **Press Done.** Go to Stock and look at the mask: two movements, the
+  opening balance and the one you just made, each with the balance it left
+  behind.
+- **Try a suturing.** It needs consent *and* a doctor, so the nurse is
+  refused on both counts and the message says which.
+- **Try an influenza vaccination.** It needs a site; leave it empty and
+  Done stays disabled. Fill it in, save, then open the patient's record —
+  there is a Vaccinations card with the batch number and the expiry.
+- **Order the same thing when the shelf is empty.** Correct a consumable
+  down to zero in Stock first. The perform form warns before you commit,
+  and *Record it anyway* performs the procedure, deducts what there was
+  and flags the difference.
+
+**As the administrator**, void one within a day: the stock goes back as a
+matching reversal, and the patient's vaccination record stays, struck
+through, with the reason.
+
+## Stock
+
+Stock is in the sidebar for anyone who can read it.
+
+- **Record a delivery.** Search a product, give a quantity, a batch number
+  and an expiry. `2027-03` is accepted and means the 31st, which is what a
+  blister pack means when it is stamped 03/2027.
+- **Try receiving something already expired.** Refused.
+- **Try the same batch number with a different expiry.** Refused, saying
+  one of the two is wrong.
+- **Correct a number.** It writes a movement with a reason rather than
+  editing the figure, so History still explains how the shelf got here.
+- **Try to take out more than is there.** Refused, with both numbers.
+- **Expiring within 90 days** is a filter, and those dates are amber. Past
+  ones are red.
+- **Retire a product that still has stock.** The catalogue refuses, saying
+  how many are on the shelf.
+
+Every night at 04:15 a job recomputes every batch's quantity from its
+movements and compares. It never corrects anything — a job that silently
+fixes a mismatch destroys the evidence of how it happened. An administrator
+can run it on demand:
+
+```bash
+curl -sb cookies.txt -X POST \
+  'http://localhost:3001/api/v1/admin/stock-reconciliation'
+```
 
 ## The waiting-room screen
 

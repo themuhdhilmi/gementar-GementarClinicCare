@@ -204,6 +204,14 @@ export class TriageService {
     const flags = flagsFor({ ...stored, bmi: bmiX10 }, bands);
     const level = maxLevel(flags);
 
+    // Locked while the sequence is worked out, for the same reason as the
+    // queue number: two people recording against one visit at the same
+    // moment must get two records, not a unique violation.
+    await tx.$executeRawUnsafe(
+      'SELECT id FROM encounter WHERE id = $1::uuid FOR UPDATE',
+      encounterId,
+    );
+
     const previous = await tx.triage.findFirst({
       where: { encounterId },
       orderBy: { sequence: 'desc' },

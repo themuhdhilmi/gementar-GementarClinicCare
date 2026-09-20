@@ -25,7 +25,7 @@ happen in the same conversation as the queue settings.
 
 | # | Item | Done when |
 |---|---|---|
-| **TRI-OPEN-03** | **Nothing locks a triage record.** `lockForEncounter` exists and is tested, and the only thing that should call it is the consultation being signed, which does not exist. Until then every record stays editable. | `v0-06-consultation.md` calls it on signing, and consumes `consultation.signed` as §9 describes. |
+| ~~**TRI-OPEN-03**~~ | ~~**Nothing locks a triage record.**~~ **Closed 2026-09-21.** Signing a consultation locks every triage record for that visit, which is what makes the vitals part of the signed record. Tested from both sides. | Done. |
 | **TRI-OPEN-04** | **The trend is an endpoint with no chart (TRI-F-09).** A Could. The data comes back; nothing draws it. | Either a sparkline beside each field, or closed as not worth it. Worth deciding rather than leaving half-built — it is most useful in the consultation, so decide it there. |
 | **TRI-OPEN-05** | **Weight is not yet used for dosing.** §14 says prescribing shows the weight beside the dose for a patient under twelve, and reads it from the latest triage. | `v0-07-prescription.md` reads the latest triage weight and displays it. Check it there. |
 

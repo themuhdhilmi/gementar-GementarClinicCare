@@ -726,3 +726,532 @@ export const FLAG_TONE: Record<'NONE' | 'ABNORMAL' | 'CRITICAL', string> = {
   ABNORMAL: 'border-warning text-warning',
   CRITICAL: 'border-danger text-danger',
 };
+
+// ---------------------------------------------- consultation (CON, v0-06)
+
+export type ConsultationStatus = 'DRAFT' | 'SIGNED' | 'CANCELLED';
+export type DiagnosisRank = 'PRIMARY' | 'SECONDARY';
+export type DiagnosisCertainty = 'PROVISIONAL' | 'CONFIRMED';
+export type AmendmentType = 'ADDENDUM' | 'CORRECTION';
+
+/** The sections a doctor writes, and the only fields a correction can name. */
+export const CLINICAL_SECTIONS = [
+  { key: 'chiefComplaint', label: 'What brought them in', soap: 'S', rows: 2 },
+  { key: 'hpi', label: 'History of the present illness', soap: 'S', rows: 5 },
+  { key: 'history', label: 'Relevant history', soap: 'S', rows: 4 },
+  { key: 'examination', label: 'Examination', soap: 'O', rows: 5 },
+  { key: 'planText', label: 'Plan', soap: 'P', rows: 4 },
+] as const;
+
+export type ClinicalSection = (typeof CLINICAL_SECTIONS)[number]['key'];
+
+export type Consultation = {
+  id: string;
+  encounterId: string;
+  patientId: string;
+  branchId: string;
+  doctorId: string;
+  sequence: number;
+  status: ConsultationStatus;
+  chiefComplaint: string | null;
+  hpi: string | null;
+  history: string | null;
+  examination: string | null;
+  planText: string | null;
+  templateId: string | null;
+  copiedFromId: string | null;
+  followUpDue: string | null;
+  followUpNote: string | null;
+  startedAt: string;
+  lastAutosaveAt: string | null;
+  signedAt: string | null;
+  signedBy: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  contentHash: string | null;
+  editable: boolean;
+  routedTo?: string;
+};
+
+export type Diagnosis = {
+  id: string;
+  rank: DiagnosisRank;
+  description: string;
+  icd10Code: string | null;
+  icd10Label: string | null;
+  certainty: DiagnosisCertainty;
+  isChronic: boolean;
+};
+
+export type ConsultationAmendment = {
+  id: string;
+  type: AmendmentType;
+  field: string | null;
+  previous: Record<string, string | null> | null;
+  current: { text: string };
+  reason: string;
+  amendedBy: string;
+  amendedAt: string;
+};
+
+export type ConsultationView = {
+  consultation: Consultation;
+  diagnoses: Diagnosis[];
+  amendments: ConsultationAmendment[];
+};
+
+export type ConsultationSummary = {
+  id: string;
+  signedAt: string | null;
+  doctorId: string;
+  chiefComplaint: string | null;
+  planSummary: string | null;
+  primaryDiagnosis: string | null;
+  icd10Code: string | null;
+};
+
+export type ClinicalTemplate = {
+  id: string;
+  scope: 'TENANT' | 'USER';
+  ownerId: string | null;
+  name: string;
+  keywords: string[];
+  content: Partial<Record<ClinicalSection, string>> & {
+    diagnoses?: Array<{ description: string; icd10Code?: string | null }>;
+  };
+  active: boolean;
+};
+
+export type DraftSummary = {
+  id: string;
+  encounterId: string;
+  patientId: string;
+  startedAt: string;
+  lastAutosaveAt: string | null;
+  chiefComplaint: string | null;
+  patient: { name: string; mrn: string };
+  hoursOpen: number;
+  stale: boolean;
+};
+
+export type QuickPhrase = { id: string; trigger: string; expansion: string };
+
+/**
+ * Expands `.nad` into what it stands for, as the doctor types.
+ *
+ * Only on a word boundary and only for a trigger that is complete, so that
+ * typing a sentence containing a full stop does not detonate at random.
+ */
+export function expandPhrases(text: string, phrases: QuickPhrase[]): string {
+  if (phrases.length === 0) return text;
+  let out = text;
+  for (const phrase of phrases) {
+    const escaped = phrase.trigger.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replaceAll(new RegExp(`${escaped}(?=\\s|$)`, 'g'), phrase.expansion);
+  }
+  return out;
+}
+
+// ---------------------------------------------- prescription (RX, v0-07)
+
+export type PrescriptionStatus = 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+
+export type PrescriptionItemStatus =
+  | 'DRAFT'
+  | 'ACTIVE'
+  | 'PARTIAL'
+  | 'DISPENSED'
+  | 'DECLINED'
+  | 'CANCELLED'
+  | 'SUPERSEDED';
+
+export type AllergyMatchLevel = 'EXACT' | 'CLASS' | 'UNLINKED';
+
+export type RxWarning =
+  | {
+      type: 'ALLERGY';
+      level: AllergyMatchLevel;
+      severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'LIFE_THREATENING' | null;
+      status: 'UNVERIFIED' | 'VERIFIED' | 'REFUTED';
+      allergyId: string;
+      substance: string;
+      reaction: string | null;
+      message: string;
+    }
+  | {
+      type: 'DUPLICATE';
+      itemId: string;
+      genericName: string;
+      prescribedAt: string;
+      doctorName: string | null;
+      branchName: string | null;
+      sameVisit: boolean;
+      message: string;
+    }
+  | { type: 'NO_ALLERGY_RECORD'; message: string }
+  | { type: 'MAX_DOSE'; dailyDose: number; maxDailyDose: number; unit: string; message: string }
+  | { type: 'OUT_OF_STOCK'; onHand: number; message: string };
+
+export type PrescriptionItem = {
+  id: string;
+  version: number;
+  supersedesId: string | null;
+  isCurrent: boolean;
+  productId: string | null;
+  externalName: string | null;
+  genericName: string;
+  drugClass: string | null;
+  strength: string | null;
+  displayName: string;
+  doseValue: number;
+  doseUnit: string;
+  route: string;
+  frequencyCode: string;
+  frequencyPerDay: number | null;
+  isPrn: boolean;
+  prnIndication: string | null;
+  durationDays: number | null;
+  untilFinished: boolean;
+  quantity: number;
+  quantityUnit: string;
+  quantityAuto: boolean;
+  instructions: string | null;
+  labelText: string;
+  isExternal: boolean;
+  isControlled: boolean;
+  status: PrescriptionItemStatus;
+  warnings: RxWarning[];
+  overrideReason: string | null;
+  overriddenAt: string | null;
+  cancelledReason: string | null;
+  createdAt: string;
+};
+
+export type Prescription = {
+  id: string;
+  status: PrescriptionStatus;
+  language: string;
+  notesToDispenser: string | null;
+  signedAt: string | null;
+  completedAt: string | null;
+  consultationId: string;
+  encounterId: string;
+  patientId: string;
+};
+
+export type PrescriptionView = {
+  prescription: Prescription | null;
+  items: PrescriptionItem[];
+  patient: {
+    id: string;
+    nkdaRecorded: boolean | null;
+    allergies: Array<{ id: string; substance: string; severity: string | null }>;
+    allergiesUnknown: boolean;
+  };
+};
+
+export type PrescriptionItemInput = {
+  productId?: string;
+  externalName?: string;
+  doseValue: number;
+  doseUnit: string;
+  route: string;
+  frequencyCode: string;
+  frequencyPerDay?: number;
+  isPrn?: boolean;
+  prnIndication?: string;
+  durationDays?: number;
+  untilFinished?: boolean;
+  quantity?: number;
+  instructions?: string;
+};
+
+export type RxOptions = {
+  doseUnits: string[];
+  routes: string[];
+  frequencies: Array<{ code: string; perDay: number | null; ms: string; en: string }>;
+};
+
+export type RxFavourite = {
+  id: string;
+  productId: string;
+  uses: number;
+  lastUsedAt: string;
+  defaults: Partial<PrescriptionItemInput> | null;
+  product: {
+    id: string;
+    name: string;
+    genericName: string | null;
+    strengthText: string | null;
+    dispenseUnit: string;
+    defaultDose: number | null;
+    defaultDoseUnit: string | null;
+    defaultRoute: string | null;
+    defaultFrequency: string | null;
+    isControlled: boolean;
+  };
+};
+
+/**
+ * How loud a warning is on screen.
+ *
+ * Red is reserved for the two cases that could hurt somebody. Everything
+ * else is amber, because a screen where everything is red is a screen
+ * where nothing is.
+ */
+export function warningTone(warning: RxWarning): 'danger' | 'warning' | 'info' {
+  if (warning.type === 'ALLERGY') {
+    if (warning.level === 'UNLINKED') return 'warning';
+    return warning.level === 'EXACT' ? 'danger' : 'warning';
+  }
+  if (warning.type === 'NO_ALLERGY_RECORD') return 'warning';
+  return 'info';
+}
+
+/** RX-R-04: the one that needs a second, explicit yes at signing. */
+export function needsSignConfirmation(item: PrescriptionItem): boolean {
+  return item.warnings.some(
+    (w) =>
+      w.type === 'ALLERGY' &&
+      w.level === 'EXACT' &&
+      (w.severity === 'SEVERE' || w.severity === 'LIFE_THREATENING'),
+  );
+}
+
+/** Whether the item cannot be signed until a reason has been given. */
+export function needsOverride(item: PrescriptionItem): boolean {
+  return item.warnings.some((w) => w.type === 'ALLERGY' && w.level !== 'UNLINKED');
+}
+
+// ------------------------------------- product catalogue (INV, v0-09 §1)
+
+export type ProductType = 'MEDICINE' | 'CONSUMABLE' | 'SUPPLY' | 'SERVICE_ITEM';
+
+export type Product = {
+  id: string;
+  sku: string;
+  name: string;
+  type: ProductType;
+  brand: string | null;
+  genericName: string | null;
+  drugClass: string | null;
+  form: string | null;
+  strengthText: string | null;
+  strengthValue: number | null;
+  strengthUnit: string | null;
+  dispenseUnit: string;
+  packSize: number;
+  isControlled: boolean;
+  maxDailyDose: number | null;
+  maxDailyDoseUnit: string | null;
+  defaultDose: number | null;
+  defaultDoseUnit: string | null;
+  defaultRoute: string | null;
+  defaultFrequency: string | null;
+  sellingPrice: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  /** Name, strength and form together — what a prescription line calls it. */
+  label: string;
+};
+
+// ------------------------------------------------ stock (INV, v0-09 §2)
+
+export type BatchStatus = 'ACTIVE' | 'DEPLETED' | 'EXPIRED' | 'BLOCKED';
+
+export type ProductBatch = {
+  id: string;
+  productId: string;
+  branchId: string;
+  batchNo: string;
+  expiryDate: string | null;
+  costPrice: string;
+  sellingPrice: string | null;
+  quantityOnHand: number;
+  quantityQuarantined: number;
+  status: BatchStatus;
+  receivedAt: string;
+  barcode: string | null;
+};
+
+export type StockRow = {
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    genericName: string | null;
+    strengthText: string | null;
+    dispenseUnit: string;
+    isColdChain: boolean;
+    isControlled: boolean;
+  };
+  onHand: number;
+  minStock: number | null;
+  reorderLevel: number | null;
+  belowMin: boolean;
+  belowReorder: boolean;
+  nearestExpiry: string | null;
+  batches: ProductBatch[];
+};
+
+export type StockMovementRow = {
+  id: string;
+  type: string;
+  label: string;
+  quantity: number;
+  balanceAfter: number;
+  unitCost: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  reasonCode: string | null;
+  reasonText: string | null;
+  performedByName: string | null;
+  occurredAt: string;
+  batch: { id: string; batchNo: string; expiryDate: string | null } | null;
+  product: { id: string; name: string; dispenseUnit: string } | null;
+};
+
+export type StockOptions = {
+  reasonCodes: string[];
+  movementTypes: Array<{ type: string; label: string }>;
+};
+
+/**
+ * How near a batch is to being a problem.
+ *
+ * Deliberately blunt: expired or blocked is red, within ninety days is
+ * amber, everything else is not worth colouring. A shelf view where half
+ * the rows are tinted tells nobody anything.
+ */
+export function expiryTone(
+  expiry: string | null,
+  status?: BatchStatus,
+): 'danger' | 'warning' | null {
+  if (status === 'BLOCKED' || status === 'EXPIRED') return 'danger';
+  if (!expiry) return null;
+  const days = (new Date(expiry).getTime() - Date.now()) / 86_400_000;
+  if (days < 0) return 'danger';
+  if (days <= 90) return 'warning';
+  return null;
+}
+
+// ------------------------------------------- procedures (PRC, v0-10)
+
+export type ProcedureCategory =
+  | 'INJECTION'
+  | 'NEBULISER'
+  | 'DRESSING'
+  | 'MINOR_SURGERY'
+  | 'VACCINATION'
+  | 'SCREENING'
+  | 'OTHER';
+
+export const PROCEDURE_CATEGORY_LABEL: Record<ProcedureCategory, string> = {
+  INJECTION: 'Injection',
+  NEBULISER: 'Nebuliser',
+  DRESSING: 'Dressing',
+  MINOR_SURGERY: 'Minor surgery',
+  VACCINATION: 'Vaccination',
+  SCREENING: 'Screening',
+  OTHER: 'Other',
+};
+
+export type ProcedureStatus = 'ORDERED' | 'PERFORMED' | 'CANCELLED' | 'VOIDED';
+export type Laterality = 'LEFT' | 'RIGHT' | 'BILATERAL' | 'NA';
+
+export type ProcedureCatalogItem = {
+  id: string;
+  code: string;
+  name: string;
+  category: ProcedureCategory;
+  price: string;
+  priceSen: number;
+  requiresConsent: boolean;
+  requiresDoctor: boolean;
+  vaccineProductId: string | null;
+  defaultDurationMin: number | null;
+  protocol: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+  consumables: Array<{
+    id: string;
+    productId: string;
+    quantity: number;
+    optional: boolean;
+    product: { id: string; name: string; dispenseUnit: string; isBatched: boolean } | null;
+  }>;
+};
+
+export type EncounterProcedure = {
+  id: string;
+  encounterId: string;
+  patientId: string;
+  procedureId: string;
+  name: string;
+  price: string;
+  category: ProcedureCategory;
+  requiresConsent: boolean;
+  requiresDoctor: boolean;
+  vaccineProductId: string | null;
+  protocol: string | null;
+  status: ProcedureStatus;
+  orderedAt: string;
+  nurseInitiated: boolean;
+  performedBy: string | null;
+  performedAt: string | null;
+  site: string | null;
+  laterality: Laterality | null;
+  consentGiven: boolean | null;
+  consentBy: string | null;
+  notes: string | null;
+  complications: string | null;
+  cancelReason: string | null;
+  voidReason: string | null;
+  voidedAt: string | null;
+  planned: Array<{
+    productId: string;
+    quantity: number;
+    optional: boolean;
+    product: { id: string; name: string; dispenseUnit: string; isBatched: boolean; isColdChain: boolean } | null;
+    onHand: number;
+  }>;
+  used: Array<{
+    id: string;
+    productId: string;
+    batchId: string;
+    quantity: number;
+    reversed: boolean;
+    product: { id: string; name: string; dispenseUnit: string } | null;
+  }>;
+};
+
+export type ProcedureQueueRow = {
+  encounterId: string;
+  queueNo: string | null;
+  patient: { id: string; name: string; mrn: string; dateOfBirth: string } | null;
+  items: Array<{
+    id: string;
+    name: string;
+    category: ProcedureCategory;
+    requiresConsent: boolean;
+    requiresDoctor: boolean;
+    orderedAt: string;
+    nurseInitiated: boolean;
+  }>;
+};
+
+export type VaccinationRow = {
+  id: string;
+  vaccineName: string;
+  batchNo: string;
+  expiry: string | null;
+  doseNumber: number | null;
+  site: string | null;
+  givenAt: string;
+  givenByName: string | null;
+  withdrawn: boolean;
+  withdrawnReason: string | null;
+};
+
+/** Which procedures have to say where on the body (PRC §12). */
+export function siteRequired(category: ProcedureCategory): boolean {
+  return category === 'INJECTION' || category === 'VACCINATION' || category === 'DRESSING';
+}

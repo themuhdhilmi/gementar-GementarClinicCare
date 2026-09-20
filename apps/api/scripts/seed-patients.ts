@@ -50,6 +50,22 @@ type Seed = {
     severity?: AllergySeverity;
     status: AllergyStatus;
     reaction?: string;
+    /**
+     * Lower case, matching how the catalogue stores it. An allergy with a
+     * class matches every drug in that class when prescribing (RX-F-12);
+     * one without can only be checked by hand, which is a real and common
+     * state and is why one of these is deliberately left blank.
+     */
+    drugClass?: string;
+    /**
+     * The catalogue code this allergy is against, when it is against one
+     * specific drug rather than a whole class. Linked allergies are what
+     * make an EXACT match possible, and an exact match to a severe
+     * allergy is the one thing that stops a signature (RX-R-04).
+     *
+     * Skipped, with a note, when the catalogue has not been seeded.
+     */
+    productSku?: string;
   }>;
 };
 
@@ -77,6 +93,7 @@ const PEOPLE: Seed[] = [
         severity: AllergySeverity.LIFE_THREATENING,
         status: AllergyStatus.VERIFIED,
         reaction: 'Anaphylaxis, admitted 2019',
+        drugClass: 'penicillins',
       },
     ],
   },
@@ -92,10 +109,30 @@ const PEOPLE: Seed[] = [
         substance: 'Sulfa drugs',
         type: AllergyType.DRUG,
         severity: AllergySeverity.MODERATE,
+        drugClass: 'sulfonamides',
         // Recorded by the counter from what the patient said; a clinician
         // has not confirmed it, and the screen says so.
         status: AllergyStatus.UNVERIFIED,
         reaction: 'Rash',
+      },
+    ],
+  },
+  {
+    name: 'Kavitha a/p Selvam',
+    idType: IdType.MYKAD,
+    idNumber: '830425-07-5288',
+    dateOfBirth: '1983-04-25',
+    gender: Gender.FEMALE,
+    phone: '016-334 5566',
+    allergies: [
+      {
+        // No class and no product: nothing can match this, and RX says so
+        // on every item rather than staying quiet (RX-N-02).
+        substance: 'some antibiotic, cannot remember which',
+        type: AllergyType.DRUG,
+        severity: AllergySeverity.MODERATE,
+        status: AllergyStatus.UNVERIFIED,
+        reaction: 'Swelling',
       },
     ],
   },
@@ -126,6 +163,20 @@ const PEOPLE: Seed[] = [
     gender: Gender.MALE,
     phone: '018-909 1122',
     notes: 'Speaks Bahasa Indonesia. Passport expires next year.',
+    allergies: [
+      {
+        // Linked to the product, so prescribing Diclofenac to him is an
+        // EXACT match at severe, and cannot be signed without a reason
+        // and a second confirmation.
+        substance: 'Diclofenac',
+        type: AllergyType.DRUG,
+        severity: AllergySeverity.SEVERE,
+        status: AllergyStatus.VERIFIED,
+        reaction: 'Angioedema',
+        drugClass: 'nsaids',
+        productSku: 'MED-0023',
+      },
+    ],
   },
 ];
 
@@ -169,6 +220,26 @@ async function main(): Promise<void> {
         'This clinic has no staff yet, and an allergy has to be recorded by somebody. ' +
           'Run npm run db:seed, or create a user first.',
       );
+    }
+
+    // The catalogue may not have been seeded; a link that cannot be made
+    // is left unmade rather than guessed at.
+    const skus = [
+      ...new Set(
+        PEOPLE.flatMap((person) => person.allergies ?? [])
+          .map((allergy) => allergy.productSku)
+          .filter((sku): sku is string => sku !== undefined),
+      ),
+    ];
+    const products = skus.length
+      ? await tx.product.findMany({ where: { sku: { in: skus } }, select: { id: true, sku: true } })
+      : [];
+    const productBySku = new Map(products.map((product) => [product.sku, product.id]));
+    for (const sku of skus) {
+      if (!productBySku.has(sku)) {
+        logger.warn(`no product ${sku} in the catalogue; that allergy stays unlinked. ` +
+          'Run npm run catalogue:seed first to link it.');
+      }
     }
 
     // Continue the clinic's own numbering rather than colliding with it.
@@ -242,8 +313,20 @@ async function main(): Promise<void> {
         };
         if (already) {
           // An allergy is never deleted (PAT-R-03), so a wrong attribution
-          // is corrected in place rather than by replacing the row.
-          await tx.patientAllergy.update({ where: { id: already.id }, data: attribution });
+          // is corrected in place rather than by replacing the row. The
+          // drug class is filled in the same way: linking a free-text
+          // allergy to a class is what a clinician does to stop it
+          // warning "check by hand" on every prescription (RX §14).
+          await tx.patientAllergy.update({
+            where: { id: already.id },
+            data: {
+              ...attribution,
+              drugClass: allergy.drugClass ?? null,
+              productId: allergy.productSku
+                ? (productBySku.get(allergy.productSku) ?? null)
+                : null,
+            },
+          });
           continue;
         }
         await tx.patientAllergy.create({
@@ -256,6 +339,8 @@ async function main(): Promise<void> {
             severity: allergy.severity ?? null,
             reaction: allergy.reaction ?? null,
             status: allergy.status,
+            drugClass: allergy.drugClass ?? null,
+            productId: allergy.productSku ? (productBySku.get(allergy.productSku) ?? null) : null,
             recordedAt: new Date(),
             ...attribution,
           },

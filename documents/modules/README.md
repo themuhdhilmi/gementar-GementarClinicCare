@@ -187,12 +187,12 @@ The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — 
 | [Patient Registry](v0-03-patient.md) · [open items](v0-03-patient-end-item-OPEN.md) | PAT | 1 | ~35 h | Built; open items before go-live |
 | [Encounter & Queue](v0-04-encounter-queue.md) · [open items](v0-04-encounter-queue-end-item-OPEN.md) | ENC | 1 | ~40 h | Built; open items before go-live |
 | [Triage](v0-05-triage.md) · [open items](v0-05-triage-end-item-OPEN.md) | TRI | 2 | ~10 h | Built; thresholds need the clinic's doctor |
-| [Consultation / EMR](v0-06-consultation.md) | CON | 2 | ~45 h | Not started |
-| [Prescription](v0-07-prescription.md) | RX | 2 | ~20 h | Not started |
+| [Consultation / EMR](v0-06-consultation.md) · [open items](v0-06-consultation-end-item-OPEN.md) | CON | 2 | ~45 h | Built; templates need the clinic's doctor |
+| [Prescription](v0-07-prescription.md) · [open items](v0-07-prescription-end-item-OPEN.md) | RX | 2 | ~20 h | Built; the catalogue behind it needs the clinic's doctor |
 | [Documents](v0-13-documents.md) | DOC | 2 | ~10 h | Not started |
-| [Inventory](v0-09-inventory.md) | INV | 3 | ~45 h | Not started |
+| [Inventory](v0-09-inventory.md) · [open items](v0-09-inventory-end-item-OPEN.md) | INV | 3 | ~45 h | Catalogue and ledger built early for RX and PRC; counts and alerts not started |
 | [Dispensing](v0-08-dispensing.md) | DSP | 3 | ~35 h | Not started |
-| [Procedures](v0-10-procedures.md) | PRC | 3 | ~15 h | Not started |
+| [Procedures](v0-10-procedures.md) · [open items](v0-10-procedures-end-item-OPEN.md) | PRC | 3 | ~15 h | Built; the catalogue and mappings need the clinic's nurse |
 | [Billing](v0-11-billing.md) | BIL | 4 | ~40 h | Not started |
 | [Payment](v0-12-payment.md) | PAY | 4 | ~25 h | Not started |
 | [Reporting & Dashboard](v0-15-reporting-dashboard.md) | RPT | 4 | ~20 h | Not started |

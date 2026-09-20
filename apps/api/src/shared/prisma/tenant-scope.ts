@@ -42,6 +42,28 @@ export const TENANT_SCOPED_MODELS = new Set([
   'DisplayToken',
   'Triage',
   'TriageAmendment',
+  'Consultation',
+  'Diagnosis',
+  'ConsultationAmendment',
+  'ConsultationAttachment',
+  'ClinicalTemplate',
+  'QuickPhrase',
+  'Product',
+  'ProductCategory',
+  'ProductPriceHistory',
+  'ProductBranchSetting',
+  'Prescription',
+  'PrescriptionItem',
+  'RxFavourite',
+  'ProductBatch',
+  'StockMovement',
+  'ReconciliationRun',
+  'ProcedureCatalog',
+  'ProcedureConsumable',
+  'ProcedurePriceHistory',
+  'EncounterProcedure',
+  'EncounterProcedureConsumable',
+  'VaccinationRecord',
 ]);
 
 /**
@@ -70,7 +92,13 @@ const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn'
  * (ENC-F-04), which is the evidence for who waited how long and in what
  * order they were seen.
  */
-const APPEND_ONLY_MODELS = new Set(['AuditLog', 'EncounterEvent', 'TriageAmendment']);
+const APPEND_ONLY_MODELS = new Set([
+  'AuditLog',
+  'EncounterEvent',
+  'TriageAmendment',
+  'ConsultationAmendment',
+  'ProductPriceHistory',
+]);
 
 /**
  * PAT-R-03: an allergy is never deleted. Removing one is a status of REFUTED,

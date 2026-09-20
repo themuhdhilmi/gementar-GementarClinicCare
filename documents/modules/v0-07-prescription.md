@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-07-prescription-end-item-OPEN.md](v0-07-prescription-end-item-OPEN.md) |
 | **Delivery phase** | Phase 2 |
 | **Spec sections** | 7 |
 | **Depends on** | CON, PAT, INV (catalogue), AUD |
@@ -275,19 +275,140 @@ All §9; overrides carry full warning payload; `clinical.viewed` on full read (d
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| RX-Q-01 | Source of `generic_name` and `drug_class` for the catalogue — clinic's own list mapped by hand, or a Malaysian drug reference? | You + clinic doctor |
-| RX-Q-02 | Label languages needed beyond MS/EN (ZH, TA)? | Pilot clinic |
-| RX-Q-03 | Controlled-drug prescription fields required by their regulator/inspector? | Pilot clinic |
-| RX-Q-04 | Do they prescribe external items (to be filled at a pharmacy) often? | Pilot clinic |
-| RX-Q-05 | Common instruction phrases they use (in MS and EN). | Pilot clinic |
+| ID | Question | Who | Answer |
+|---|---|---|---|
+| RX-Q-01 | Source of `generic_name` and `drug_class` for the catalogue — clinic's own list mapped by hand, or a Malaysian drug reference? | You + clinic doctor | **Their own list, mapped by hand, and the mapping is the work.** A reference database would be better and is a licence nobody has bought. What ships is a 25-medicine starter list (`scripts/seed-catalogue.ts`) with a generic name on every one and a class on everything an allergy is commonly recorded against: penicillins, cephalosporins, macrolides, sulfonamides, NSAIDs, opioids, antihistamines, corticosteroids. The clinic's real list is loaded on top of it. A medicine with no generic name cannot be prescribed at all, which is deliberate — see §22.2. |
+| RX-Q-02 | Label languages needed beyond MS/EN (ZH, TA)? | Pilot clinic | **Not answered; MS and EN are built.** Each language has its own sentence shape in `label.ts` rather than a translation table, so adding one is a day's work and a review by somebody who speaks it. Anything that is not English gets Malay until asked. `RX-OPEN-04`. |
+| RX-Q-03 | Controlled-drug prescription fields required by their regulator/inspector? | Pilot clinic | **Not answered.** `is_controlled` is snapshotted onto the item and shown on screen, so the data is there whatever the fields turn out to be. The printout that would carry them does not exist yet (DOC). `RX-OPEN-02`. |
+| RX-Q-04 | Do they prescribe external items (to be filled at a pharmacy) often? | Pilot clinic | **Not answered, and built anyway**, because it was cheap: an item either names a product or names itself, enforced by a CHECK constraint. If the answer is "never", nothing is lost; if it is "for insulin and inhalers", it already works. |
+| RX-Q-05 | Common instruction phrases they use (in MS and EN). | Pilot clinic | **Five guesses are in the panel** as chips — selepas makan, sebelum makan, habiskan ubat ini, boleh menyebabkan mengantuk, banyakkan minum air. They are a placeholder for a list the clinic writes. `RX-OPEN-05`. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] RX-T-01 … T-10 green
-- [ ] Catalogue has `generic_name` on 100% and `drug_class` on all antibiotics/NSAIDs/opioids at minimum
-- [ ] Label text reviewed by the clinic in MS and EN
-- [ ] Override audit visible on the audit dashboard
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — except `RX-F-08`, the printout, which needs DOC. `RX-F-04` stock awareness was closed on the same day, when the stock ledger was built for procedures. See the traceability table.
+- [x] **RX-T-01 … T-10 green** — all ten, inside 39 tests in `test/prescription.e2e-spec.ts`, plus 38 unit tests on the quantity arithmetic, the label text and the warning matcher.
+- [ ] **Catalogue has `generic_name` on 100% and `drug_class` on all antibiotics/NSAIDs/opioids** — true of the 25 seeded medicines, and the service refuses to prescribe a medicine without a generic name, so it cannot quietly stop being true. It becomes a real tick when the clinic's own list is loaded. `RX-OPEN-01`.
+- [ ] **Label text reviewed by the clinic in MS and EN** — the generator is deterministic and unit-tested in both. Nobody who speaks Malay as a first language has read the output. `RX-OPEN-04`.
+- [x] **Override audit visible on the audit dashboard** — `prescription.warning_overridden` carries the full warning payload and the reason, and shows on `/audit/events`.
+- [x] **Open questions answered** — §20. Three of the five are answers of the form "asked, not yet answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| RX-F-01 items from the catalogue, external allowed | `PrescriptionService.resolve`, `prescription_item_names_something` | "takes an external item", "refuses an item that names nothing" |
+| RX-F-02 the fields | `ItemInput`, `frequency.ts` | The closed lists are served to the client from `/prescriptions/options` |
+| RX-F-03 quantity auto-calc | `quantity.ts` | 14 unit tests, including that it divides by the strength rather than multiplying |
+| RX-F-04 stock awareness | `ProductStockLookup`, filled in by `StockModule` | "a product search says how many are on the shelf" (INV suite) |
+| RX-F-05 editable in draft, active on sign | `activateForConsultation` | "makes the items real all at once" |
+| RX-F-06 post-sign changes version | `amendItem`, `prescription_item_is_immutable` trigger | RX-T-06 |
+| RX-F-07 label per language | `label.ts` | RX-T-10, and 11 more unit tests |
+| RX-F-08 printout | **Not built.** Needs DOC | — |
+| RX-F-09 repeat last | `repeatLast` | "repeats the last prescription, re-checking each item" |
+| RX-F-10 favourites | `noteFavourite`, `/me/rx-favourites` | "counts what the doctor prescribes" |
+| RX-F-11 paediatric mg/kg helper | **Not built.** `RX-OPEN-06` | — |
+| RX-F-12 allergy check | `warnings.ts` `matchAllergies` | RX-T-01, T-02, T-03 and 5 more |
+| RX-F-13 duplicate check | `PrescriptionService.duplicates` | RX-T-04, and the same-prescription case |
+| RX-F-14 allergies not recorded | `NO_ALLERGY_RECORD` | "says so when nobody has asked" |
+| RX-F-15 overridable with a reason | `override` | RX-T-07, and the five-character floor |
+| RX-F-16 max daily dose | `maxDoseWarning` | "warns above the recorded maximum" |
+| RX-F-17 re-evaluated at sign | `activateForConsultation` | RX-T-08 |
+| RX-F-18 controlled substances | `is_controlled` snapshot | Shown on screen; the register is DSP's |
+| RX-R-01 stock never moves | Module boundary | RX-T-09 |
+| RX-R-02 product snapshot | `resolve` | "snapshots the product, so a later rename does not rewrite it" |
+| RX-R-03 warnings computed server-side | `evaluate` | "recomputes on the server, whatever the client sends" |
+| RX-R-04 severe exact needs confirmation | `needsSignConfirmation` | RX-T-01, in three stages |
+| RX-R-05 overrides audited | `AuditAction.PrescriptionWarningOverridden` | RX-T-07 |
+| RX-R-06 signed items immutable | `assertItemDraft` + two triggers | RX-T-06, and `immutability.spec.ts` |
+| RX-R-07 only the consultation's doctor | `assertPrescriber` | "another doctor cannot prescribe on this consultation" |
+| RX-R-08 label regenerated on change | `resolve`, `setNotes` | "rebuilds every label when the language changes" |
+| RX-R-09 controlled snapshot | `resolve` | Column and test above |
+| RX-R-10 dispenser DTO excludes clinical notes | `dispenseView` | "shows the drug and the label, and not the diagnosis" |
+
+## 22. Notes worth keeping
+
+1. **A warning that fires constantly is a warning that gets ignored, and
+   then the one that mattered gets ignored with it.** Everything about the
+   safety checks here is shaped by that. There are four kinds of warning
+   and no more. Only two of them need a reason before signing, and only
+   one — a severe or life-threatening allergy to the *exact* substance —
+   stops a signature. A draft item in somebody else's abandoned
+   consultation does not raise a duplicate warning, because it is not a
+   fact about the patient. The temptation in a system like this is to warn
+   about everything, on the grounds that each warning is individually
+   defensible; the result is a red banner nobody reads.
+
+2. **A medicine with no generic name cannot be prescribed.** The service
+   refuses with a message naming the product and saying to fix the
+   catalogue. This looks unhelpful and is the opposite: an allergy check
+   against a brand name finds nothing, and "found nothing" is
+   indistinguishable on screen from "checked, all clear". Refusing is the
+   only way the gap is visible rather than silent.
+
+3. **An unlinked allergy always warns, and says it cannot be checked.**
+   A patient whose record says "some antibiotic" gets a warning on every
+   item, every time, until a clinician links it to something. It is
+   annoying by design (`RX-N-02`) — the alternative is a screen that looks
+   like it checked and did not.
+
+4. **Quantity refuses to guess.** Milligrams to millilitres needs a
+   concentration, and assuming one is how a child gets ten times the dose.
+   Every case the arithmetic cannot do returns nothing and asks the doctor,
+   because an empty field gets filled in and a confidently wrong number
+   does not get checked.
+
+5. **Discrete units round up; measured ones do not.** Two and a half
+   tablets is three in the bag, because a course cut short by the
+   arithmetic is a course not completed. 37.5 ml is 37.5 ml, because
+   rounding it to a bottle is a decision the pharmacy makes at the counter
+   with the bottle in their hand.
+
+6. **The label says "ambil 1 biji", not "take 500 mg".** The person
+   reading the bag is holding capsules. Making them divide the dose by the
+   strength is asking for the mistake. The conversion happens once, on the
+   server, where the strength is known.
+
+7. **Signing is one transaction, and a prescription can refuse it.** CON
+   does not know what a prescription is; it asks a registry, and this
+   module answers. When the re-check at signing raises something nobody
+   has answered, the hook throws and the whole signature rolls back — the
+   note is not signed, the encounter is not routed, and the doctor is
+   looking at the same screen with a new warning on it. A half-applied
+   signature would be worse than none.
+
+8. **The re-check at signing is not a formality.** The draft may have been
+   open for twenty minutes, and in twenty minutes the nurse can record the
+   allergy that makes this a different decision. Every warning is computed
+   again from the current data rather than read back from the row, and the
+   message says which of the two happened: "the warning on it has not been
+   overridden" or "a new warning was raised while this draft was open".
+
+9. **An amendment is a new row, never an edit.** The pharmacy may already
+   have dispensed against version 1, and `prescription.item_amended`
+   carries `alreadyDispensed` so DSP can tell the difference between
+   relabelling and a return. The old row keeps its own status of
+   `SUPERSEDED` and its original dose, so "what did the patient actually
+   get" stays answerable.
+
+10. **Prescribing moves no stock, and that is enforced by there being no
+    path.** RX has no reference to a stock ledger, holds no import of one,
+    and `RX-T-09` asserts the table does not exist yet. When DSP builds it,
+    that test becomes the real one: no movement row may reference a
+    prescription.
+
+11. **The undispensed-items completion guard is deliberately not
+    registered.** `ENC-F-10` says a visit cannot be completed while a
+    prescription has undispensed items. Registering that today would make
+    every prescribed visit impossible to finish, because nothing can
+    dispense. It belongs with the module that can satisfy it. `ENC-OPEN-15`
+    stays open, which is the honest state.
+
+12. **`patient_name_trgm_idx` had been dropped and nobody noticed.**
+    `prisma migrate diff` cannot see an index the schema language cannot
+    express, so it proposes dropping every hand-written one; the encounter
+    migration carried that drop through in August and patient name search
+    read every row in the tenant for three migrations afterwards. Nothing
+    failed — it was just slower. The index is recreated in this module's
+    migration, and `test/raw-indexes.e2e-spec.ts` now asserts all three
+    hand-written indexes against the live database so the next diff cannot
+    quietly take one away.

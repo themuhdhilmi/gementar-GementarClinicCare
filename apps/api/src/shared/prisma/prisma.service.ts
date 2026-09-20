@@ -31,6 +31,16 @@ export const RLS_PROTECTED_TABLES = [
   'display_token',
   'triage',
   'triage_amendment',
+  'consultation',
+  'diagnosis',
+  'consultation_amendment',
+  'consultation_attachment',
+  'clinical_template',
+  'quick_phrase',
+  'product',
+  'product_category',
+  'product_price_history',
+  'product_branch_setting',
 ] as const;
 
 /**

@@ -51,8 +51,15 @@ describe('TRI — triage and vitals', () => {
    */
   async function atTriage(options: { born?: string } = {}) {
     seq += 1;
-    const [year, month] = (options.born ?? '1986-05-04').split('-');
-    const born = `${year}-${month}-${String((seq % 28) + 1).padStart(2, '0')}`;
+    // The year is what the caller asked for, because some of these tests
+    // are about a child being judged differently from an adult. The month
+    // and day come from the counter, which gives 336 distinct birthdays
+    // before any repeat: sharing one with a similar name is what the
+    // duplicate check is for, and it is right to fire.
+    const [year] = (options.born ?? '1986-05-04').split('-');
+    const born =
+      `${year}-${String((seq % 12) + 1).padStart(2, '0')}` +
+      `-${String((seq % 28) + 1).padStart(2, '0')}`;
     const patient = await request(harness.server)
       .post(`${API}/patients`)
       .set('Cookie', reception)
@@ -165,6 +172,16 @@ describe('TRI — triage and vitals', () => {
 
       const saved = await record(encounterId, { weightKg: 70, heightCm: 175 }).expect(201);
       expect(saved.body.bmi).toBe(22.9);
+    });
+
+    it('two people recording at once get two records, not a collision', async () => {
+      const { encounterId } = await atTriage();
+      const [first, second] = await Promise.all([
+        record(encounterId, { spo2: 97, notes: 'One' }),
+        record(encounterId, { spo2: 96, notes: 'Two' }, doctor),
+      ]);
+      expect([first.status, second.status].sort()).toEqual([201, 201]);
+      expect([first.body.sequence, second.body.sequence].sort()).toEqual([1, 2]);
     });
 
     it('TRI-F-06: a second set of readings is a new record, not an edit', async () => {

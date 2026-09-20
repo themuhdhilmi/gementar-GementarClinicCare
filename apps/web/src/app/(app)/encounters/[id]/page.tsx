@@ -120,6 +120,17 @@ export default function EncounterPage() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="flex flex-col gap-5">
+          {can('clinical.write') && encounter.status === 'IN_CONSULTATION' && (
+            <Card title="Consultation">
+              <p className="mb-3 text-sm text-muted">
+                What the patient said, what you found, and what happens next.
+              </p>
+              <Link href={`/encounters/${id}/consultation`}>
+                <Button>Write the note</Button>
+              </Link>
+            </Card>
+          )}
+
           {can('triage.write') && encounter.open && (
             <Card title="Vitals">
               <p className="mb-3 text-sm text-muted">

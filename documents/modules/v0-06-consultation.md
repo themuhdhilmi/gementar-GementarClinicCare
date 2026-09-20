@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-06-consultation-end-item-OPEN.md](v0-06-consultation-end-item-OPEN.md) |
 | **Delivery phase** | Phase 2 |
 | **Spec sections** | 6, 31 |
 | **Depends on** | ENC, PAT, TRI, AUD |
@@ -22,7 +22,10 @@ The product bet — one patient record across the whole clinic — is only as go
 
 ## 2. Actors & permissions
 
-| Action | ADMIN | DOCTOR | NURSE | FRONTDESK |
+> **On `FRONTDESK`.** Reception, dispenser and cashier, none of whom may
+> read or write a consultation. `IAM-OPEN-18` closed for this module.
+
+| Action | ADMIN | DOCTOR | NURSE | Reception / dispenser / cashier |
 |---|:-:|:-:|:-:|:-:|
 | `clinical.read` — view consultations | ✓* | ✓ | ✓ | – |
 | `clinical.write` — create/edit own drafts | – | ✓ | – | – |
@@ -189,17 +192,19 @@ No path out of SIGNED or CANCELLED.
 | GET | `/consultations/:id` | `clinical.read` | Audited |
 | PATCH | `/consultations/:id` | `clinical.write` (owner) | Autosave; partial; 409 if not DRAFT |
 | PUT | `/consultations/:id/diagnoses` | `clinical.write` | Replace set (DRAFT only) |
-| POST | `/consultations/:id/sign` | `clinical.sign` (owner) | Validates minimums; returns routing outcome |
+| POST | `/consultations/:id/sign` | `clinical.sign` (owner) | Validates minimums, locks the triage it was based on, and returns `routedTo` — where the encounter went. The routing happens inside the signing transaction rather than from the event, so the doctor's screen can say where the patient has gone and a failure to route rolls the signature back. |
 | POST | `/consultations/:id/cancel` | `clinical.write` (owner) | Reason |
 | POST | `/consultations/:id/amend` | `clinical.amend` | `{ type, field?, current, reason }` |
 | POST | `/consultations/:id/reassign` | ADMIN + reauth | DRAFT only |
-| GET | `/consultations/:id/print` | `clinical.read` | PDF via DOC |
+| GET | `/consultations/:id/print` | `clinical.read` | **Not built.** Needs `DOC`, which does not exist. `CON-OPEN-05`. |
 | GET | `/patients/:id/consultations` | `clinical.read` | Summaries |
-| GET | `/consultations/:id/orders` | `clinical.read` | Linked RX/PRC/DOC/follow-up |
+| GET | `/consultations/:id/orders` | `clinical.read` | **Not built.** There are no orders to list until `RX`, `PRC` and `DOC` exist. Follow-up is a field on the record. |
 | GET | `/me/drafts` | `clinical.write` | Unsigned drafts |
-| CRUD | `/clinical-templates` | DOCTOR (own) / `admin.settings` (tenant) | |
+| GET | `/consultations-stale` | `admin.settings` | Drafts older than 24 h, for the dashboard |
+| POST | `/consultations/:id/apply-template/:templateId` | `clinical.write` | Fills empty sections only |
+| CRUD | `/clinical-templates` | DOCTOR (own) / `admin.settings` (tenant) | Two permissions, so the route declares the exemption and `TemplateService` decides which applies |
 | CRUD | `/me/quick-phrases` | DOCTOR | |
-| GET | `/icd10/search?q=` | `clinical.write` | If loaded |
+| GET | `/icd10/search?q=` | `clinical.write` | **Not built.** No list is licensed yet (CON-Q-01), so diagnoses are free text with an optional code typed by hand. `CON-OPEN-03`. |
 
 ## 9. Domain events
 
@@ -312,12 +317,127 @@ All §9 with before/after; `clinical.viewed` on every read; `consultation.reassi
 | CON-Q-04 | Screen size at the doctor's desk (drives the layout breakpoint). | Pilot clinic |
 | CON-Q-05 | Do they want SOAP labels or the sectioned layout as default? | Pilot clinic doctor |
 
+**CON-Q-01, ICD-10.** Unresolved, and the code does not wait for it.
+Diagnoses are free text with an optional code field the doctor can type
+into. Reporting groups by description until a list exists. If licensing is
+resolved, a reference table and a type-ahead are a contained piece of work
+that changes nothing already recorded.
+
+**CON-Q-02, the templates.** The machinery is built and there are none.
+§18 is right that they should be written *with* the doctor rather than
+guessed at, so this is an hour in a room, not a task. It is the single
+biggest thing that will make or break the ninety-second target.
+
+**CON-Q-03, the minimum to sign.** Currently what brought the patient in,
+plus one diagnosis. Making the examination mandatory is a one-line change
+if the doctor wants it; resist making it mandatory *and* keeping the
+ninety-second target unless they are sure.
+
+**CON-Q-04, screen size.** The workspace is three columns above 1280 px and
+stacks below. Worth knowing before R2 rather than after: on a small screen
+the right-hand column drops under the note, which is usable but changes
+where the sign button lives.
+
+**CON-Q-05, SOAP.** The sections are labelled in plain words and carry
+their SOAP letter in the code, so switching the headings is a display
+change. Ask, and if they want SOAP it is half an hour.
+
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] CON-T-01 … T-10 green (T-03 includes the direct-SQL trigger test)
-- [ ] Integrity job running nightly with alerting
-- [ ] Top-20 templates loaded for the pilot
-- [ ] Documentation time measured and recorded here
-- [ ] Keyboard map documented in-app (`?` overlay)
-- [ ] Open questions answered
+- [ ] **All Must requirements implemented** — all except the ones that need a module which does not exist. `CON-F-09` attachments, and the order pickers in `CON-F-10` for prescriptions, procedures, medical certificates and referrals, wait for `PAT` linkage, `RX`, `PRC` and `DOC`. Follow-up is built. See the traceability table.
+- [ ] **CON-T-01 … T-10 green** — eight of the ten. `CON-T-07` needs prescriptions; `CON-T-10` is a stopwatch in a real clinic. 30 tests in `test/consultation.e2e-spec.ts`, plus 7 on the content hash.
+- [x] **Integrity job running nightly** — 03:45, every clinic, every signed record, with the failure logged at error level. Alerting is `CON-OPEN-02`: there is nothing to alert *to* until `NTF`.
+- [ ] **Top-20 templates loaded for the pilot** — the machinery works and there are no templates. §18 says to build them *with* the doctor, so this is a session, not a task. `CON-OPEN-01`.
+- [ ] **Documentation time measured** — `CON-OPEN-04`, at R2 shadowing.
+- [ ] **Keyboard map documented in-app** — the shortcuts work and are hinted beside each section. There is no `?` overlay. `CON-OPEN-06`.
+- [x] **Open questions answered** — §20.
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| CON-F-01 one or more per visit | `ConsultationService.start` | "a second doctor writes their own, as sequence 2" |
+| CON-F-02 the sections | `CLINICAL_FIELDS`, the workspace | Autosave tests |
+| CON-F-03 diagnoses | `setDiagnoses` | One-primary rule, and the signing minimum |
+| CON-F-04 vitals inline | Workspace left column | Read from TRI, no second query |
+| CON-F-05 patient header | `components/patient-header.tsx`, reused | The same component as PAT and ENC |
+| CON-F-06 previous visits, copy-forward | `history`, `copyForward` | CON-R-08 test |
+| CON-F-07 templates | `TemplateService` | 4 tests, including that it never overwrites |
+| CON-F-08 quick phrases | `QuickPhrase`, `expandPhrases` | One test; expansion is client-side on blur |
+| CON-F-09 attachments | **Not built.** The table exists; nothing links a patient document to a consultation yet | — |
+| CON-F-10 orders | Follow-up only. The rest need RX, PRC and DOC | — |
+| CON-F-12 … F-13 drafting | `save`, `assertMayRead` | CON-T-01, CON-T-06 |
+| CON-F-14 signing | `sign` | CON-T-02 and four more |
+| CON-F-15 … F-16 amendments | `amend`, two triggers | CON-T-03, CON-T-04 |
+| CON-F-17 stale drafts | `myDrafts`, `staleDrafts`, completion guard | CON-T-09 |
+| CON-F-18 cancel | `cancel` | "a cancelled draft is kept" |
+| CON-F-19 print | **Not built.** Needs DOC | — |
+| CON-F-20 … F-23 doctor experience | The workspace | Shortcuts and the save indicator are built; the timing is CON-OPEN-04 |
+| CON-R-01 … R-09 | Service, three triggers, the hash | The database refuses each one independently of the application |
+
+## 22. Notes worth keeping
+
+1. **Three independent things protect a signed record**, and that is
+   deliberate. The service refuses an edit with a message that says to
+   amend instead. A database trigger refuses it whatever writes the row.
+   And a nightly job recomputes a fingerprint of the content, which catches
+   a change that got around both — a superuser, a restore from a doctored
+   backup, a migration that meant well. Each one alone would be a comfort;
+   together they are a control.
+
+2. **The hash is built from a named list of fields, not from the row.** A
+   column added later is not silently included, and a column that is not
+   clinical content cannot make a record look altered when it is not. The
+   cost is that somebody adding a clinical field must add it to the hash,
+   so a test states that requirement in words.
+
+3. **Diagnoses are sorted before hashing.** The set is what was concluded;
+   the order rows came back in is an accident of the query, and a hash that
+   depended on it would report tampering that had not happened.
+
+4. **A draft is invisible to other doctors, and "not found" rather than
+   "forbidden".** Half-written clinical thinking is not a record, and the
+   fact that a colleague has one open is not something the system needs to
+   confirm. An administrator may see it, because somebody has to reassign it
+   when a locum goes home, and that read is break-glass.
+
+5. **Only the author signs.** An administrator can hand a draft to another
+   doctor, who then reviews and signs it themselves. Nobody, at any
+   permission level, signs somebody else's clinical judgement.
+
+6. **Routing happens inside the signing transaction.** The specification
+   has the encounter module react to an event, and that is still where the
+   decision lives — `EncounterService.routeAfterConsultation` owns it,
+   because it depends on the branch's pharmacy-before-payment setting. But
+   it is called rather than emitted, for two reasons: the doctor's screen
+   can say where the patient has gone, and a failure to route rolls the
+   signature back instead of leaving somebody stranded in a consultation
+   room on the board.
+
+7. **Autosave is not audited.** Every five seconds for an hour would bury
+   the entries that matter under seven hundred that do not. What is audited
+   is the signing, which is the act with meaning, and every read.
+
+8. **Copy-forward brings the history and the examination, never the
+   complaint or the plan.** Those were about a visit that is over, and a
+   plan copied forward is how the wrong treatment quietly continues. What
+   is copied is marked on the record and on screen.
+
+9. **A template fills empty sections and never overwrites one.** A doctor
+   who has already typed something has said more than a template can.
+   Overwriting it would be the single most infuriating thing this screen
+   could do, and the response says which sections were left alone so the
+   screen can explain itself.
+
+10. **An amendment needs ten characters of reason.** "Typo" explains
+    nothing to whoever reads the record in two years, which is the only
+    person the reason is for.
+
+11. **Quick phrases expand on leaving a field, not while typing.** A
+    doctor writing a sentence with a full stop in it should not have
+    something detonate mid-word.
+
+12. **The nightly job found its own leftovers.** It sweeps every clinic on
+    the server, and on a shared development database that included records
+    from earlier test runs — which is how the missing cleanup was noticed.
+    The behaviour is right; the test now checks its own clinic.

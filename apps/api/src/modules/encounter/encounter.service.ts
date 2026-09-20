@@ -440,6 +440,46 @@ export class EncounterService {
     return this.present(after);
   }
 
+  /**
+   * Where a patient goes when the doctor signs (CON-R-07).
+   *
+   * The decision lives here, not in the consultation module: it depends on
+   * the branch's own order of pharmacy and payment, which is a queue
+   * setting, and on the state machine. Consultation says what was ordered
+   * and this decides what that means for the queue.
+   *
+   * Called inside the signing transaction rather than from an event, so
+   * the doctor's screen can say where the patient has gone, and so a
+   * failure to route rolls the signature back rather than leaving somebody
+   * stranded in a consultation room on the board.
+   */
+  async routeAfterConsultation(
+    ctx: TenantContext,
+    encounterId: string,
+    orders: { hasRx: boolean; hasProcedures?: boolean },
+  ) {
+    const tx = this.db.tx();
+    const encounter = await this.getOrThrow(tx, encounterId);
+
+    // Somebody may already have moved them on by hand. Doing nothing is
+    // the right answer, not an error the doctor has to read.
+    if (encounter.status !== EncounterStatus.IN_CONSULTATION) {
+      return { moved: false, status: encounter.status };
+    }
+
+    const { paymentBeforeDispense } = await this.settings.group(encounter.branchId, 'queue');
+    const next = orders.hasProcedures
+      ? EncounterStatus.PROCEDURE_WAITING
+      : orders.hasRx && !paymentBeforeDispense
+        ? EncounterStatus.PHARMACY_WAITING
+        : EncounterStatus.PAYMENT_WAITING;
+
+    await this.transition(ctx, encounterId, next, {
+      note: 'Routed after the consultation was signed',
+    });
+    return { moved: true, status: next };
+  }
+
   /** ENC-F-10: what is standing between this visit and being finished. */
   async completionBlockers(tx: Tx, branchId: string, encounterId: string) {
     const settings = await this.settings.group(branchId, 'queue');

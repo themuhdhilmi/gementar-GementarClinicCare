@@ -49,6 +49,40 @@ export const DomainEvent = {
   TriageRecorded: 'triage.recorded',
   TriageAbnormalFlagged: 'triage.abnormal_flagged',
   TriageAmended: 'triage.amended',
+
+  // Consultation (CON, v0-06).
+  ConsultationCreated: 'consultation.created',
+  ConsultationSigned: 'consultation.signed',
+  ConsultationAmended: 'consultation.amended',
+  ConsultationCancelled: 'consultation.cancelled',
+  DiagnosisRecorded: 'diagnosis.recorded',
+
+  // Prescription (RX, v0-07).
+  PrescriptionCreated: 'prescription.created',
+  PrescriptionUpdated: 'prescription.updated',
+  PrescriptionActivated: 'prescription.activated',
+  PrescriptionItemAmended: 'prescription.item_amended',
+  PrescriptionItemCancelled: 'prescription.item_cancelled',
+  PrescriptionWarningRaised: 'prescription.warning_raised',
+  PrescriptionWarningOverridden: 'prescription.warning_overridden',
+  PrescriptionCompleted: 'prescription.completed',
+  PrescriptionCancelled: 'prescription.cancelled',
+
+  // Stock (INV, v0-09 second half).
+  StockMoved: 'stock.moved',
+  StockLow: 'stock.low',
+  StockCritical: 'stock.critical',
+  StockExpiring: 'stock.expiring',
+  StockExpired: 'stock.expired',
+  StockReconciliationMismatch: 'stock.reconciliation_mismatch',
+  BatchBlocked: 'batch.blocked',
+
+  // Procedures (PRC, v0-10).
+  ProcedureOrdered: 'procedure.ordered',
+  ProcedurePerformed: 'procedure.performed',
+  ProcedureCancelled: 'procedure.cancelled',
+  ProcedureVoided: 'procedure.voided',
+  VaccinationRecorded: 'vaccination.recorded',
 } as const;
 
 export type DomainEventName = (typeof DomainEvent)[keyof typeof DomainEvent];

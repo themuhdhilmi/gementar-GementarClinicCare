@@ -16,6 +16,7 @@ import {
   type PatientContact,
   type PatientDocument,
   type PatientRecord,
+  type VaccinationRow,
 } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/session';
@@ -478,6 +479,44 @@ function SummaryTab({
   );
 }
 
+/** PRC-F-11. Hidden entirely when the patient has had none. */
+function VaccinationsCard({ patientId }: { patientId: string }) {
+  const [items, setItems] = useState<VaccinationRow[]>([]);
+
+  useAsyncEffect(async () => {
+    const next = await api<{ items: VaccinationRow[] }>(`/patients/${patientId}/vaccinations`);
+    setItems(next.items);
+  }, [patientId]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <Card title="Vaccinations">
+      <ul className="flex flex-col gap-2 text-sm">
+        {items.map((row) => (
+          <li key={row.id}>
+            <span className={row.withdrawn ? 'text-muted line-through' : 'font-medium'}>
+              {row.vaccineName}
+              {row.doseNumber ? ` (dose ${row.doseNumber})` : ''}
+            </span>
+            <span className="block text-xs text-muted">
+              {new Date(row.givenAt).toLocaleDateString()} · batch {row.batchNo}
+              {row.expiry ? ` · expires ${row.expiry.slice(0, 10)}` : ''}
+              {row.site ? ` · ${row.site}` : ''}
+              {row.givenByName ? ` · ${row.givenByName}` : ''}
+            </span>
+            {row.withdrawn && (
+              <span className="block text-xs text-danger">
+                Withdrawn: {row.withdrawnReason}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function ClinicalTab({
   patientId,
   clinical,
@@ -615,6 +654,10 @@ function ClinicalTab({
           </details>
         )}
       </Card>
+
+      {/* PRC-F-11: the basis for an immunisation certificate in V1, and
+          the thing a recall searches today. */}
+      <VaccinationsCard patientId={patientId} />
 
       <Card title="Long-term conditions">
         {clinical.conditions.length === 0 ? (

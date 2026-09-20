@@ -33,7 +33,9 @@
     "user:create": "tsx scripts/create-user.ts",
     "tenant": "tsx scripts/tenant.ts",
     "lint:slow": "tsx scripts/check-slow-work.ts",
-    "patients:seed": "tsx scripts/seed-patients.ts"
+    "patients:seed": "tsx scripts/seed-patients.ts",
+    "catalogue:seed": "tsx scripts/seed-catalogue.ts",
+    "procedures:seed": "tsx scripts/seed-procedures.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

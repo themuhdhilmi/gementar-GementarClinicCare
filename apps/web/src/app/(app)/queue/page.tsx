@@ -255,7 +255,13 @@ export default function QueuePage() {
                     <td className="py-2.5 text-right whitespace-nowrap">
                       {/* Triage-in-progress goes straight to the form:
                           the nurse has the patient in front of them. */}
-                      {row.status === 'TRIAGE_IN_PROGRESS' && can('triage.write') ? (
+                      {row.status === 'IN_CONSULTATION' && can('clinical.write') ? (
+                        <Link href={`/encounters/${row.id}/consultation`}>
+                          <Button variant="secondary" size="sm">
+                            Write the note
+                          </Button>
+                        </Link>
+                      ) : row.status === 'TRIAGE_IN_PROGRESS' && can('triage.write') ? (
                         <Link href={`/encounters/${row.id}/triage`}>
                           <Button variant="secondary" size="sm">
                             Record vitals

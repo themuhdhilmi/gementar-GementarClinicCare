@@ -78,7 +78,53 @@ export const AuditAction = {
   // Triage (TRI, v0-05).
   TriageRecorded: 'triage.recorded',
   TriageAmended: 'triage.amended',
+
+  // Consultation (CON, v0-06).
+  ConsultationCreated: 'consultation.created',
+  ConsultationSigned: 'consultation.signed',
+  ConsultationAmended: 'consultation.amended',
+  ConsultationCancelled: 'consultation.cancelled',
+  ConsultationReassigned: 'consultation.reassigned',
+  TemplateUsed: 'template.used',
+
+  // Product catalogue (INV, v0-09 first half).
+  ProductCreated: 'product.created',
+  ProductUpdated: 'product.updated',
+  ProductRetired: 'product.retired',
+  ProductImported: 'product.imported',
   BranchLetterheadChanged: 'branch.letterhead_changed',
+
+  // Prescription (RX, v0-07).
+  PrescriptionItemAdded: 'prescription.item_added',
+  PrescriptionItemUpdated: 'prescription.item_updated',
+  PrescriptionItemRemoved: 'prescription.item_removed',
+  PrescriptionActivated: 'prescription.activated',
+  PrescriptionCancelled: 'prescription.cancelled',
+  PrescriptionItemAmended: 'prescription.item_amended',
+  PrescriptionItemCancelled: 'prescription.item_cancelled',
+  PrescriptionItemDeclined: 'prescription.item_declined',
+  /// RX-R-05: carries the full warning payload and the reason given.
+  PrescriptionWarningOverridden: 'prescription.warning_overridden',
+  /// Lighter than clinical.viewed — the dispenser sees far less (RX-R-10).
+  PrescriptionDispenseViewed: 'rx.dispense_viewed',
+
+  // Stock (INV, v0-09 second half).
+  StockReceived: 'stock.received',
+  StockOpeningPosted: 'stock.opening_posted',
+  StockAdjusted: 'stock.adjusted',
+  StockExpiryWrittenOff: 'stock.expiry_written_off',
+  BatchBlocked: 'batch.blocked',
+
+  // Procedures (PRC, v0-10).
+  ProcedureCreated: 'procedure.catalogue_created',
+  ProcedureUpdated: 'procedure.catalogue_updated',
+  ProcedureRetired: 'procedure.catalogue_retired',
+  ProcedureOrdered: 'procedure.ordered',
+  ProcedurePerformed: 'procedure.performed',
+  ProcedureCancelled: 'procedure.cancelled',
+  /// Loud: it reverses stock and removes a charge.
+  ProcedureVoided: 'procedure.voided',
+  VaccinationRecorded: 'vaccination.recorded',
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

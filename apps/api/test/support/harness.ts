@@ -248,7 +248,26 @@ export class Harness {
     // Tables whose triggers refuse the deletes a cleanup has to do: the
     // append-only audit trail, the last-administrator rule, and the rule
     // that an allergy is never deleted (PAT-R-03).
-    const guarded = ['audit_log', '"user"', 'user_branch_role', 'patient_allergy'];
+    const guarded = [
+      'audit_log',
+      '"user"',
+      'user_branch_role',
+      'patient_allergy',
+      'encounter',
+      'encounter_event',
+      'triage',
+      'triage_amendment',
+      'consultation',
+      'consultation_amendment',
+      'diagnosis',
+      // Append-only and immutability triggers refuse the deletes below.
+      'product_price_history',
+      'prescription_item',
+      // Append-only: the ledger refuses a delete whatever asks for one.
+      'stock_movement',
+      'procedure_price_history',
+      'vaccination_record',
+    ];
     let disabled = false;
     try {
       for (const table of guarded) await client.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
@@ -263,6 +282,39 @@ export class Harness {
         for (const table of [
           'audit_log',
           'session',
+          // Prescriptions, children before their parents. A later version
+          // of an item points at the one it superseded, and that key is
+          // RESTRICT rather than NO ACTION, so it cannot be deferred to
+          // the end of the statement: the replacements go first.
+          // Procedures, children before their parents.
+          'vaccination_record',
+          'encounter_procedure_consumable',
+          'encounter_procedure',
+          'procedure_price_history',
+          'procedure_consumable',
+          'procedure_catalog',
+          // Stock, children before their parents.
+          'reconciliation_run',
+          'stock_movement',
+          'product_batch',
+          'rx_favourite',
+          'prescription_item WHERE supersedes_id IS NOT NULL',
+          'prescription_item',
+          'prescription',
+          // Clinical records, children before their parents.
+          'consultation_amendment',
+          'consultation_attachment',
+          'diagnosis',
+          'consultation',
+          'clinical_template',
+          'quick_phrase',
+          'triage_amendment',
+          'triage',
+          'encounter_event',
+          'encounter',
+          'queue_sequence',
+          'display_token',
+          'branch_room',
           'password_reset_token',
           'trusted_device',
           'mfa_replay',
@@ -276,6 +328,12 @@ export class Harness {
           'patient_recent',
           'patient',
           'mrn_sequence',
+          // The catalogue, which prescriptions and stock both hang off.
+          'product_price_history',
+          'product_branch_setting',
+          'product',
+          'product_category WHERE parent_id IS NOT NULL',
+          'product_category',
           'user_branch_role',
           '"user"',
           'branch',

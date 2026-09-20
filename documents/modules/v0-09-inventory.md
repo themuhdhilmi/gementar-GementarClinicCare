@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Catalogue and stock ledger built ahead of Phase 3, because prescribing and procedures need them. Counts, quarantine and alerts not started. Open items in [v0-09-inventory-end-item-OPEN.md](v0-09-inventory-end-item-OPEN.md) |
 | **Delivery phase** | Phase 3 |
 | **Spec sections** | 9 |
 | **Depends on** | TEN, IAM, AUD |
@@ -366,23 +366,118 @@ Internal (not HTTP): `LedgerService.move(tx, MoveInput): Promise<StockMovement>`
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| INV-Q-01 | Roughly how many SKUs? How many are batched vs consumables? | Pilot clinic |
-| INV-Q-02 | Do they track batch/expiry today at all? | Pilot clinic |
-| INV-Q-03 | Is there an existing stock list to import (format)? | Pilot clinic |
-| INV-Q-04 | Selling price per product (list) or per batch (markup on cost)? | Pilot clinic owner |
-| INV-Q-05 | When can an opening count happen? Who counts? | Pilot clinic |
-| INV-Q-06 | Do they hold cold-chain items (vaccines, insulin)? | Pilot clinic |
-| INV-Q-07 | Do they use barcode scanners; do supplier packs carry GS1 barcodes with batch/expiry? | Pilot clinic |
+| ID | Question | Who | Answer |
+|---|---|---|---|
+| INV-Q-01 | Roughly how many SKUs? How many are batched vs consumables? | Pilot clinic | **Not answered.** Built for a few thousand, which is an order of magnitude above a GP clinic; the FEFO index and the on-hand view are the two things that would care, and both are indexed for it. |
+| INV-Q-02 | Do they track batch/expiry today at all? | Pilot clinic | **Not answered, and the system does not require them to.** `is_batched = false` gives a product one synthetic `NB` batch per branch, so the ledger has no special case and a clinic that tracks nothing still gets correct totals. Turning batching on for a product later is a setting, not a migration. |
+| INV-Q-03 | Is there an existing stock list to import (format)? | Pilot clinic | **Not answered.** CSV import with a dry run exists for the catalogue. There is no import for opening balances; `npm run procedures:seed` posts them for the development list, and `INV-OPEN-02` covers doing it properly. |
+| INV-Q-04 | Selling price per product (list) or per batch (markup on cost)? | Pilot clinic owner | **Built for both, defaulting to per product.** `price_basis` is on the product and `selling_price` on the batch; nothing reads the batch price yet because nothing bills. `INV-OPEN-08`. |
+| INV-Q-05 | When can an opening count happen? Who counts? | Pilot clinic | **Not answered, and the count module is not built.** An opening balance can be posted as a delivery marked `opening`, which is what the seed does. `INV-OPEN-01` is the real answer. |
+| INV-Q-06 | Do they hold cold-chain items (vaccines, insulin)? | Pilot clinic | **Assumed yes**, because the procedure list includes two vaccines. `is_cold_chain` is on the product and shown on the receiving and perform screens. No sensors, as §19 says. |
+| INV-Q-07 | Do they use barcode scanners; do supplier packs carry GS1 barcodes with batch/expiry? | Pilot clinic | **Not answered.** A scanned barcode resolves a product exactly, over a GIN index. Parsing a GS1 barcode into batch and expiry is not built — `INV-OPEN-07`. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] INV-T-01 … T-12 green (T-03/T-04 against real Postgres)
-- [ ] `move()` is the only write path — verified by grants and a grep for direct writes
-- [ ] Reconciliation job scheduled, alerting to you, with a recorded zero-mismatch run after opening stock
-- [ ] Catalogue loaded with `generic_name` on 100% of medicines; drug classes on all antibiotics/NSAIDs/opioids
-- [ ] Opening stock count completed and signed off by the clinic
-- [ ] One week of live use with top-10 products matching physical count
-- [ ] Open questions answered
+- [ ] **All Must requirements implemented** — the ledger, batches, receiving, adjustments, expiry write-off, on-hand and movement history are built. Physical counts (`INV-F-16`), quarantine (`INV-F-15`) and the alert state machine (`INV-F-19`, `F-20`) are not. See the traceability table.
+- [ ] **INV-T-01 … T-12 green** — eight of the twelve. `T-04` needs a database grant that is `TEN-OPEN-04`; `T-08` needs counts; `T-09` needs the reauth threshold setting; `T-11` needs the alert state table. 26 tests in `test/stock.e2e-spec.ts`, plus 10 unit tests on movement kinds and expiry parsing.
+- [ ] **`move()` is the only write path — verified by grants and a grep** — true by construction and by module boundary: `StockModule` exports `LedgerService` and not `StockService`. It is **not** yet verified by a database grant, which is what would make it true against a mistake rather than against a convention. `INV-OPEN-03`.
+- [x] **Reconciliation job scheduled, with a recorded zero-mismatch run** — 04:15 nightly, per tenant, and a run is recorded whether or not anything was wrong. It logs at error level and alerts nowhere, which is `CON-OPEN-02`'s problem restated.
+- [x] **Catalogue loaded with `generic_name` on 100% of medicines** — enforced: the prescribing service refuses a medicine without one, so it cannot quietly stop being true. Drug classes on the seeded list; the clinic's own list is `RX-OPEN-01`.
+- [ ] **Opening stock count completed and signed off** — `INV-OPEN-01`.
+- [ ] **One week of live use with top-10 products matching physical count** — `INV-OPEN-01`, after R3.
+- [x] **Open questions answered** — §20, four of seven with "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| INV-F-01 … F-07 catalogue | `CatalogueService` | 24 tests in `test/catalogue.e2e-spec.ts` |
+| INV-F-05 retirement blocked | `ProductRetirementRegistry` + `StockModule` | "a product with stock on the shelf cannot be withdrawn" |
+| INV-F-06 search with on-hand | `ProductStockLookup` | "a product search says how many are on the shelf" |
+| INV-F-08 batches, month expiry | `StockService.batchFor`, `parseExpiry` | INV-T-06, plus 5 unit tests on leap years and refusals |
+| INV-F-09 synthetic batch | `LedgerService.nonBatched` | "gives an unbatched product one synthetic batch per branch" |
+| INV-F-10 the ledger | `stock_movement`, `DIRECTION` | A unit test asserts every enum member has a direction and a label |
+| INV-F-11 `move()` | `LedgerService.move` | INV-T-01, T-02, T-03 |
+| INV-F-12 stock-in | `StockService.receive` | 7 tests, including all-or-nothing |
+| INV-F-13 adjustments | `StockService.adjust` | Reason required, from a controlled list |
+| INV-F-14 expiry write-off | `StockService.writeOffExpired` | Refuses a batch that has not expired |
+| INV-F-15 quarantine | **Not built.** `INV-OPEN-05` | — |
+| INV-F-16 physical count | **Not built.** `INV-OPEN-01` | — |
+| INV-F-17 movement history | `StockService.movements` | INV-T-01's balance sequence |
+| INV-F-18 on-hand view | `StockService.onHandView` | "shows the on-hand view with its batches and nearest expiry" |
+| INV-F-19 … F-20 alerts | **Partly.** `belowMin`/`belowReorder` are computed and shown; there is no `stock_alert_state`, so no once-only semantics. `INV-OPEN-06` | — |
+| INV-F-21 reconciliation | `StockReconciliationJob` | INV-T-05 |
+| INV-F-22 … F-23 | **Not built** / cold-chain flag shown | — |
+| INV-R-01 the invariant | `move()` writes both under one lock | INV-T-05 catches a violation planted directly |
+| INV-R-02 one write path | Module boundary | Not yet a grant. `INV-OPEN-03` |
+| INV-R-03 row lock | `SELECT … FOR UPDATE` | INV-T-03: six simultaneous, exactly one wins |
+| INV-R-04 never negative | `CHECK` + service | INV-T-02 |
+| INV-R-05 `balance_after` | `move()` | The balance sequence test |
+| INV-R-06 append-only | Trigger | "a movement cannot be edited or deleted, whatever asks" |
+| INV-R-07 FEFO excludes expired and blocked | `suggestFefo` | "never offers a blocked batch" |
+| INV-R-08 reauth over threshold | **Not built.** `INV-OPEN-04` | — |
+| INV-R-09 price history | `recordPrice` | Catalogue tests |
+| INV-R-11 generic required | Service refusal | RX's own tests |
+| INV-R-12 scoping | Schema + RLS | Tenant isolation suite |
+
+## 22. Notes worth keeping
+
+1. **There is one write path, and the module boundary is what enforces
+   it.** `StockModule` exports `LedgerService` and deliberately does not
+   export `StockService`: other modules move stock, they do not receive
+   deliveries. That is a convention a compiler checks. It is not yet a
+   convention the *database* checks, which is the difference between
+   "nobody does this" and "nobody can", and `INV-OPEN-03` is that gap.
+
+2. **The quantity on a batch is a cache, and it is treated as one.** The
+   truth is the sum of the movements. They are written together under
+   one lock so they cannot part company through the application, and a
+   job recomputes the sum every night because "cannot through the
+   application" is not the same as "cannot".
+
+3. **Reconciliation never corrects anything.** A job that silently fixes
+   a mismatch destroys the evidence of how the mismatch happened, and the
+   how is the only part that stops it happening again. It logs, it
+   records a run, and it waits for a human to count the shelf.
+
+4. **The sign of a movement lives in one table, not at the call sites.**
+   A caller passes a positive quantity and a type; `DIRECTION` decides
+   which way it goes. A caller that has to remember to pass −3 is a
+   caller that will one day pass 3, and the failure is silent until a
+   stock count. A unit test asserts that every member of the enum has a
+   direction, so adding one cannot leave it undefined and turn the
+   arithmetic into `NaN`.
+
+5. **Discrete stock rounds nothing; FEFO refuses to half-plan.** Asked
+   for fifty when the branch has thirty, `suggestFefo` returns the plan
+   *and* the shortfall rather than a plan for thirty. The caller has to
+   decide what to do about the twenty, and a list that quietly covers
+   less than was asked for hides the decision.
+
+6. **First to expire, not first in.** A delivery that arrives today with
+   a short date should leave before one received last month with a long
+   one. Getting this backwards does not fail; it just quietly writes off
+   medicine that was fine.
+
+7. **A month-stamped expiry means the end of that month.** Blister packs
+   say "03/2027". Reading that as the first of March throws away thirty
+   days of usable stock every time.
+
+8. **A batch's status is derived, never set.** A trigger recomputes it
+   from the quantity and the date on every write, because a status
+   somebody has to remember to update is a status that drifts. `BLOCKED`
+   is the exception, because a recall is a human decision and nothing
+   should be able to un-recall something by selling the last of it.
+
+9. **The catalogue knows nothing about stock, and that survived adding
+   stock.** On-hand appears beside a product in a search because
+   `StockModule` registers a lookup, not because the catalogue learned
+   what a batch is. The same shape as the branch-deactivation and
+   consultation-sign registries, for the same reason: the dependency
+   points one way and stays there.
+
+10. **"No information" and "none in stock" are different answers.** The
+    search result carries `stockKnown`, and shows nothing rather than
+    zero when the stock module has not registered. A prescriber told
+    "0 on hand" who then finds a full box has learnt not to believe the
+    number, and that lesson is expensive to unteach.

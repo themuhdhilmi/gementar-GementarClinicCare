@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-10-procedures-end-item-OPEN.md](v0-10-procedures-end-item-OPEN.md) |
 | **Delivery phase** | Phase 3 |
 | **Spec sections** | 11 |
 | **Depends on** | ENC, CON, INV, AUD |
@@ -244,16 +244,99 @@ All §9; catalogue and price changes; void with reason; consent capture.
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| PRC-Q-01 | Full procedure list with prices. | Pilot clinic |
-| PRC-Q-02 | Which procedures do nurses perform without a doctor order? | Pilot clinic |
-| PRC-Q-03 | Vaccines stocked; cold-chain handling. | Pilot clinic |
-| PRC-Q-04 | Do they capture written consent today, and for what? | Pilot clinic |
+| ID | Question | Who | Answer |
+|---|---|---|---|
+| PRC-Q-01 | Full procedure list with prices. | Pilot clinic | **Not answered.** Thirteen are seeded — nebulisers, injections, dressings, two minor surgeries, two vaccinations, a glucose check, ear syringing — at prices that are plausible and made up. `PRC-OPEN-01`. |
+| PRC-Q-02 | Which procedures do nurses perform without a doctor order? | Pilot clinic | **Not answered, so the answer is none.** `PRC-F-06` is built to the point of the guard: a nurse ordering without a doctor is refused, and the refusal names the setting that would allow it. The setting itself is not built, because a default of "yes" to an unanswered question about who may do what to a patient is the wrong default. `PRC-OPEN-04`. |
+| PRC-Q-03 | Vaccines stocked; cold-chain handling. | Pilot clinic | **Two assumed** — influenza and tetanus toxoid — both flagged cold-chain, which shows on receiving and on the perform form. No sensors, as §19 says. |
+| PRC-Q-04 | Do they capture written consent today, and for what? | Pilot clinic | **Not answered.** Consent is a tick plus a name plus a timestamp, required for anything flagged `requires_consent`, and three seeded procedures are. A signed form is `DOC` in V1, as §19 says. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] PRC-T-01 … T-06 green
-- [ ] Catalogue and consumable mappings loaded and reviewed by the nurse
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — all of them. `PRC-F-04` (price history, a Should) is built too. `PRC-F-06` is built as far as the guard; see `PRC-Q-02`.
+- [x] **PRC-T-01 … T-06 green** — all six, inside 26 tests in `test/procedure.e2e-spec.ts`.
+- [ ] **Catalogue and consumable mappings loaded and reviewed by the nurse** — thirteen procedures with mappings exist and a nurse has seen none of them. `PRC-OPEN-01`.
+- [x] **Open questions answered** — §20, three of four as "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| PRC-F-01 procedure catalogue | `ProcedureCatalogueService` | "gives a procedure a readable code from its category" |
+| PRC-F-02 consumable mapping | `procedure_consumable`, prefilled at perform | PRC-T-01 |
+| PRC-F-03 vaccination links a product | CHECK constraint + service | "refuses a vaccination that names no vaccine" |
+| PRC-F-04 price history | `recordPrice`, append-only trigger | "keeps a price history" |
+| PRC-F-05 ordered from the plan | `ProcedureService.order`, the panel in CON | "signing a note with a procedure on it sends the patient for it" |
+| PRC-F-06 nurse-initiated | `nurseInitiatedAllowed` | "a nurse cannot start one unasked while the clinic says no" |
+| PRC-F-07 perform form | `perform`, `/procedures` | PRC-T-02, T-03, and the site rule |
+| PRC-F-08 one transaction | `perform` | PRC-T-01: two movements, both or neither |
+| PRC-F-09 cancel | `cancel` | "cancels an order that is not going to happen" |
+| PRC-F-10 void | `void` | PRC-T-05 |
+| PRC-F-11 vaccination record | `recordVaccination`, the patient card | PRC-T-04 |
+| PRC-F-12 nurse queue | `queue`, `/procedures` | "lists who is waiting, with what is ordered for them" |
+| PRC-R-01 consumables go through the ledger | `LedgerService.move` | PRC-T-01 counts the movements |
+| PRC-R-02 price snapshot | `order` | PRC-T-06 |
+| PRC-R-03 doctor-only | `perform` | PRC-T-02 |
+| PRC-R-04 consent | `perform` | PRC-T-03 |
+| PRC-R-05 void reverses everything | `void` | PRC-T-05, and every line marked `reversed` |
+| PRC-R-06 vaccination needs a batch | `recordVaccination` | PRC-T-04 reads the batch number back |
+| PRC-R-07 BIL reads the performed row | `procedure.performed` event | Emitted with the price snapshot; nothing consumes it yet |
+
+## 22. Notes worth keeping
+
+1. **Performing is one transaction, and that is the whole module.** The
+   consumables leave stock, the row becomes performed, the vaccination
+   record is written and the event goes out together. A nebuliser that
+   deducted its mask but not its respule is a stock figure nobody can
+   reconstruct, and the way you get one is by doing these as four
+   separate steps that mostly all succeed.
+
+2. **The price is taken at order time, not at perform time.** A price
+   rise between the doctor saying "nebuliser" and the nurse doing it is
+   not something the patient agreed to. `PRC-T-06` is the test, and the
+   snapshot is also what BIL will read, so the charge cannot drift from
+   the quote either.
+
+3. **A void writes reversals rather than deleting movements.** The
+   ledger reads as two events — used, then put back — because that is
+   what happened. Deleting the original would make the shelf right and
+   the history wrong, and the history is the only thing that explains a
+   discrepancy three weeks later. Each consumable line records which
+   movement put it back, so "was this reversed?" is answered by looking
+   rather than searching.
+
+4. **The void window is a day, and the message says why.** After
+   twenty-four hours it is overwhelmingly likely the invoice has gone
+   out, and reversing stock under a paid invoice is a billing correction
+   wearing a clinical hat. The refusal says so and points at the credit
+   note.
+
+5. **A shortfall is recorded, not refused twice.** If the shelf says two
+   and the nurse used three, the first attempt fails with the numbers.
+   The second, with "record it anyway", performs the procedure, deducts
+   what there was, and flags the difference in the audit entry. Refusing
+   outright would lose the clinical fact as well as the stock one, and
+   the clinical fact is the one that matters to the patient.
+
+6. **A blocked or expired batch is simply not there.** FEFO does not
+   offer it, so a recalled batch produces "not enough in stock" rather
+   than a special error. That reads oddly and behaves correctly: there
+   is no path by which a recalled vial reaches an arm.
+
+7. **This module registers its completion guard; prescribing did not.**
+   A visit cannot be finished with a procedure still waiting, because
+   this module is also the one that clears it — a nurse performs it, or
+   somebody cancels it with a reason. The dispensing guard stayed
+   unregistered precisely because nothing could clear it. A guard is
+   only safe to add when the thing that satisfies it exists.
+
+8. **A voided vaccination stays on the record, struck through.** "This
+   was recorded and then withdrawn" is itself clinical history, and a
+   parent asking what their child was given deserves the full answer.
+   The database refuses to delete a vaccination record at all.
+
+9. **Consent is a tick, a name and a time, and it is honest about that.**
+   It is not a signature and the system does not pretend otherwise. What
+   it proves is that somebody was asked and said yes, which is more than
+   most clinics record today and less than a signed form. `DOC` closes
+   the gap in V1.

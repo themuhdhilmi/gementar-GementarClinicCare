@@ -133,8 +133,10 @@ model Branch {
   encounters       Encounter[]
   rooms            BranchRoom[]
   displayTokens    DisplayToken[]
+  productSettings  ProductBranchSetting[]
   userBranchRoles  UserBranchRole[]
   sessions         Session[]
+  productBatches ProductBatch[]
 
   @@unique([tenantId, code], map: "branch_tenant_code_key")
   @@unique([id, tenantId], map: "branch_id_tenant_key")
@@ -538,6 +540,10 @@ model Patient {
   recentlyOpened PatientRecent[]
   encounters Encounter[]
   triages    Triage[]
+  consultations Consultation[]
+  prescriptions       Prescription[]
+  procedures          EncounterProcedure[]
+  vaccinations        VaccinationRecord[]
 
   @@unique([tenantId, mrn], map: "patient_tenant_mrn_key")
   @@unique([id, tenantId], map: "patient_id_tenant_key")
@@ -815,6 +821,9 @@ model Encounter {
   room    BranchRoom? @relation(fields: [roomId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
   events  EncounterEvent[]
   triages Triage[]
+  consultations Consultation[]
+  prescriptions   Prescription[]
+  procedures      EncounterProcedure[]
 
   @@unique([tenantId, encounterNo], map: "encounter_tenant_no_key")
   @@unique([id, tenantId], map: "encounter_id_tenant_key")
@@ -994,4 +1003,871 @@ model TriageAmendment {
 
   @@index([tenantId, triageId, amendedAt], map: "triage_amendment_idx")
   @@map("triage_amendment")
+}
+
+// ---------------------------------------------------------------------------
+// Consultation / EMR (CON, v0-06-consultation.md)
+//
+// What the patient said, what the doctor found, what they concluded and
+// what they decided to do. A signed consultation is a legal document: it
+// must be fast to write, complete enough to defend, and impossible to
+// silently alter afterwards.
+// ---------------------------------------------------------------------------
+
+enum ConsultationStatus {
+  DRAFT
+  SIGNED
+  CANCELLED
+}
+
+enum DiagnosisRank {
+  PRIMARY
+  SECONDARY
+}
+
+enum DiagnosisCertainty {
+  PROVISIONAL
+  CONFIRMED
+}
+
+/// An addendum adds; a correction supersedes. The original survives both.
+enum AmendmentType {
+  ADDENDUM
+  CORRECTION
+}
+
+enum TemplateScope {
+  TENANT
+  USER
+}
+
+model Consultation {
+  id          String @id @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  encounterId String @map("encounter_id") @db.Uuid
+  patientId   String @map("patient_id") @db.Uuid
+  branchId    String @map("branch_id") @db.Uuid
+  doctorId    String @map("doctor_id") @db.Uuid
+  /// A second consultation the same day, by another doctor, is sequence 2.
+  sequence    Int    @default(1)
+
+  status ConsultationStatus @default(DRAFT)
+
+  chiefComplaint String? @map("chief_complaint") @db.VarChar(20000)
+  hpi            String? @db.VarChar(20000)
+  history        String? @db.VarChar(20000)
+  examination    String? @db.VarChar(20000)
+  planText       String? @map("plan_text") @db.VarChar(20000)
+
+  templateId   String? @map("template_id") @db.Uuid
+  /// CON-R-08: where copied-forward history came from, so a stale account
+  /// of last month is never mistaken for what was said today.
+  copiedFromId String? @map("copied_from_id") @db.Uuid
+
+  followUpDue  DateTime? @map("follow_up_due") @db.Date
+  followUpNote String?   @map("follow_up_note") @db.VarChar(500)
+
+  startedAt      DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  lastAutosaveAt DateTime? @map("last_autosave_at") @db.Timestamptz(3)
+
+  signedAt DateTime? @map("signed_at") @db.Timestamptz(3)
+  signedBy String?   @map("signed_by") @db.Uuid
+  signedIp String?   @map("signed_ip") @db.VarChar(45)
+
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason String?   @map("cancel_reason") @db.VarChar(500)
+
+  /// CON-R-02: sha256 over the canonical form of the clinical content at
+  /// the moment of signing. A nightly job recomputes it, so a change made
+  /// around the application is detected even if it defeated the trigger.
+  contentHash String? @map("content_hash") @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  encounter   Encounter               @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  patient     Patient                 @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  template    ClinicalTemplate?       @relation(fields: [templateId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  copiedFrom  Consultation?           @relation("CopyForward", fields: [copiedFromId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  copiedInto  Consultation[]          @relation("CopyForward")
+  diagnoses   Diagnosis[]
+  amendments  ConsultationAmendment[]
+  attachments ConsultationAttachment[]
+  prescription    Prescription?
+
+  @@unique([encounterId, sequence], map: "consultation_encounter_sequence_key")
+  @@unique([id, tenantId], map: "consultation_id_tenant_key")
+  @@index([tenantId, encounterId], map: "consultation_encounter_idx")
+  @@index([tenantId, patientId, signedAt], map: "consultation_patient_idx")
+  /// A doctor's own unsigned drafts, which is their home screen.
+  @@index([tenantId, doctorId, status], map: "consultation_doctor_status_idx")
+  /// Drafts nobody has signed, for the administrator's dashboard.
+  @@index([tenantId, status, startedAt], map: "consultation_stale_idx")
+  @@map("consultation")
+}
+
+model Diagnosis {
+  id             String             @id @db.Uuid
+  tenantId       String             @map("tenant_id") @db.Uuid
+  consultationId String             @map("consultation_id") @db.Uuid
+  patientId      String             @map("patient_id") @db.Uuid
+  rank           DiagnosisRank
+  description    String             @db.VarChar(200)
+  icd10Code      String?            @map("icd10_code") @db.VarChar(10)
+  icd10Label     String?            @map("icd10_label") @db.VarChar(300)
+  certainty      DiagnosisCertainty @default(PROVISIONAL)
+  /// Offers to add this to the patient's long-term conditions.
+  isChronic      Boolean            @default(false) @map("is_chronic")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  consultation Consultation @relation(fields: [consultationId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, consultationId], map: "diagnosis_consultation_idx")
+  @@index([tenantId, icd10Code], map: "diagnosis_icd10_idx")
+  @@map("diagnosis")
+}
+
+/// CON-F-15: the only way a signed record changes.
+model ConsultationAmendment {
+  id             String        @id @db.Uuid
+  tenantId       String        @map("tenant_id") @db.Uuid
+  consultationId String        @map("consultation_id") @db.Uuid
+  type           AmendmentType
+  /// Which field a correction supersedes. Null for an addendum, which adds
+  /// rather than replaces.
+  field          String?       @db.VarChar(40)
+  previous       Json?         @db.JsonB
+  current        Json          @db.JsonB
+  reason         String        @db.VarChar(1000)
+  amendedBy      String        @map("amended_by") @db.Uuid
+  amendedAt      DateTime      @default(now()) @map("amended_at") @db.Timestamptz(3)
+  amendedIp      String?       @map("amended_ip") @db.VarChar(45)
+
+  consultation Consultation @relation(fields: [consultationId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, consultationId, amendedAt], map: "consultation_amendment_idx")
+  @@map("consultation_amendment")
+}
+
+model ConsultationAttachment {
+  id                String  @id @db.Uuid
+  tenantId          String  @map("tenant_id") @db.Uuid
+  consultationId    String  @map("consultation_id") @db.Uuid
+  patientDocumentId String  @map("patient_document_id") @db.Uuid
+  caption           String? @db.VarChar(300)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  consultation Consultation @relation(fields: [consultationId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([consultationId, patientDocumentId], map: "consultation_attachment_key")
+  @@index([tenantId, consultationId], map: "consultation_attachment_idx")
+  @@map("consultation_attachment")
+}
+
+/// CON-F-07: a starting point for a common presentation, owned by the
+/// clinic or by one doctor.
+model ClinicalTemplate {
+  id       String        @id @db.Uuid
+  tenantId String        @map("tenant_id") @db.Uuid
+  scope    TemplateScope
+  /// The doctor who owns it, when the scope is USER.
+  ownerId  String?       @map("owner_id") @db.Uuid
+  name     String        @db.VarChar(120)
+  keywords String[]      @db.VarChar(40)
+  /// The sections it fills in, and the diagnoses it suggests.
+  content  Json          @db.JsonB
+  active   Boolean       @default(true)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  consultations Consultation[]
+
+  @@unique([id, tenantId], map: "clinical_template_id_tenant_key")
+  @@index([tenantId, scope, ownerId], map: "clinical_template_scope_idx")
+  @@map("clinical_template")
+}
+
+/// CON-F-08: `.nad` becomes "No abnormality detected".
+model QuickPhrase {
+  id        String @id @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  trigger   String @db.VarChar(40)
+  expansion String @db.VarChar(1000)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([userId, trigger], map: "quick_phrase_user_trigger_key")
+  @@index([tenantId, userId], map: "quick_phrase_user_idx")
+  @@map("quick_phrase")
+}
+
+// ---------------------------------------------------------------------------
+// Product catalogue (INV, the first half of v0-09-inventory.md)
+//
+// What the clinic sells and uses. Built ahead of the rest of inventory
+// because prescribing depends on it: an allergy check that cannot say what
+// class a drug belongs to has nothing to check against, and a warning that
+// always says "check by hand" is one that gets ignored.
+//
+// Batches, the stock ledger, counts and reconciliation are the other half
+// and stay in Phase 3. Nothing here assumes them.
+// ---------------------------------------------------------------------------
+
+enum ProductType {
+  MEDICINE
+  CONSUMABLE
+  SUPPLY
+  SERVICE_ITEM
+}
+
+enum PriceBasis {
+  PRODUCT
+  BATCH
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model ProductCategory {
+  id       String  @id @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  parentId String? @map("parent_id") @db.Uuid
+  name     String  @db.VarChar(80)
+  sort     Int     @default(0)
+
+  parent   ProductCategory?  @relation("CategoryTree", fields: [parentId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  children ProductCategory[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([id, tenantId], map: "product_category_id_tenant_key")
+  @@unique([tenantId, parentId, name], map: "product_category_name_key")
+  @@index([tenantId, parentId, sort], map: "product_category_tree_idx")
+  @@map("product_category")
+}
+
+model Product {
+  id         String  @id @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  sku        String  @db.VarChar(40)
+  name       String  @db.VarChar(200)
+  type       ProductType
+  categoryId String? @map("category_id") @db.Uuid
+  brand      String? @db.VarChar(120)
+
+  /// Required for a medicine, and the reason this table exists before
+  /// prescribing does: an allergy is recorded against a substance, and
+  /// matching it needs the generic name rather than the brand on the box.
+  genericName String? @map("generic_name") @db.VarChar(200)
+  /// Penicillins, NSAIDs, opioids. What makes a class-level allergy
+  /// warning possible at all.
+  drugClass   String? @map("drug_class") @db.VarChar(120)
+
+  form          String?  @db.VarChar(40)
+  strengthText  String?  @map("strength_text") @db.VarChar(60)
+  strengthValue Decimal? @map("strength_value") @db.Decimal(12, 4)
+  strengthUnit  String?  @map("strength_unit") @db.VarChar(20)
+
+  /// What one of these is handed over as: a tablet, a millilitre, a bottle.
+  dispenseUnit    String  @map("dispense_unit") @db.VarChar(20)
+  packSize        Int     @default(1) @map("pack_size")
+  isPackDispensed Boolean @default(false) @map("is_pack_dispensed")
+  /// Whether stock of it is tracked by batch. False for things with no lot
+  /// number, which Phase 3 gives a synthetic batch so every movement still
+  /// references one.
+  isBatched       Boolean @default(true) @map("is_batched")
+  isControlled    Boolean @default(false) @map("is_controlled")
+  isColdChain     Boolean @default(false) @map("is_cold_chain")
+
+  maxDailyDose     Decimal? @map("max_daily_dose") @db.Decimal(12, 4)
+  maxDailyDoseUnit String?  @map("max_daily_dose_unit") @db.VarChar(20)
+
+  /// What a prescription starts with, so a doctor changes a number rather
+  /// than filling in five fields.
+  defaultDose      Decimal? @map("default_dose") @db.Decimal(10, 3)
+  defaultDoseUnit  String?  @map("default_dose_unit") @db.VarChar(20)
+  defaultRoute     String?  @map("default_route") @db.VarChar(20)
+  defaultFrequency String?  @map("default_frequency") @db.VarChar(20)
+
+  /// Sen per dispensing unit. Integer money: a price that is a float is a
+  /// price that is wrong by a sen somewhere.
+  sellingPrice BigInt     @default(0) @map("selling_price")
+  priceBasis   PriceBasis @default(PRODUCT) @map("price_basis")
+  markupPct    Decimal?   @map("markup_pct") @db.Decimal(6, 2)
+
+  barcodes String[] @db.VarChar(60)
+  notes    String?  @db.VarChar(1000)
+  status   ProductStatus @default(ACTIVE)
+
+  /// Lower case, for searching by name, generic or brand at once.
+  searchText String @default("") @map("search_text") @db.VarChar(600)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category       ProductCategory?       @relation(fields: [categoryId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  priceHistory   ProductPriceHistory[]
+  branchSettings ProductBranchSetting[]
+  prescriptionItems PrescriptionItem[]
+  batches           ProductBatch[]
+  vaccineFor        ProcedureCatalog[]    @relation("VaccineProduct")
+  procedureUses     ProcedureConsumable[]
+
+  @@unique([tenantId, sku], map: "product_sku_key")
+  @@unique([id, tenantId], map: "product_id_tenant_key")
+  @@index([tenantId, type, status], map: "product_type_idx")
+  @@index([tenantId, genericName], map: "product_generic_idx")
+  @@index([tenantId, drugClass], map: "product_class_idx")
+  @@map("product")
+}
+
+/// Every price this product has ever had, and who set it. A clinic asked
+/// why last month's invoice says something different deserves an answer.
+model ProductPriceHistory {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  sellingPrice  BigInt   @map("selling_price")
+  effectiveFrom DateTime @default(now()) @map("effective_from") @db.Timestamptz(3)
+  setBy         String?  @map("set_by") @db.Uuid
+  reason        String?  @db.VarChar(300)
+
+  product Product @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, productId, effectiveFrom], map: "product_price_history_idx")
+  @@map("product_price_history")
+}
+
+/// Reorder levels differ by branch: a busy clinic keeps more on the shelf.
+/// The numbers live here now; what consumes them arrives in Phase 3.
+model ProductBranchSetting {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+
+  minStock     Decimal? @map("min_stock") @db.Decimal(12, 3)
+  reorderLevel Decimal? @map("reorder_level") @db.Decimal(12, 3)
+  reorderQty   Decimal? @map("reorder_qty") @db.Decimal(12, 3)
+
+  product Product @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  branch  Branch  @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tenantId, productId, branchId])
+  @@index([tenantId, branchId], map: "product_branch_setting_branch_idx")
+  @@map("product_branch_setting")
+}
+
+// ---------------------------------------------------------------------------
+// Prescription (RX, v0-07-prescription.md)
+//
+// The clinical act of prescribing, kept apart from the physical act of
+// dispensing. A prescription says what the doctor intends; a dispense says
+// what left the shelf. They differ in quantity, in product and in time, and
+// collapsing them makes stock wrong and intent unrecoverable.
+//
+// Two safety checks live here, allergy and duplicate. They are simple, and
+// they are worth real care: a warning that fires constantly gets ignored,
+// and then the one that mattered gets ignored too.
+// ---------------------------------------------------------------------------
+
+enum PrescriptionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum PrescriptionItemStatus {
+  DRAFT
+  ACTIVE
+  PARTIAL
+  DISPENSED
+  DECLINED
+  CANCELLED
+  SUPERSEDED
+}
+
+model Prescription {
+  id             String @id @db.Uuid
+  tenantId       String @map("tenant_id") @db.Uuid
+  encounterId    String @map("encounter_id") @db.Uuid
+  consultationId String @map("consultation_id") @db.Uuid
+  patientId      String @map("patient_id") @db.Uuid
+  branchId       String @map("branch_id") @db.Uuid
+  prescribedBy   String @map("prescribed_by") @db.Uuid
+
+  status   PrescriptionStatus @default(DRAFT)
+  /// The label is printed in the patient's language, not the clinic's.
+  language String             @default("MS") @db.Char(2)
+
+  notesToDispenser String? @map("notes_to_dispenser") @db.VarChar(1000)
+
+  signedAt    DateTime? @map("signed_at") @db.Timestamptz(3)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items        PrescriptionItem[]
+  encounter    Encounter    @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  consultation Consultation @relation(fields: [consultationId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  patient      Patient      @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([consultationId], map: "prescription_consultation_key")
+  @@unique([consultationId, tenantId], map: "prescription_consultation_tenant_key")
+  @@unique([id, tenantId], map: "prescription_id_tenant_key")
+  @@index([tenantId, patientId, signedAt], map: "prescription_patient_idx")
+  @@index([tenantId, branchId, status], map: "prescription_pharmacy_queue_idx")
+  @@map("prescription")
+}
+
+model PrescriptionItem {
+  id             String @id @db.Uuid
+  tenantId       String @map("tenant_id") @db.Uuid
+  prescriptionId String @map("prescription_id") @db.Uuid
+
+  /// RX-R-06: a change to a signed item is a new version, never an edit.
+  version      Int     @default(1)
+  supersedesId String? @map("supersedes_id") @db.Uuid
+  isCurrent    Boolean @default(true) @map("is_current")
+
+  /// Null for something the patient will have filled elsewhere.
+  productId    String? @map("product_id") @db.Uuid
+  externalName String? @map("external_name") @db.VarChar(200)
+
+  /// RX-R-02: copied from the catalogue at the moment of prescribing, so
+  /// editing a product next year does not rewrite what was prescribed
+  /// today. The snapshot is the record; the product is only where it came
+  /// from.
+  genericName String  @map("generic_name") @db.VarChar(200)
+  drugClass   String? @map("drug_class") @db.VarChar(120)
+  strength    String? @db.VarChar(60)
+  displayName String  @map("display_name") @db.VarChar(200)
+
+  doseValue       Decimal  @map("dose_value") @db.Decimal(10, 3)
+  doseUnit        String   @map("dose_unit") @db.VarChar(20)
+  route           String   @db.VarChar(20)
+  frequencyCode   String   @map("frequency_code") @db.VarChar(20)
+  frequencyPerDay Decimal? @map("frequency_per_day") @db.Decimal(6, 3)
+  isPrn           Boolean  @default(false) @map("is_prn")
+  prnIndication   String?  @map("prn_indication") @db.VarChar(200)
+
+  durationDays  Int?    @map("duration_days")
+  untilFinished Boolean @default(false) @map("until_finished")
+
+  quantity     Decimal @db.Decimal(10, 3)
+  quantityUnit String  @map("quantity_unit") @db.VarChar(20)
+  /// False once a doctor has typed over the calculated number.
+  quantityAuto Boolean @default(true) @map("quantity_auto")
+
+  instructions String? @db.VarChar(500)
+  /// What goes on the bag. Generated when anything that changes it
+  /// changes, and printed from here rather than recomputed at the counter.
+  labelText    String  @map("label_text") @db.VarChar(600)
+
+  isExternal   Boolean @default(false) @map("is_external")
+  isControlled Boolean @default(false) @map("is_controlled")
+
+  status PrescriptionItemStatus @default(DRAFT)
+
+  /// RX-R-03: worked out by the server on every write and again at
+  /// signing. The client never decides whether a warning exists.
+  warnings Json @default("[]") @db.JsonB
+
+  overrideReason String?   @map("override_reason") @db.VarChar(500)
+  overriddenBy   String?   @map("overridden_by") @db.Uuid
+  overriddenAt   DateTime? @map("overridden_at") @db.Timestamptz(3)
+  /// RX-R-04: a severe exact match has to be confirmed again at signing.
+  overrideConfirmedAt DateTime? @map("override_confirmed_at") @db.Timestamptz(3)
+
+  cancelledReason String? @map("cancelled_reason") @db.VarChar(500)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  prescription Prescription      @relation(fields: [prescriptionId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  product      Product?          @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  supersedes   PrescriptionItem? @relation("ItemVersions", fields: [supersedesId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  supersededBy PrescriptionItem[] @relation("ItemVersions")
+
+  @@unique([id, tenantId], map: "prescription_item_id_tenant_key")
+  @@index([tenantId, prescriptionId, isCurrent], map: "prescription_item_current_idx")
+  /// The duplicate check looks across visits and branches by generic name.
+  @@index([tenantId, genericName, createdAt], map: "prescription_item_generic_idx")
+  @@index([tenantId, productId], map: "prescription_item_product_idx")
+  @@map("prescription_item")
+}
+
+/// RX-F-10: what this doctor prescribes most, for fast entry.
+model RxFavourite {
+  id         String   @id @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  defaults   Json?    @db.JsonB
+  uses       Int      @default(1)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(3)
+
+  @@unique([userId, productId], map: "rx_favourite_user_product_key")
+  @@index([tenantId, userId, uses], map: "rx_favourite_user_idx")
+  @@map("rx_favourite")
+}
+
+// ---------------------------------------------------------------------------
+// Stock (INV, the second half of v0-09-inventory.md)
+//
+// One invariant holds this together: a batch's quantity_on_hand equals the
+// sum of its movements, always. If the system says 40 and the shelf says
+// 12, the clinic stops trusting the system — and the distrust spreads to
+// the parts that are correct.
+//
+// So there is exactly one write path, LedgerService.move(), which locks the
+// batch, refuses a negative result, writes the movement and updates the
+// cache in the caller's transaction. Every other module calls it; nobody
+// writes these tables directly. A nightly job recomputes the sum and
+// reports, never corrects.
+// ---------------------------------------------------------------------------
+
+enum BatchStatus {
+  ACTIVE
+  DEPLETED
+  EXPIRED
+  BLOCKED
+}
+
+/// INV-F-10. Signed: the sign lives in the service, not in the caller.
+enum StockMovementType {
+  OPENING
+  RECEIVE
+  DISPENSE
+  DISPENSE_REVERSAL
+  /// A procedure using something up (PRC-R-01).
+  CONSUME
+  CONSUME_REVERSAL
+  ADJUST_IN
+  ADJUST_OUT
+  DAMAGE
+  EXPIRE
+  RETURN_TO_SUPPLIER
+  RETURN_FROM_PATIENT
+  QUARANTINE_IN
+  QUARANTINE_OUT
+  TRANSFER_OUT
+  TRANSFER_IN
+  COUNT_ADJUST
+}
+
+model ProductBatch {
+  id        String @id @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  branchId  String @map("branch_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+
+  /// INV-F-09: 'NB' for a product nobody gives a lot number to. Every
+  /// movement references a batch, so the ledger has no special cases.
+  batchNo    String    @map("batch_no") @db.VarChar(60)
+  /// Null only for a non-batched product. A month-precision expiry is
+  /// stored as the last day of that month.
+  expiryDate DateTime? @map("expiry_date") @db.Date
+
+  /// Sen per dispensing unit, snapshotted onto every movement.
+  costPrice    BigInt  @default(0) @map("cost_price")
+  /// Set only when the product is priced per batch.
+  sellingPrice BigInt? @map("selling_price")
+
+  quantityOnHand      Decimal @default(0) @map("quantity_on_hand") @db.Decimal(12, 3)
+  quantityQuarantined Decimal @default(0) @map("quantity_quarantined") @db.Decimal(12, 3)
+
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+  sourceType String?  @map("source_type") @db.VarChar(20)
+  sourceId   String?  @map("source_id") @db.Uuid
+  barcode    String?  @db.VarChar(60)
+  status     BatchStatus @default(ACTIVE)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product   Product         @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  branch    Branch          @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  movements StockMovement[]
+
+  @@unique([branchId, productId, batchNo], map: "product_batch_key")
+  @@unique([id, tenantId], map: "product_batch_id_tenant_key")
+  /// FEFO reads this one, oldest expiry first.
+  @@index([branchId, productId, expiryDate], map: "product_batch_fefo_idx")
+  @@index([tenantId, branchId, status], map: "product_batch_branch_idx")
+  @@index([tenantId, expiryDate], map: "product_batch_expiry_idx")
+  @@map("product_batch")
+}
+
+/// INV-F-10, INV-R-06: append-only. Enforced by trigger, not by convention.
+model StockMovement {
+  id        String @id @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  branchId  String @map("branch_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  batchId   String @map("batch_id") @db.Uuid
+
+  type StockMovementType
+  /// Signed. Negative takes stock off the shelf.
+  quantity Decimal @db.Decimal(12, 3)
+  /// Sen per unit at the moment it moved, so cost of goods does not change
+  /// when the next delivery arrives at a different price.
+  unitCost BigInt  @default(0) @map("unit_cost")
+  /// INV-R-05: the batch's on-hand after this row. The ledger is
+  /// self-auditing without recomputing from the beginning of time.
+  balanceAfter Decimal @map("balance_after") @db.Decimal(12, 3)
+
+  /// What caused it: 'dispense', 'encounter_procedure', 'stock_in'…
+  referenceType String? @map("reference_type") @db.VarChar(40)
+  referenceId   String? @map("reference_id") @db.Uuid
+  /// INV-F-13: from a controlled list, plus the words the person typed.
+  reasonCode    String? @map("reason_code") @db.VarChar(40)
+  reasonText    String? @map("reason_text") @db.VarChar(500)
+
+  performedBy     String?  @map("performed_by") @db.Uuid
+  performedByName String?  @map("performed_by_name") @db.VarChar(120)
+  occurredAt      DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  batch ProductBatch @relation(fields: [batchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([id, tenantId], map: "stock_movement_id_tenant_key")
+  @@index([tenantId, batchId, occurredAt], map: "stock_movement_batch_idx")
+  @@index([tenantId, branchId, productId, occurredAt], map: "stock_movement_product_idx")
+  @@index([tenantId, type, occurredAt], map: "stock_movement_type_idx")
+  @@index([referenceType, referenceId], map: "stock_movement_reference_idx")
+  @@map("stock_movement")
+}
+
+/// INV-F-21. What the nightly check found, kept so a mismatch that appears
+/// and disappears is still visible the next morning.
+model ReconciliationRun {
+  id             String   @id @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  runAt          DateTime @default(now()) @map("run_at") @db.Timestamptz(3)
+  batchesChecked Int      @default(0) @map("batches_checked")
+  mismatches     Int      @default(0)
+  details        Json     @default("[]") @db.JsonB
+
+  @@index([tenantId, runAt], map: "reconciliation_run_idx")
+  @@map("reconciliation_run")
+}
+
+// ---------------------------------------------------------------------------
+// Procedures (PRC, v0-10-procedures.md)
+//
+// Injections, nebulisers, dressings, vaccinations. Ordered by a doctor,
+// performed by a nurse, billed at a catalogue price, and — the part that
+// earns the module its place — consuming their materials automatically.
+// A nebuliser session uses a mask and a respule whether or not anybody
+// remembers to write it down, and "nobody remembered" is the commonest
+// reason a clinic's stock figures are wrong.
+// ---------------------------------------------------------------------------
+
+enum ProcedureCategory {
+  INJECTION
+  NEBULISER
+  DRESSING
+  MINOR_SURGERY
+  VACCINATION
+  SCREENING
+  OTHER
+}
+
+enum ProcedureStatus {
+  ORDERED
+  PERFORMED
+  CANCELLED
+  VOIDED
+}
+
+enum Laterality {
+  LEFT
+  RIGHT
+  BILATERAL
+  NA
+}
+
+model ProcedureCatalog {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+
+  code     String            @db.VarChar(40)
+  name     String            @db.VarChar(160)
+  category ProcedureCategory
+
+  /// Sen. Integer money, like everywhere else.
+  price BigInt @default(0)
+
+  requiresConsent Boolean @default(false) @map("requires_consent")
+  /// A nurse may not perform this one, whatever the branch setting says.
+  requiresDoctor  Boolean @default(false) @map("requires_doctor")
+
+  /// For a VACCINATION: what actually goes into the arm, so the batch and
+  /// expiry reach the patient's record (PRC-F-03).
+  vaccineProductId String? @map("vaccine_product_id") @db.Uuid
+
+  defaultDurationMin Int?    @map("default_duration_min")
+  protocol           String? @db.VarChar(4000)
+  status             ProductStatus @default(ACTIVE)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  vaccineProduct Product?                   @relation("VaccineProduct", fields: [vaccineProductId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  consumables    ProcedureConsumable[]
+  priceHistory   ProcedurePriceHistory[]
+  performed      EncounterProcedure[]
+
+  @@unique([tenantId, code], map: "procedure_catalog_code_key")
+  @@unique([id, tenantId], map: "procedure_catalog_id_tenant_key")
+  @@index([tenantId, category, status], map: "procedure_catalog_category_idx")
+  @@map("procedure_catalog")
+}
+
+/// PRC-F-02: what gets used up, and how much of it.
+model ProcedureConsumable {
+  id          String  @id @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  procedureId String  @map("procedure_id") @db.Uuid
+  productId   String  @map("product_id") @db.Uuid
+  quantity    Decimal @db.Decimal(10, 3)
+  /// Prefilled but unticked: a second dressing is used sometimes, not always.
+  optional    Boolean @default(false)
+
+  procedure ProcedureCatalog @relation(fields: [procedureId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  product   Product          @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([procedureId, productId], map: "procedure_consumable_key")
+  @@index([tenantId, productId], map: "procedure_consumable_product_idx")
+  @@map("procedure_consumable")
+}
+
+/// PRC-F-04. Append-only: what a procedure cost in March is a fact.
+model ProcedurePriceHistory {
+  id            String   @id @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  procedureId   String   @map("procedure_id") @db.Uuid
+  price         BigInt
+  effectiveFrom DateTime @default(now()) @map("effective_from") @db.Timestamptz(3)
+  setBy         String?  @map("set_by") @db.Uuid
+  reason        String?  @db.VarChar(500)
+
+  procedure ProcedureCatalog @relation(fields: [procedureId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, procedureId, effectiveFrom], map: "procedure_price_history_idx")
+  @@map("procedure_price_history")
+}
+
+model EncounterProcedure {
+  id             String  @id @db.Uuid
+  tenantId       String  @map("tenant_id") @db.Uuid
+  branchId       String  @map("branch_id") @db.Uuid
+  encounterId    String  @map("encounter_id") @db.Uuid
+  patientId      String  @map("patient_id") @db.Uuid
+  consultationId String? @map("consultation_id") @db.Uuid
+  procedureId    String  @map("procedure_id") @db.Uuid
+
+  /// PRC-R-02: taken at order time. A price rise next week does not
+  /// change what this visit is charged.
+  nameSnapshot  String @map("name_snapshot") @db.VarChar(160)
+  priceSnapshot BigInt @map("price_snapshot")
+
+  status ProcedureStatus @default(ORDERED)
+
+  orderedBy String?  @map("ordered_by") @db.Uuid
+  orderedAt DateTime @default(now()) @map("ordered_at") @db.Timestamptz(3)
+  /// PRC-F-06: a nurse acted without a doctor's order, and the record says so.
+  nurseInitiated Boolean @default(false) @map("nurse_initiated")
+
+  performedBy String?   @map("performed_by") @db.Uuid
+  performedAt DateTime? @map("performed_at") @db.Timestamptz(3)
+
+  site       String?     @db.VarChar(120)
+  laterality Laterality?
+
+  consentGiven Boolean?  @map("consent_given")
+  consentBy    String?   @map("consent_by") @db.VarChar(160)
+  consentAt    DateTime? @map("consent_at") @db.Timestamptz(3)
+
+  notes         String? @db.VarChar(2000)
+  complications String? @db.VarChar(2000)
+
+  cancelReason String?   @map("cancel_reason") @db.VarChar(500)
+  voidedBy     String?   @map("voided_by") @db.Uuid
+  voidedAt     DateTime? @map("voided_at") @db.Timestamptz(3)
+  voidReason   String?   @map("void_reason") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  procedure    ProcedureCatalog               @relation(fields: [procedureId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  encounter    Encounter                      @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  patient      Patient                        @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  consumables  EncounterProcedureConsumable[]
+  vaccinations VaccinationRecord[]
+
+  @@unique([id, tenantId], map: "encounter_procedure_id_tenant_key")
+  @@index([tenantId, encounterId], map: "encounter_procedure_encounter_idx")
+  @@index([tenantId, branchId, status], map: "encounter_procedure_queue_idx")
+  @@index([tenantId, patientId, performedAt], map: "encounter_procedure_patient_idx")
+  @@map("encounter_procedure")
+}
+
+/// What was actually used, and which movement took it off the shelf.
+model EncounterProcedureConsumable {
+  id                   String  @id @db.Uuid
+  tenantId             String  @map("tenant_id") @db.Uuid
+  encounterProcedureId String  @map("encounter_procedure_id") @db.Uuid
+  productId            String  @map("product_id") @db.Uuid
+  batchId              String  @map("batch_id") @db.Uuid
+  quantity             Decimal @db.Decimal(10, 3)
+
+  /// The link back into the ledger, both ways. A void writes the
+  /// reversal and records it here, so "was this put back?" is answerable
+  /// by looking rather than by searching the ledger.
+  stockMovementId    String  @map("stock_movement_id") @db.Uuid
+  reversalMovementId String? @map("reversal_movement_id") @db.Uuid
+
+  encounterProcedure EncounterProcedure @relation(fields: [encounterProcedureId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, encounterProcedureId], map: "encounter_procedure_consumable_idx")
+  @@index([tenantId, batchId], map: "encounter_procedure_consumable_batch_idx")
+  @@map("encounter_procedure_consumable")
+}
+
+/// PRC-F-11. A projection, written at perform, because the question
+/// "which batch went into this child" has to be answerable in a recall
+/// without reconstructing it from a procedure's consumables.
+model VaccinationRecord {
+  id                   String @id @db.Uuid
+  tenantId             String @map("tenant_id") @db.Uuid
+  patientId            String @map("patient_id") @db.Uuid
+  encounterProcedureId String @map("encounter_procedure_id") @db.Uuid
+
+  vaccineProductId String    @map("vaccine_product_id") @db.Uuid
+  vaccineName      String    @map("vaccine_name") @db.VarChar(200)
+  batchNo          String    @map("batch_no") @db.VarChar(60)
+  expiry           DateTime? @db.Date
+  doseNumber       Int?      @map("dose_number")
+  site             String?   @db.VarChar(120)
+  givenBy          String    @map("given_by") @db.Uuid
+  givenAt          DateTime  @map("given_at") @db.Timestamptz(3)
+
+  patient            Patient            @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  encounterProcedure EncounterProcedure @relation(fields: [encounterProcedureId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, patientId, givenAt], map: "vaccination_record_patient_idx")
+  @@map("vaccination_record")
 }

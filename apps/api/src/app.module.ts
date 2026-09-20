@@ -13,6 +13,11 @@ import { HealthController } from './health.controller.js';
 import { PatientModule } from './modules/patient/patient.module.js';
 import { EncounterModule } from './modules/encounter/encounter.module.js';
 import { TriageModule } from './modules/triage/triage.module.js';
+import { ConsultationModule } from './modules/consultation/consultation.module.js';
+import { CatalogueModule } from './modules/catalogue/catalogue.module.js';
+import { PrescriptionModule } from './modules/prescription/prescription.module.js';
+import { StockModule } from './modules/stock/stock.module.js';
+import { ProcedureModule } from './modules/procedure/procedure.module.js';
 
 @Module({
   imports: [
@@ -26,6 +31,11 @@ import { TriageModule } from './modules/triage/triage.module.js';
     PatientModule,
     EncounterModule,
     TriageModule,
+    CatalogueModule,
+    PrescriptionModule,
+    StockModule,
+    ProcedureModule,
+    ConsultationModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [HealthController],

@@ -32,3 +32,43 @@ export type RequestWithContext = {
   tenantContext?: TenantContext;
   id?: string;
 };
+
+/**
+ * A context for work the system does on its own behalf, in reaction to
+ * something a person did.
+ *
+ * Routing an encounter after a consultation is signed is not a request: it
+ * happens after the doctor's transaction has committed, with no session in
+ * scope. The audit entry still has to say who caused it, which is why the
+ * doctor's own id and a plain description of the cause are carried through
+ * rather than inventing a "system" user nobody can ask about.
+ *
+ * It holds no permissions, deliberately. Anything reachable this way must
+ * be a service method whose rules are checked in the service, not a
+ * permission check that a fabricated context could satisfy.
+ */
+export function systemContext(input: {
+  tenantId: string;
+  branchId: string;
+  causedByUserId: string;
+  because: string;
+}): TenantContext {
+  return {
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    userId: input.causedByUserId,
+    sessionId: 'system',
+    userName: input.because,
+    userEmail: '',
+    roles: [],
+    rolesAnywhere: [],
+    branchesWithRole: [input.branchId],
+    permissions: new Set(),
+    permissionVersion: 0,
+    mfaVerified: true,
+    reauthAt: null,
+    ip: null,
+    userAgent: null,
+    requestId: 'system',
+  };
+}
