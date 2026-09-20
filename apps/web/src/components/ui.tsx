@@ -27,9 +27,9 @@ export function Button({
     'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-55';
   const sizes = { sm: 'h-8 px-3 text-sm', md: 'h-10 px-4 text-sm' };
   const variants = {
-    primary: 'bg-primary text-white hover:bg-primary-hover',
+    primary: 'bg-primary text-on-primary hover:bg-primary-hover',
     secondary: 'border border-line bg-surface text-foreground hover:bg-surface-muted',
-    danger: 'bg-danger text-white hover:opacity-90',
+    danger: 'bg-danger text-on-danger hover:opacity-90',
     ghost: 'text-muted hover:bg-surface-muted hover:text-foreground',
   };
   return (

@@ -13,9 +13,10 @@ documents/
   security/   threat models
 ```
 
-The database is **MySQL 8**. The planning documents specify Postgres; what
-changed, and what replaces row-level security, is in
-[`documents/decisions/adr-0001-mysql-instead-of-postgres.md`](documents/decisions/adr-0001-mysql-instead-of-postgres.md).
+The database is **PostgreSQL 16**, with row-level security enabled and forced
+on every tenant-owned table. It ran on MySQL for a day; the move and what it
+changed are in
+[`documents/decisions/adr-0002-postgres.md`](documents/decisions/adr-0002-postgres.md).
 
 ## Setup
 
@@ -32,12 +33,12 @@ openssl rand -base64 32   # APP_KEK_V1     encrypts MFA secrets at rest
 openssl rand -base64 32   # APP_HASH_PEPPER
 ```
 
-Then create the schema, install the database guards and seed a first
-administrator:
+Then create the schema and seed a first administrator. Row-level security,
+the audit-immutability trigger and the last-administrator trigger are all part
+of the migrations, so there is no separate hardening step:
 
 ```bash
 npm run db:migrate --workspace @gementar/api
-mysql -h HOST -u admin -p DATABASE < apps/api/prisma/sql/tenant-write-guard.sql   # as a DBA
 npm run db:seed --workspace @gementar/api -- \
   --tenant "Klinik Pilot" --slug klinik-pilot \
   --branch "Cawangan Cheras" --code KL01 \
@@ -92,12 +93,17 @@ npm run lint        # every workspace; for the API this includes the
                     # @RequirePermission route check and the DTO tenant-id ban
 npm run typecheck   # every workspace
 npm test            # unit tests
-npm run test:e2e    # end-to-end, against the real MySQL database
+npm run test:e2e    # end-to-end, against the real PostgreSQL database
 npm run build       # every workspace
 ```
 
 The end-to-end suite creates its own tenants with random slugs and deletes them
-afterwards, so it is safe to point at a shared development database.
+afterwards, so it is safe to point at a shared development database. It runs
+with row-level security in force, exactly as production does, and part of what
+it asserts is that raw SQL with no tenant filter still sees only one tenant.
+
+Set `TEST_ADMIN_DATABASE_URL` to an owner connection if you want the suite to
+remove its own audit rows as well; they are append-only otherwise, by design.
 
 ## CI — Jenkins
 
@@ -109,7 +115,7 @@ multibranch or pipeline job at this repo and it needs two things from the agent:
 2. **A database.** Either a secret-text credential holding the CI
    `DATABASE_URL` (default id `cliniccare-ci-database-url`), or Docker on the
    agent, in which case set the `DATABASE` parameter to `throwaway-container`
-   and the pipeline starts and disposes of MySQL 8 itself.
+   and the pipeline starts and disposes of PostgreSQL 16 itself.
 
 Encryption keys are minted per build and thrown away, so there is nothing else
 to configure and no long-lived secret in the job.
@@ -122,15 +128,16 @@ Two things the pipeline enforces that are easy to lose otherwise:
 
 - `npm run lint` fails the build when a mutating route has no
   `@RequirePermission`, or when any DTO would accept a tenant id.
-- In `throwaway-container` mode the tenant write-guard triggers are installed as
-  root and the API is run with `DB_GUARD_MODE=require`, which proves the script
-  a DBA runs in production still applies cleanly to the current schema.
+- The API runs with `DB_GUARD_MODE=require`, so the build fails if any
+  tenant-owned table is missing row-level security, if a new table appears
+  without either protection or a written exemption, or if the database role can
+  bypass policies.
 
 ## What is built
 
 | Module | Status |
 |---|---|
-| [Identity & Access](documents/modules/v0-01-identity-access.md) | API complete and tested; web screens for sign-in, MFA, account, staff administration and the audit dashboard |
+| [Identity & Access](documents/modules/v0-01-identity-access.md) | API and web screens built and tested: sign-in, MFA, account, staff administration, audit dashboard |
 | [Tenancy & Branch](documents/modules/v0-02-tenancy-branch.md) | The parts IAM needs: tenant and branch tables, scoping, branch switching |
 | [Audit Trail](documents/modules/v0-14-audit-trail.md) | The write path and two read endpoints; the rest is still to come |
 

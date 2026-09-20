@@ -2,10 +2,10 @@ import { defineConfig } from 'vitest/config';
 import swc from 'unplugin-swc';
 
 /**
- * End-to-end tests run against a real MySQL database, as the testing strategy
- * in documents/planning/02-architecture.md requires: the things worth testing
- * here (transactions, constraints, tenant scoping) are the things mocks cannot
- * check.
+ * End-to-end tests run against a real PostgreSQL database, as the testing
+ * strategy in documents/planning/02-architecture.md requires: the things worth
+ * testing here (transactions, constraints, row-level security) are exactly the
+ * things mocks cannot check.
  */
 export default defineConfig({
   plugins: [

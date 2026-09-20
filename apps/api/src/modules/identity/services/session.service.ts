@@ -26,8 +26,8 @@ export type SessionRevokeReason =
  * nothing to present back. No JWTs, because "log this person out now" is a
  * feature the clinic will actually use.
  *
- * Stored in MySQL, not Redis. Revisit only when session lookup shows up in a
- * latency measurement, not before.
+ * Stored in PostgreSQL, not Redis. Revisit only when session lookup shows up
+ * in a latency measurement, not before.
  */
 @Injectable()
 export class SessionService {

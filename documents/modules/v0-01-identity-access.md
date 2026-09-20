@@ -3,14 +3,14 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | In progress — backend complete, tested against MySQL; web screens next |
+| **Status** | In progress — API and web screens built, tested against PostgreSQL |
 | **Delivery phase** | Phase 0 |
 | **Spec sections** | 29, 41 |
 | **Depends on** | — |
 | **Depended on by** | Every module |
 | **Est. effort** | ~20 h |
 | **Built** | `apps/api/src/modules/identity`, `.../tenancy`, `.../audit`, `apps/api/prisma` |
-| **Database** | MySQL 8 — see [ADR-0001](../decisions/adr-0001-mysql-instead-of-postgres.md) |
+| **Database** | PostgreSQL 16 — see [ADR-0002](../decisions/adr-0002-postgres.md) |
 
 ---
 
@@ -80,7 +80,7 @@ Without it nothing can be audited, nothing can be permissioned, and no clinical 
 |---|---|---|
 | IAM-F-24 | Users can list their sessions (device, IP, last seen, current) and revoke any. | Must |
 | IAM-F-25 | ADMIN can revoke all sessions for any user. | Must |
-| IAM-F-26 | Sessions are stored in the primary database (MySQL) in V0. Move to Redis only if session lookup becomes measurable. | Must |
+| IAM-F-26 | Sessions are stored in the primary database (PostgreSQL) in V0. Move to Redis only if session lookup becomes measurable. | Must |
 
 ## 4. Key workflows
 
@@ -105,12 +105,12 @@ Without it nothing can be audited, nothing can be permissioned, and no clinical 
 
 ## 5. Data model
 
-Written for Postgres; built on MySQL 8. The type mapping and the reasoning are
-in [ADR-0001](../decisions/adr-0001-mysql-instead-of-postgres.md); the built
-schema is `apps/api/prisma/schema.prisma`. Two differences are worth knowing
-without opening either: ids are `CHAR(36)` holding UUID v7, and every child
-table references its parent by `(id, tenant_id)` so a row cannot point across
-tenants.
+Built as written, on PostgreSQL 16. The schema is
+`apps/api/prisma/schema.prisma`. Two things are worth knowing without opening
+it: every child table references its parent by `(id, tenant_id)`, so a row
+cannot point across tenants, and `audit_log` carries no foreign keys at all so
+an append-only log can never block work on the rows it describes
+([ADR-0002](../decisions/adr-0002-postgres.md)).
 
 ```
 user
@@ -341,18 +341,18 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 | IAM-Q-02 | Do staff share workstations? Affects idle timeout and whether a fast "switch user" is needed. | Pilot clinic |
 | IAM-Q-03 | Which transactional email provider for invites/resets? | You |
 | IAM-Q-04 | If the same email address is ever used at two tenants, how should the login form resolve it — a clinic picker, a per-clinic subdomain, or a hard rule that addresses are globally unique? Only matters when clinic two arrives. | You |
-| IAM-Q-05 | Who installs `prisma/sql/tenant-write-guard.sql` on staging and production, and can the application account be made a non-owner of its tables? Until then, tenant isolation on writes is application-only. | You / hosting |
+| IAM-Q-05 | Should the application connect as a non-owner role (`prisma/sql/app-role.sql`) rather than as the table owner? Row-level security is forced either way, so this is about removing the ability to drop a policy from the account that faces the internet. The current account cannot create roles, so someone with more privileges has to do it. | You / hosting |
 
 ## 21. Definition of done
 
 - [x] All Must requirements implemented (API); Should items IAM-F-10, F-11, F-18 — F-10 and F-11 done, F-18 deferred with HR
-- [x] IAM-T-01 … T-11 green against a real MySQL database (`npm run test:e2e`, 36 end-to-end tests; 47 unit tests)
+- [x] IAM-T-01 … T-11 green against a real PostgreSQL database with row-level security in force (`npm run test:e2e`, 41 end-to-end tests; 57 unit tests)
 - [x] `@RequirePermission` rule enforced — `npm run lint:routes`, plus a runtime refusal for undeclared mutating routes
 - [x] Argon2id cost measured and recorded (below); **re-measure on the production VPS before go-live**
 - [x] Break-glass audit recorded and exposed — `GET /api/v1/audit/summary` and `/audit/events`
 - [x] Threat-model pass written up — [`documents/security/iam-threat-model.md`](../security/iam-threat-model.md)
-- [ ] Web screens (§11) built
-- [ ] DBA hardening script installed on staging and production (`apps/api/prisma/sql/tenant-write-guard.sql`)
+- [x] Web screens (§11) built — sign-in, MFA, forced enrolment, set and reset password, my account, staff administration, audit dashboard
+- [x] Tenant isolation installed by migrations, and asserted at boot (`DB_GUARD_MODE=require` in staging and production)
 - [ ] Open questions answered and recorded — IAM-Q-01, Q-02, Q-03 still open; Q-04 and Q-05 added
 
 ### Argon2id cost measurement (IAM-N-02)
@@ -381,7 +381,7 @@ is a place where the spec and reality disagreed slightly.
 
 | # | Decision | Why |
 |---|---|---|
-| 1 | **MySQL 8, no row-level security.** Tenant isolation is a Prisma extension that scopes every query, plus DBA-installed write-guard triggers, plus composite `(id, tenant_id)` foreign keys. | The available database has no RLS. Recorded in full, including what is weaker, in [ADR-0001](../decisions/adr-0001-mysql-instead-of-postgres.md). |
+| 1 | **PostgreSQL 16, with row-level security enabled and forced on every tenant-owned table**, alongside the Prisma extension and composite `(id, tenant_id)` foreign keys. The authentication path has a named, narrow bypass; `branch`, `user_branch_role` and `audit_log` have none. | Two independent layers, as `03-multi-tenancy.md` requires. The route here went via MySQL for a day; [ADR-0002](../decisions/adr-0002-postgres.md) records both the move and what PostgreSQL semantics changed in the code. |
 | 2 | **An email that exists at two tenants fails login** with the standard generic message, and the attempt is recorded. An optional `tenantSlug` in the request resolves it. | §14 says login does not ask for a tenant, and V0 users belong to one tenant. Guessing which clinic someone meant would be worse than failing. See IAM-Q-04. |
 | 3 | **Signing in with a password counts as a re-authentication** for the following 5 minutes. | Otherwise a new administrator, forced into MFA enrolment at first login, is asked for the password they just typed. |
 | 4 | **`POST /users/:id/mfa/reset` added** to the API surface. | §14 requires an administrator to be able to reset a lost second factor; §8 had no route for it. Revokes all sessions and devices, and is audited. |
@@ -390,4 +390,5 @@ is a place where the spec and reality disagreed slightly.
 | 7 | **The rate limit reaches 5 before the lockout reaches 10.** With the specified numbers, 5 failures per email per 15 minutes means 10 *consecutive* failures can only accumulate across windows. | Both controls are in the spec and both are implemented as written. The interaction is worth knowing: in practice the rate limiter is what a live attacker meets, and the lockout catches the patient one. Worth revisiting the pair of numbers together, not separately. |
 | 8 | **Disabling a user is refused for your own account outright**, not only when you are the last administrator. | IAM-F-16 reads either way. Nobody has a good reason to disable themselves, and the failure mode of allowing it is an administrator locking the clinic out at 6pm. |
 | 9 | **Services take their transaction from the request scope** rather than receiving `tx` as a parameter, except `AuditService.record`, which still requires it explicitly. | Keeps AUD-R-02 honest where it matters (an audit entry shares its change's transaction) without threading a parameter through forty signatures. |
+| 11 | **`audit_log` has no foreign keys**, and the test harness needs an owner connection to clean up after itself. | An append-only log must not be able to block operations on the rows it describes, and its entries have to outlive them. Deleting audit rows is deliberately an administrative act. |
 | 10 | **A minimal slice of the audit module was built** (append-only table, `record`, redaction, two read endpoints) rather than stubbed. | IAM's definition of done requires audited actions and a visible break-glass count. The rest of `AUD` is unaffected. |

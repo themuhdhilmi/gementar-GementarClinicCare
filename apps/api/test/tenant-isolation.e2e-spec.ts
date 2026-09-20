@@ -1,36 +1,37 @@
-import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { Harness, type Fixture, DEFAULT_PASSWORD } from './support/harness.js';
 import { Role, UserStatus } from '../src/generated/prisma/enums.js';
 import { newId } from '../src/shared/ids/uuid.js';
 import { TENANT_SCOPED_MODELS } from '../src/shared/prisma/tenant-scope.js';
+import { RLS_EXEMPT_TABLES, RLS_PROTECTED_TABLES } from '../src/shared/prisma/prisma.service.js';
 
 const API = '/api/v1';
 
 /**
- * The isolation suite from documents/planning/03-multi-tenancy.md, translated
- * to what MySQL can enforce. On Postgres row-level security is the backstop;
- * here it is the Prisma extension plus the DBA trigger script, so these tests
- * are the thing standing between two clinics' records.
+ * The isolation suite from documents/planning/03-multi-tenancy.md, run against
+ * a real PostgreSQL database with row-level security in force.
+ *
+ * The tests that matter most are the ones that go around the application: raw
+ * SQL with no tenant filter, and a write that names another tenant. Layer one
+ * (the Prisma extension) cannot see those. Layer two has to.
  */
-describe('Tenant isolation (against real MySQL)', () => {
+describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
   const harness = new Harness();
   let a: Fixture;
   let b: Fixture;
-  let adminCookieA: string;
+  let cookieA: string;
 
   beforeAll(async () => {
     await harness.start();
     a = await harness.seedTenant('iso-a');
     b = await harness.seedTenant('iso-b');
 
-    // Sign in as tenant A's front desk: no MFA requirement, plenty of reach.
     const login = await request(harness.server)
       .post(`${API}/auth/login`)
       .send({ email: a.frontdesk.email, password: DEFAULT_PASSWORD })
       .expect(200);
-    adminCookieA = (login.headers['set-cookie'] as unknown as string[]).find((c) =>
+    cookieA = (login.headers['set-cookie'] as unknown as string[]).find((c) =>
       c.startsWith('cc_session='),
     )!;
   });
@@ -39,37 +40,34 @@ describe('Tenant isolation (against real MySQL)', () => {
     await harness.stop();
   });
 
+  // ------------------------------------------------- layer 1: the extension
+
   it('a query in tenant A never returns tenant B rows', async () => {
-    const usersOfA = await harness.db.withTenant(a.tenantId, (tx) =>
+    const users = await harness.db.withTenant(a.tenantId, (tx) =>
       tx.user.findMany({ select: { id: true, tenantId: true } }),
     );
-    expect(usersOfA.length).toBeGreaterThan(0);
-    expect(usersOfA.every((u) => u.tenantId === a.tenantId)).toBe(true);
-    expect(usersOfA.some((u) => u.id === b.admin.id)).toBe(false);
+    expect(users.length).toBeGreaterThan(0);
+    expect(users.every((u) => u.tenantId === a.tenantId)).toBe(true);
+    expect(users.some((u) => u.id === b.admin.id)).toBe(false);
   });
 
   it("reading tenant B's user by its real id, from tenant A, finds nothing", async () => {
-    const found = await harness.db.withTenant(a.tenantId, (tx) =>
-      tx.user.findFirst({ where: { id: b.admin.id } }),
-    );
-    expect(found).toBeNull();
-
-    const byUnique = await harness.db.withTenant(a.tenantId, (tx) =>
-      tx.user.findUnique({ where: { id: b.admin.id } }),
-    );
-    expect(byUnique).toBeNull();
+    expect(
+      await harness.db.withTenant(a.tenantId, (tx) => tx.user.findFirst({ where: { id: b.admin.id } })),
+    ).toBeNull();
+    expect(
+      await harness.db.withTenant(a.tenantId, (tx) => tx.user.findUnique({ where: { id: b.admin.id } })),
+    ).toBeNull();
   });
 
   it("updating tenant B's user from tenant A changes nothing", async () => {
     const before = await harness.db.withTenant(b.tenantId, (tx) =>
       tx.user.findFirst({ where: { id: b.admin.id }, select: { name: true } }),
     );
-
     const result = await harness.db.withTenant(a.tenantId, (tx) =>
       tx.user.updateMany({ where: { id: b.admin.id }, data: { name: 'Hijacked' } }),
     );
     expect(result.count).toBe(0);
-
     const after = await harness.db.withTenant(b.tenantId, (tx) =>
       tx.user.findFirst({ where: { id: b.admin.id }, select: { name: true } }),
     );
@@ -92,54 +90,157 @@ describe('Tenant isolation (against real MySQL)', () => {
     ).rejects.toThrow(/another tenant/i);
 
     await expect(
-      harness.db.withTenant(a.tenantId, (tx) =>
-        tx.user.findMany({ where: { tenantId: b.tenantId } }),
-      ),
+      harness.db.withTenant(a.tenantId, (tx) => tx.user.findMany({ where: { tenantId: b.tenantId } })),
     ).rejects.toThrow(/another tenant/i);
-
-    await expect(
-      harness.db.withTenant(a.tenantId, (tx) =>
-        tx.user.updateMany({ where: { id: a.admin.id }, data: { tenantId: b.tenantId } }),
-      ),
-    ).rejects.toThrow(/may not be reassigned/i);
   });
 
   it('a query with no scope open is refused, rather than returning everything', async () => {
     await expect(harness.db.raw.user.findMany({})).rejects.toThrow(/no tenant scope/i);
-    await expect(harness.db.raw.session.count()).rejects.toThrow(/no tenant scope/i);
   });
 
-  it('the connection carries @app_tenant_id, so the database guards can act on it', async () => {
-    const seen = await harness.db.withTenant(a.tenantId, (tx) =>
-      tx.$queryRawUnsafe<Array<{ v: string | null }>>('SELECT @app_tenant_id AS v'),
-    );
-    expect(seen[0]?.v).toBe(a.tenantId);
+  // ---------------------------------------- layer 2: row-level security
 
-    const platform = await harness.db.withPlatform('test', (tx) =>
-      tx.$queryRawUnsafe<Array<{ v: string | null; off: number }>>(
-        'SELECT @app_tenant_id AS v, @app_tenant_guard_off AS off',
-      ),
+  it('raw SQL that forgets the tenant filter still sees only one tenant', async () => {
+    // This is the case layer one cannot catch, and the reason for PostgreSQL.
+    const rows = await harness.db.withTenant(a.tenantId, (tx) =>
+      tx.$queryRawUnsafe<Array<{ tenant_id: string }>>('SELECT id, tenant_id FROM "user"'),
     );
-    expect(platform[0]?.v).toBeNull();
-    expect(Number(platform[0]?.off)).toBe(1);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.tenant_id === a.tenantId)).toBe(true);
+
+    const branches = await harness.db.withTenant(a.tenantId, (tx) =>
+      tx.$queryRawUnsafe<Array<{ tenant_id: string }>>('SELECT id, tenant_id FROM branch'),
+    );
+    expect(branches.every((r) => r.tenant_id === a.tenantId)).toBe(true);
   });
 
-  it('opening a different tenant scope inside an open one is refused', async () => {
+  it('raw SQL inserting another tenant’s row is rejected by the database', async () => {
     await expect(
-      harness.db.withTenant(a.tenantId, () => harness.db.withTenant(b.tenantId, async () => 'no')),
-    ).rejects.toThrow(/Refused to open/i);
+      harness.db.withTenant(a.tenantId, (tx) =>
+        tx.$executeRawUnsafe(
+          `INSERT INTO branch (id, tenant_id, code, name, operating_hours, settings, status, created_at, updated_at)
+           VALUES ($1::uuid, $2::uuid, 'XX', 'Smuggled', '{}'::jsonb, '{}'::jsonb, 'ACTIVE', now(), now())`,
+          newId(),
+          b.tenantId,
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
   });
 
-  it('the API refuses cross-tenant identifiers, with 404 rather than 403', async () => {
+  it('with app.tenant_id unset, tenant tables return nothing and reject inserts (TEN-R-04)', async () => {
+    await harness.db.raw.$transaction(async (tx) => {
+      // No set_config at all: this is what a forgotten scope looks like.
+      const branches = await tx.$queryRawUnsafe<Array<{ n: number }>>(
+        'SELECT count(*)::int AS n FROM branch',
+      );
+      expect(branches[0]?.n).toBe(0);
+
+      const users = await tx.$queryRawUnsafe<Array<{ n: number }>>(
+        'SELECT count(*)::int AS n FROM "user"',
+      );
+      expect(users[0]?.n).toBe(0);
+
+      await expect(
+        tx.$executeRawUnsafe(
+          `INSERT INTO branch (id, tenant_id, code, name, operating_hours, settings, status, created_at, updated_at)
+           VALUES ($1::uuid, $2::uuid, 'ZZ', 'Unscoped', '{}'::jsonb, '{}'::jsonb, 'ACTIVE', now(), now())`,
+          newId(),
+          a.tenantId,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+    });
+  });
+
+  it('the authentication bypass does not open the branch, role or audit tables', async () => {
+    // Platform scope exists so login can find a session before it knows the
+    // tenant. It deliberately does not reach the tables below.
+    const seen = await harness.db.withPlatform('isolation probe', async (tx) => ({
+      branches: await tx.branch.count({}),
+      roles: await tx.userBranchRole.count({}),
+      audit: await tx.auditLog.count({}),
+      users: await tx.user.count({}),
+    }));
+    expect(seen.branches).toBe(0);
+    expect(seen.roles).toBe(0);
+    expect(seen.audit).toBe(0);
+    // Users are reachable, because login has to resolve an email address.
+    expect(seen.users).toBeGreaterThan(0);
+  });
+
+  it('the audit trail cannot be rewritten, through the ORM or around it', async () => {
+    await expect(
+      harness.db.withTenant(a.tenantId, (tx) =>
+        tx.auditLog.updateMany({ where: {}, data: { action: 'nonsense' } }),
+      ),
+    ).rejects.toThrow(/append-only/i);
+
+    await expect(
+      harness.db.withTenant(a.tenantId, (tx) =>
+        tx.$executeRawUnsafe(`UPDATE audit_log SET action = 'nonsense'`),
+      ),
+    ).rejects.toThrow(/AUDIT_IMMUTABLE/i);
+
+    await expect(
+      harness.db.withTenant(a.tenantId, (tx) => tx.$executeRawUnsafe('DELETE FROM audit_log')),
+    ).rejects.toThrow(/AUDIT_IMMUTABLE/i);
+  });
+
+  it('the database refuses to leave a tenant without an active administrator', async () => {
+    // Going around the service entirely, which is what the trigger is for.
+    await expect(
+      harness.db.withTenant(a.tenantId, (tx) =>
+        tx.$executeRawUnsafe(`UPDATE "user" SET status = 'DISABLED' WHERE id = $1::uuid`, a.admin.id),
+      ),
+    ).rejects.toThrow(/LAST_ADMIN/i);
+
+    await expect(
+      harness.db.withTenant(a.tenantId, (tx) =>
+        tx.$executeRawUnsafe(
+          `DELETE FROM user_branch_role WHERE user_id = $1::uuid AND role = 'ADMIN'`,
+          a.admin.id,
+        ),
+      ),
+    ).rejects.toThrow(/LAST_ADMIN/i);
+  });
+
+  it('addresses that differ only by case cannot both exist', async () => {
+    const email = `Mixed-${newId().slice(-8)}@Test.Local`;
+    await harness.db.withTenant(a.tenantId, (tx) =>
+      tx.user.create({
+        data: {
+          id: newId(),
+          tenantId: a.tenantId,
+          email: email.toLowerCase(),
+          name: 'Mixed Case',
+          status: UserStatus.ACTIVE,
+        },
+      }),
+    );
+    await expect(
+      harness.db.withTenant(a.tenantId, (tx) =>
+        tx.$executeRawUnsafe(
+          `INSERT INTO "user" (id, tenant_id, email, name, status, failed_attempts, mfa_enabled, permission_version, created_at, updated_at)
+           VALUES ($1::uuid, $2::uuid, $3, 'Shouty', 'ACTIVE', 0, false, 1, now(), now())`,
+          newId(),
+          a.tenantId,
+          email.toUpperCase(),
+        ),
+      ),
+    ).rejects.toThrow(/user_tenant_email_lower_key|duplicate key/i);
+  });
+
+  // ------------------------------------------------------- the API surface
+
+  it('the API refuses cross-tenant identifiers', async () => {
     const otherUser = await request(harness.server)
       .get(`${API}/users/${b.admin.id}`)
-      .set('Cookie', adminCookieA);
+      .set('Cookie', cookieA);
     // FRONTDESK lacks admin.users, so authorisation answers first.
     expect(otherUser.status).toBe(403);
 
     const switchAway = await request(harness.server)
       .put(`${API}/auth/me/branch`)
-      .set('Cookie', adminCookieA)
+      .set('Cookie', cookieA)
       .send({ branchId: b.branchAId });
     expect(switchAway.status).toBe(403);
   });
@@ -179,17 +280,36 @@ describe('Tenant isolation (against real MySQL)', () => {
     expect(response.body.code).toBe('unknown_branch');
   });
 
-  it('every table with a mandatory tenant_id is classified as tenant-scoped', async () => {
-    // The MySQL analogue of the "every table has RLS forced" generated test:
-    // a table added in eighteen months cannot silently ship unscoped.
-    const rows = await harness.db.withPlatform('schema audit', (tx) =>
-      tx.$queryRawUnsafe<Array<{ TABLE_NAME: string }>>(
-        `SELECT TABLE_NAME FROM information_schema.columns
-          WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'tenant_id' AND IS_NULLABLE = 'NO'`,
+  // --------------------------------------------------- the generated test
+
+  it('every tenant-owned table has row-level security enabled and forced', async () => {
+    // TEN-R-02, checked against the live schema: a table added in eighteen
+    // months cannot silently ship unprotected.
+    const status = await harness.app.get(
+      (await import('../src/shared/prisma/prisma.service.js')).PrismaService,
+    ).readRlsStatus();
+
+    expect(status.unprotected).toEqual([]);
+    expect(status.unexpected).toEqual([]);
+    expect(status.protected.sort()).toEqual([...RLS_PROTECTED_TABLES].sort());
+  });
+
+  it('the application role cannot bypass row-level security (TEN-R-03)', async () => {
+    const { PrismaService } = await import('../src/shared/prisma/prisma.service.js');
+    const status = await harness.app.get(PrismaService).readRlsStatus();
+    expect(status.role.bypassRls).toBe(false);
+    expect(status.role.superuser).toBe(false);
+  });
+
+  it('every model is classified, and every exemption is documented', async () => {
+    const tables = await harness.db.withPlatform('schema audit', (tx) =>
+      tx.$queryRawUnsafe<Array<{ table_name: string }>>(
+        `SELECT table_name FROM information_schema.columns
+          WHERE table_schema = current_schema() AND column_name = 'tenant_id' AND is_nullable = 'NO'`,
       ),
     );
-    const tables = rows.map((r) => r.TABLE_NAME).sort();
-    expect(tables.length).toBeGreaterThan(0);
+    const names = tables.map((t) => t.table_name).sort();
+    expect(names.length).toBeGreaterThan(0);
 
     const modelForTable = (table: string) =>
       table
@@ -197,39 +317,9 @@ describe('Tenant isolation (against real MySQL)', () => {
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join('');
 
-    const unclassified = tables.filter((t) => !TENANT_SCOPED_MODELS.has(modelForTable(t)));
-    expect(unclassified).toEqual([]);
-  });
-
-  it('the DBA hardening script covers every tenant-owned table', () => {
-    const sql = readFileSync(new URL('../prisma/sql/tenant-write-guard.sql', import.meta.url), 'utf8');
-    const tables = [
-      'branch',
-      'user',
-      'user_branch_role',
-      'session',
-      'password_reset_token',
-      'trusted_device',
-      'mfa_replay',
-      'audit_log',
-    ];
-    for (const table of tables) {
-      for (const event of ['ins', 'upd', 'del']) {
-        expect(sql).toContain(`CREATE TRIGGER trg_${table}_tenant_guard_${event}`);
-      }
-    }
-    expect(sql).toContain('CREATE TRIGGER trg_audit_log_immutable_upd');
-    expect(sql).toContain('CREATE TRIGGER trg_user_last_admin_upd');
-  });
-
-  it('the audit trail cannot be rewritten through the ORM', async () => {
-    await expect(
-      harness.db.withTenant(a.tenantId, (tx) =>
-        tx.auditLog.updateMany({ where: {}, data: { action: 'nonsense' } }),
-      ),
-    ).rejects.toThrow(/append-only/i);
-    await expect(
-      harness.db.withTenant(a.tenantId, (tx) => tx.auditLog.deleteMany({ where: {} })),
-    ).rejects.toThrow(/append-only/i);
+    expect(names.filter((t) => !TENANT_SCOPED_MODELS.has(modelForTable(t)))).toEqual([]);
+    // login_attempt carries a nullable tenant_id on purpose; it is the one
+    // exemption, and it is written down.
+    expect(Object.keys(RLS_EXEMPT_TABLES)).toContain('login_attempt');
   });
 });

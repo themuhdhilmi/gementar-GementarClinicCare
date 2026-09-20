@@ -2,10 +2,16 @@
 
 | | |
 |---|---|
-| **Status** | Accepted |
+| **Status** | **Superseded by [ADR-0002](adr-0002-postgres.md)** on 2026-09-21 |
 | **Date** | 2026-09-21 |
 | **Affects** | `documents/planning/02-architecture.md`, `documents/planning/03-multi-tenancy.md`, `documents/planning/04-data-model.md`, every module |
 | **Decided while building** | `v0-01-identity-access.md` |
+
+> **This decision was reversed the same day.** A PostgreSQL 16 server became
+> available, the schema moved to it, and row-level security now does the work
+> the compensating controls below were standing in for. The record is kept
+> because the reasoning still explains why those controls exist in the code,
+> and what would have to be rebuilt if MySQL ever came back.
 
 ## Context
 

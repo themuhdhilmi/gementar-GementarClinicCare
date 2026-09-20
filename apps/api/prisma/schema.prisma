@@ -1,17 +1,17 @@
-// Gementar ClinicCare — database schema (MySQL 8).
+// Gementar ClinicCare — database schema (PostgreSQL 16+).
 //
-// Conventions (documents/planning/04-data-model.md, adapted for MySQL in
-// documents/decisions/adr-0001-mysql-instead-of-postgres.md):
-//   * Primary keys        UUID v7, generated in the application, stored CHAR(36) ASCII
+// Conventions (documents/planning/04-data-model.md):
+//   * Primary keys        UUID v7, generated in the application, stored as `uuid`
 //   * Table / column case snake_case, mapped to camelCase in TypeScript
-//   * Timestamps          DATETIME(3), always UTC (the app pins the session time zone)
+//   * Timestamps          timestamptz(3), always UTC
 //   * Tenancy             tenant_id on every tenant-owned table; composite foreign keys
 //                         (id, tenant_id) so a row can never point across tenants
 //   * Deletes             no hard deletes on people or records; status columns instead
 //
-// Every tenant-owned table also carries an INSERT/UPDATE trigger that rejects writes
-// which disagree with the connection's @app_tenant_id. See the migration
-// `*_tenant_write_guard`.
+// Row-level security is the second, independent isolation layer and is applied by the
+// migration `*_row_level_security`: every tenant-owned table has RLS enabled and FORCED,
+// with USING and WITH CHECK policies reading `app.tenant_id` from the transaction.
+// See documents/decisions/adr-0002-postgres.md.
 
 generator client {
   provider            = "prisma-client"
@@ -21,7 +21,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
 }
 
 enum TenantStatus {
@@ -66,21 +66,21 @@ enum LoginOutcome {
 
 /// The paying customer: a clinic company. Not itself tenant-scoped — it *is* the tenant.
 model Tenant {
-  id            String       @id @db.Char(36)
+  id            String       @id @db.Uuid
   name          String       @db.VarChar(200)
   slug          String       @unique(map: "tenant_slug_key") @db.VarChar(60)
   status        TenantStatus
   plan          String       @default("pilot") @db.VarChar(40)
   timezone      String       @default("Asia/Kuala_Lumpur") @db.VarChar(60)
   currency      String       @default("MYR") @db.Char(3)
-  settings      Json
-  modules       Json
+  settings      Json         @db.JsonB
+  modules       Json         @db.JsonB
   tin           String?      @db.VarChar(40)
   businessRegNo String?      @map("business_reg_no") @db.VarChar(40)
-  createdAt     DateTime     @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt     DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
-  createdBy     String?      @map("created_by") @db.Char(36)
-  updatedBy     String?      @map("updated_by") @db.Char(36)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy     String?      @map("created_by") @db.Uuid
+  updatedBy     String?      @map("updated_by") @db.Uuid
 
   branches            Branch[]
   users               User[]
@@ -89,7 +89,6 @@ model Tenant {
   passwordResetTokens PasswordResetToken[]
   trustedDevices      TrustedDevice[]
   mfaReplays          MfaReplay[]
-  auditLogs           AuditLog[]
 
   @@index([status], map: "tenant_status_idx")
   @@map("tenant")
@@ -97,8 +96,8 @@ model Tenant {
 
 /// A physical clinic.
 model Branch {
-  id             String       @id @db.Char(36)
-  tenantId       String       @map("tenant_id") @db.Char(36)
+  id             String       @id @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
   code           String       @db.VarChar(16)
   name           String       @db.VarChar(200)
   addressLine1   String?      @map("address_line1") @db.VarChar(200)
@@ -110,20 +109,19 @@ model Branch {
   email          String?      @db.VarChar(254)
   licenceNo      String?      @map("licence_no") @db.VarChar(60)
   timezone       String?      @db.VarChar(60)
-  operatingHours Json         @map("operating_hours")
-  settings       Json
-  letterhead     Json?
+  operatingHours Json         @map("operating_hours") @db.JsonB
+  settings       Json         @db.JsonB
+  letterhead     Json?        @db.JsonB
   status         BranchStatus
-  createdAt      DateTime     @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
-  createdBy      String?      @map("created_by") @db.Char(36)
-  updatedBy      String?      @map("updated_by") @db.Char(36)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy      String?      @map("created_by") @db.Uuid
+  updatedBy      String?      @map("updated_by") @db.Uuid
 
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   usersWithDefault User[]           @relation("UserDefaultBranch")
   userBranchRoles  UserBranchRole[]
   sessions         Session[]
-  auditLogs        AuditLog[]
 
   @@unique([tenantId, code], map: "branch_tenant_code_key")
   @@unique([id, tenantId], map: "branch_id_tenant_key")
@@ -133,30 +131,31 @@ model Branch {
 
 /// A staff login. Owned by IAM; employment lives in HR (V2 `DRM`).
 model User {
-  id     String @id @db.Char(36)
-  tenantId String @map("tenant_id") @db.Char(36)
-  /// Stored lower-cased and trimmed; the column collation is case-insensitive as a backstop.
+  id     String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  /// Stored lower-cased and trimmed. A unique index on (tenant_id, lower(email))
+  /// in the row-level-security migration makes that a database guarantee too.
   email  String @db.VarChar(254)
   /// Argon2id PHC string. Empty only for INVITED users who have not set one yet.
   passwordHash      String?    @map("password_hash") @db.VarChar(255)
   name              String     @db.VarChar(120)
   phone             String?    @db.VarChar(32)
   status            UserStatus
-  lockedUntil       DateTime?  @map("locked_until") @db.DateTime(3)
+  lockedUntil       DateTime?  @map("locked_until") @db.Timestamptz(3)
   failedAttempts    Int        @default(0) @map("failed_attempts")
   /// AES-256-GCM envelope over the TOTP secret. Key lives outside the database.
-  mfaSecretEnc      Bytes?     @map("mfa_secret_enc") @db.VarBinary(1024)
+  mfaSecretEnc      Bytes?     @map("mfa_secret_enc")
   mfaEnabled        Boolean    @default(false) @map("mfa_enabled")
   /// AES-256-GCM envelope over a JSON array of peppered recovery-code hashes.
-  mfaRecoveryEnc    Bytes?     @map("mfa_recovery_enc") @db.VarBinary(4096)
-  mfaEnrolledAt     DateTime?  @map("mfa_enrolled_at") @db.DateTime(3)
+  mfaRecoveryEnc    Bytes?     @map("mfa_recovery_enc")
+  mfaEnrolledAt     DateTime?  @map("mfa_enrolled_at") @db.Timestamptz(3)
   permissionVersion Int        @default(1) @map("permission_version")
-  lastLoginAt       DateTime?  @map("last_login_at") @db.DateTime(3)
-  defaultBranchId   String?    @map("default_branch_id") @db.Char(36)
-  createdAt         DateTime   @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt         DateTime   @updatedAt @map("updated_at") @db.DateTime(3)
-  createdBy         String?    @map("created_by") @db.Char(36)
-  updatedBy         String?    @map("updated_by") @db.Char(36)
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  defaultBranchId   String?    @map("default_branch_id") @db.Uuid
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy         String?    @map("created_by") @db.Uuid
+  updatedBy         String?    @map("updated_by") @db.Uuid
 
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   defaultBranch       Branch?              @relation("UserDefaultBranch", fields: [defaultBranchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
@@ -176,15 +175,15 @@ model User {
 
 /// What a user may do, at which branch. The unit of permission resolution.
 model UserBranchRole {
-  id        String   @id @db.Char(36)
-  tenantId  String   @map("tenant_id") @db.Char(36)
-  userId    String   @map("user_id") @db.Char(36)
-  branchId  String   @map("branch_id") @db.Char(36)
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
   role      Role
-  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
-  createdBy String?  @map("created_by") @db.Char(36)
-  updatedBy String?  @map("updated_by") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
@@ -199,21 +198,21 @@ model UserBranchRole {
 
 /// Server-side session. The cookie carries an opaque token; only its hash is stored.
 model Session {
-  id                String    @id @db.Char(36)
-  tenantId          String    @map("tenant_id") @db.Char(36)
-  userId            String    @map("user_id") @db.Char(36)
-  tokenHash         Bytes     @map("token_hash") @db.Binary(32)
-  activeBranchId    String    @map("active_branch_id") @db.Char(36)
+  id                String    @id @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         Bytes     @map("token_hash")
+  activeBranchId    String    @map("active_branch_id") @db.Uuid
   permissionVersion Int       @map("permission_version")
   mfaVerified       Boolean   @default(false) @map("mfa_verified")
   /// Set when the user proved identity again; valid for a few minutes (IAM-F-11).
-  reauthAt          DateTime? @map("reauth_at") @db.DateTime(3)
+  reauthAt          DateTime? @map("reauth_at") @db.Timestamptz(3)
   ip                String?   @db.VarChar(45)
   userAgent         String?   @map("user_agent") @db.VarChar(512)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.DateTime(3)
-  lastSeenAt        DateTime  @map("last_seen_at") @db.DateTime(3)
-  expiresAt         DateTime  @map("expires_at") @db.DateTime(3)
-  revokedAt         DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt        DateTime  @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
   revokedReason     String?   @map("revoked_reason") @db.VarChar(120)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -230,15 +229,15 @@ model Session {
 
 /// Single-use link for "set your password" (invite) and "reset your password".
 model PasswordResetToken {
-  id        String       @id @db.Char(36)
-  tenantId  String       @map("tenant_id") @db.Char(36)
-  userId    String       @map("user_id") @db.Char(36)
-  tokenHash Bytes        @map("token_hash") @db.Binary(32)
+  id        String       @id @db.Uuid
+  tenantId  String       @map("tenant_id") @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  tokenHash Bytes        @map("token_hash")
   purpose   TokenPurpose
-  expiresAt DateTime     @map("expires_at") @db.DateTime(3)
-  usedAt    DateTime?    @map("used_at") @db.DateTime(3)
-  createdAt DateTime     @default(now()) @map("created_at") @db.DateTime(3)
-  createdBy String?      @map("created_by") @db.Char(36)
+  expiresAt DateTime     @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime?    @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdBy String?      @map("created_by") @db.Uuid
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
@@ -251,15 +250,15 @@ model PasswordResetToken {
 
 /// "Remember this device" for MFA (IAM-F-10).
 model TrustedDevice {
-  id         String    @id @db.Char(36)
-  tenantId   String    @map("tenant_id") @db.Char(36)
-  userId     String    @map("user_id") @db.Char(36)
-  tokenHash  Bytes     @map("token_hash") @db.Binary(32)
+  id         String    @id @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  Bytes     @map("token_hash")
   label      String?   @db.VarChar(200)
-  lastSeenAt DateTime? @map("last_seen_at") @db.DateTime(3)
-  expiresAt  DateTime  @map("expires_at") @db.DateTime(3)
-  revokedAt  DateTime? @map("revoked_at") @db.DateTime(3)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
@@ -272,12 +271,12 @@ model TrustedDevice {
 
 /// One row per accepted TOTP step, so a code cannot be replayed inside its window.
 model MfaReplay {
-  id        String   @id @db.Char(36)
-  tenantId  String   @map("tenant_id") @db.Char(36)
-  userId    String   @map("user_id") @db.Char(36)
+  id        String   @id @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
   timeStep  BigInt   @map("time_step")
-  expiresAt DateTime @map("expires_at") @db.DateTime(3)
-  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
@@ -290,14 +289,14 @@ model MfaReplay {
 /// Login attempts, for rate limiting and for the failed-login report.
 /// Deliberately NOT tenant-scoped: an attempt may not resolve to a tenant at all.
 model LoginAttempt {
-  id          String       @id @db.Char(36)
+  id          String       @id @db.Uuid
   emailKey    String       @map("email_key") @db.VarChar(254)
   ip          String?      @db.VarChar(45)
   userAgent   String?      @map("user_agent") @db.VarChar(512)
   outcome     LoginOutcome
-  tenantId    String?      @map("tenant_id") @db.Char(36)
-  userId      String?      @map("user_id") @db.Char(36)
-  attemptedAt DateTime     @default(now()) @map("attempted_at") @db.DateTime(3)
+  tenantId    String?      @map("tenant_id") @db.Uuid
+  userId      String?      @map("user_id") @db.Uuid
+  attemptedAt DateTime     @default(now()) @map("attempted_at") @db.Timestamptz(3)
 
   @@index([emailKey, attemptedAt], map: "login_attempt_email_time_idx")
   @@index([ip, attemptedAt], map: "login_attempt_ip_time_idx")
@@ -307,33 +306,34 @@ model LoginAttempt {
 
 /// Append-only audit trail (module AUD). Updates and deletes are blocked by triggers.
 model AuditLog {
-  id               String   @id @db.Char(36)
-  tenantId         String   @map("tenant_id") @db.Char(36)
-  branchId         String?  @map("branch_id") @db.Char(36)
-  actorId          String?  @map("actor_id") @db.Char(36)
+  id               String   @id @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  branchId         String?  @map("branch_id") @db.Uuid
+  actorId          String?  @map("actor_id") @db.Uuid
   actorName        String   @map("actor_name") @db.VarChar(120)
   actorRole        String?  @map("actor_role") @db.VarChar(40)
   action           String   @db.VarChar(80)
   entityType       String   @map("entity_type") @db.VarChar(60)
-  entityId         String?  @map("entity_id") @db.Char(36)
-  subjectPatientId String?  @map("subject_patient_id") @db.Char(36)
-  before           Json?
-  after            Json?
-  diff             Json?
+  entityId         String?  @map("entity_id") @db.Uuid
+  subjectPatientId String?  @map("subject_patient_id") @db.Uuid
+  before           Json?    @db.JsonB
+  after            Json?    @db.JsonB
+  diff             Json?    @db.JsonB
   reason           String?  @db.VarChar(500)
   ip               String?  @db.VarChar(45)
   userAgent        String?  @map("user_agent") @db.VarChar(512)
   requestId        String?  @map("request_id") @db.VarChar(64)
-  occurredAt       DateTime @default(now()) @map("occurred_at") @db.DateTime(3)
+  occurredAt       DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  branch Branch? @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  // Deliberately no foreign keys. An append-only log of facts must not be able
+  // to block work on the rows it describes, and its entries have to outlive
+  // them: that is also why actor_name is snapshotted rather than joined.
+  // tenant_id is still covered by row-level security.
 
   @@index([tenantId, occurredAt], map: "audit_tenant_time_idx")
   @@index([tenantId, actorId, occurredAt], map: "audit_tenant_actor_time_idx")
   @@index([tenantId, subjectPatientId, occurredAt], map: "audit_tenant_patient_time_idx")
   @@index([tenantId, entityType, entityId], map: "audit_tenant_entity_idx")
   @@index([tenantId, action, occurredAt], map: "audit_tenant_action_time_idx")
-  @@index([branchId, tenantId], map: "audit_branch_tenant_idx")
   @@map("audit_log")
 }

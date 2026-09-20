@@ -16,11 +16,12 @@ type TxOptions = { timeoutMs?: number; maxWaitMs?: number };
  * Two things happen on entry:
  *   1. an AsyncLocalStorage scope is opened, which the Prisma extension reads to
  *      inject `tenant_id` into every query;
- *   2. `@app_tenant_id` is set on the connection, which the database-level write
- *      guards compare against (when a DBA has installed them).
+ *   2. `app.tenant_id` is set on the transaction with `set_config(..., true)`,
+ *      which every row-level security policy reads.
  *
- * Both are set explicitly on every entry, so a stale value left on a pooled
- * connection by an earlier request can never be inherited.
+ * `set_config` with `is_local = true` is scoped to the transaction and is undone
+ * on commit or rollback, so a value can never leak onto the next request that
+ * borrows the same pooled connection. Both are set explicitly on entry anyway.
  *
  * Do not do slow work inside a scope: no PDF rendering, no S3, no outbound HTTP.
  * Gather what you need, leave the transaction, then do the slow thing.
@@ -107,11 +108,16 @@ export class DbService {
           store.tx = tx;
           if (scope.kind === 'tenant') {
             await tx.$executeRawUnsafe(
-              'SET @app_tenant_id = ?, @app_tenant_guard_off = 0',
+              "SELECT set_config('app.tenant_id', $1, true), set_config('app.auth_bypass', 'off', true)",
               scope.tenantId,
             );
           } else {
-            await tx.$executeRawUnsafe('SET @app_tenant_id = NULL, @app_tenant_guard_off = 1');
+            // Platform scope opens the authentication tables, and only those:
+            // branch, user_branch_role and audit_log have no bypass policy at
+            // all, so they stay unreachable however this is called.
+            await tx.$executeRawUnsafe(
+              "SELECT set_config('app.tenant_id', '', true), set_config('app.auth_bypass', 'on', true)",
+            );
           }
           try {
             return await fn(tx as unknown as Tx);

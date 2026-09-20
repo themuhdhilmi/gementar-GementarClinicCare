@@ -195,9 +195,9 @@ The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — 
 endpoints behind the admin dashboard. Each module's own specification still
 stands; picking it up means finishing it, not starting it.
 
-The database is MySQL 8, not Postgres. See
-[`../decisions/adr-0001-mysql-instead-of-postgres.md`](../decisions/adr-0001-mysql-instead-of-postgres.md)
-for what that changed, particularly for tenant isolation.
+The database is PostgreSQL 16, as the planning documents assume. It went via
+MySQL for a day; [`../decisions/adr-0002-postgres.md`](../decisions/adr-0002-postgres.md)
+records the move and the PostgreSQL semantics that changed the code.
 
 **V0 total ~395 h**, plus ~45 h Phase 5 hardening = **~440 h**. At 12 h/week, roughly 8 months.
 

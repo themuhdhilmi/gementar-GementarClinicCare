@@ -32,7 +32,7 @@ async function signInAdmin(harness: Harness, email: string) {
   return { cookie, secret: enrol.body.secret as string };
 }
 
-describe('IAM — administration and authorisation (against real MySQL)', () => {
+describe('IAM — administration and authorisation (against real PostgreSQL)', () => {
   const harness = new Harness();
   let fx: Fixture;
   let adminCookie: string;

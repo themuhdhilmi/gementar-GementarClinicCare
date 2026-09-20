@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadAppConfig } from './app-config.js';
 
 const base = {
-  DATABASE_URL: 'mysql://u:p@localhost:3306/db',
+  DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
   APP_KEK_V1: randomBytes(32).toString('base64'),
   APP_HASH_PEPPER: randomBytes(32).toString('base64'),
 } as NodeJS.ProcessEnv;

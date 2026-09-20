@@ -1,32 +1,47 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../generated/prisma/client.js';
 import { APP_CONFIG, type AppConfig } from '../../config/app-config.js';
 import { tenantScopeExtension } from './tenant-scope.js';
 
-export function parseMysqlUrl(raw: string) {
-  const url = new URL(raw);
-  return {
-    host: url.hostname,
-    port: url.port ? Number(url.port) : 3306,
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: decodeURIComponent(url.pathname.replace(/^\//, '')),
-  };
-}
+/** Tables that must have row-level security enabled and forced. */
+export const RLS_PROTECTED_TABLES = [
+  'tenant',
+  'branch',
+  'user',
+  'user_branch_role',
+  'session',
+  'password_reset_token',
+  'trusted_device',
+  'mfa_replay',
+  'audit_log',
+] as const;
+
+/**
+ * Tables deliberately left without row-level security, and why. The isolation
+ * suite asserts this list rather than tolerating whatever it finds.
+ */
+export const RLS_EXEMPT_TABLES: Readonly<Record<string, string>> = {
+  login_attempt:
+    'An attempt may never resolve to a tenant, and the rate limiter counts attempts before it knows who is knocking. No clinical data.',
+  _prisma_migrations: 'Migration bookkeeping, written by the migration tool.',
+};
 
 export function createPrismaClient(config: AppConfig) {
-  const conn = parseMysqlUrl(config.database.url);
-  const adapter = new PrismaMariaDb({
-    ...conn,
-    connectionLimit: config.database.poolSize,
-    // Everything is stored and compared in UTC; display-time zones are a
-    // presentation concern (documents/planning/04-data-model.md).
-    timezone: 'Z',
-    initSql: "SET time_zone='+00:00', sql_mode='STRICT_ALL_TABLES,NO_ENGINE_SUBSTITUTION'",
-    // Keep transactions short: an auth request should never wait on a connection.
-    acquireTimeout: 10_000,
-  });
+  const adapter = new PrismaPg(
+    {
+      connectionString: config.database.url,
+      max: config.database.poolSize,
+      // Keep transactions short: an auth request should never wait on a connection.
+      connectionTimeoutMillis: 10_000,
+      idleTimeoutMillis: 30_000,
+      application_name: 'cliniccare-api',
+    },
+    {
+      onPoolError: (error) => new Logger('PrismaPool').error(error.message),
+      onConnectionError: (error) => new Logger('PrismaConnection').warn(error.message),
+    },
+  );
 
   return new PrismaClient({
     adapter,
@@ -40,6 +55,13 @@ export type Tx = Omit<
   ExtendedPrismaClient,
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'
 >;
+
+export type RlsStatus = {
+  protected: string[];
+  unprotected: string[];
+  unexpected: string[];
+  role: { name: string; superuser: boolean; bypassRls: boolean };
+};
 
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
@@ -59,30 +81,89 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     await this.client.$disconnect();
   }
 
-  /**
-   * The database-level write guards (see prisma/sql/tenant-write-guard.sql) are
-   * installed by a DBA, because creating triggers needs privileges the
-   * application account deliberately does not have. Boot loudly if they are
-   * missing so "layer 2 is on" is never an assumption.
-   */
-  async assertDatabaseGuards(): Promise<{ installed: number; expected: number }> {
-    const mode = this.config.database.guardMode;
-    const rows = await this.client.$queryRawUnsafe<Array<{ n: bigint | number }>>(
-      "SELECT COUNT(*) AS n FROM information_schema.triggers WHERE trigger_schema = DATABASE() AND trigger_name LIKE 'trg_%_tenant_guard_%'",
+  async readRlsStatus(): Promise<RlsStatus> {
+    const tables = await this.client.$queryRawUnsafe<
+      Array<{ relname: string; rls: boolean; forced: boolean }>
+    >(
+      `SELECT c.relname, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = current_schema() AND c.relkind = 'r'`,
     );
-    const installed = Number(rows[0]?.n ?? 0);
-    const expected = 24; // 8 tenant-owned tables x insert/update/delete
+    const [role] = await this.client.$queryRawUnsafe<
+      Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>
+    >(`SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`);
 
-    if (mode === 'off') return { installed, expected };
+    const byName = new Map(tables.map((t) => [t.relname, t]));
+    const protectedTables: string[] = [];
+    const unprotected: string[] = [];
 
-    if (installed < expected) {
-      const message =
-        `Database tenant write guards are missing (${installed}/${expected} triggers). ` +
-        'Install prisma/sql/tenant-write-guard.sql as a privileged user, or set ' +
-        'DB_GUARD_MODE=off to accept application-only isolation.';
-      if (mode === 'require') throw new Error(message);
-      this.logger.warn(message);
+    for (const table of RLS_PROTECTED_TABLES) {
+      const row = byName.get(table);
+      if (row?.rls && row.forced) protectedTables.push(table);
+      else unprotected.push(table);
     }
-    return { installed, expected };
+
+    // A table nobody classified: it exists, it is not exempt, and it has no
+    // row-level security. That is how a new table ships unprotected.
+    const unexpected = tables
+      .filter((t) => !RLS_PROTECTED_TABLES.includes(t.relname as never))
+      .filter((t) => !(t.relname in RLS_EXEMPT_TABLES))
+      .filter((t) => !(t.rls && t.forced))
+      .map((t) => t.relname);
+
+    return {
+      protected: protectedTables,
+      unprotected,
+      unexpected,
+      role: {
+        name: role?.rolname ?? 'unknown',
+        superuser: Boolean(role?.rolsuper),
+        bypassRls: Boolean(role?.rolbypassrls),
+      },
+    };
+  }
+
+  /**
+   * TEN-R-02 and TEN-R-03, checked at boot rather than assumed.
+   *
+   * Row-level security that is switched off, or an application role that
+   * bypasses it, looks exactly like row-level security that works — right up
+   * until the day two clinics share a database. So the process says which it
+   * is, every time it starts, and in `require` mode refuses to serve.
+   */
+  async assertDatabaseGuards(): Promise<RlsStatus> {
+    const status = await this.readRlsStatus();
+    const mode = this.config.database.guardMode;
+    if (mode === 'off') return status;
+
+    const problems: string[] = [];
+    if (status.unprotected.length > 0) {
+      problems.push(
+        `row-level security is not enabled and forced on: ${status.unprotected.join(', ')}`,
+      );
+    }
+    if (status.unexpected.length > 0) {
+      problems.push(
+        `these tables have no row-level security and are not on the documented exemption list: ${status.unexpected.join(', ')}`,
+      );
+    }
+    if (status.role.bypassRls) {
+      problems.push(`the database role ${status.role.name} has BYPASSRLS, which disables isolation`);
+    }
+    if (status.role.superuser) {
+      problems.push(`the database role ${status.role.name} is a superuser, which bypasses isolation`);
+    }
+
+    if (problems.length === 0) return status;
+
+    const message =
+      `Tenant isolation is not fully in place:\n  - ${problems.join('\n  - ')}\n` +
+      'Run `prisma migrate deploy`, and connect as an unprivileged role ' +
+      '(prisma/sql/app-role.sql). Set DB_GUARD_MODE=off to accept application-only isolation.';
+
+    if (mode === 'require') throw new Error(message);
+    this.logger.warn(message);
+    return status;
   }
 }

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AppError, RateLimitedError } from './domain-errors.js';
+import { isDatabaseUnavailable, toDatabaseUnavailable } from './database-errors.js';
 
 type Problem = {
   type: string;
@@ -30,12 +31,21 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const req = http.getRequest<Request & { id?: string }>();
     const traceId = req.id ?? 'unknown';
 
-    const problem = this.toProblem(exception, traceId);
+    // A database that is not answering is not a bug in the request. Say so
+    // plainly, and with a status that says "try again", not "you are wrong".
+    const mapped = isDatabaseUnavailable(exception) ? toDatabaseUnavailable() : exception;
+    const problem = this.toProblem(mapped, traceId);
 
     if (exception instanceof RateLimitedError) {
       res.setHeader('Retry-After', String(exception.retryAfterSeconds));
     }
-    if (problem.status >= 500) {
+    if (problem.status === 503) {
+      // One line, not a stack: during an outage this fires on every request.
+      this.logger.error(
+        `${req.method} ${req.originalUrl} -> 503 [${traceId}] database unavailable: ` +
+          `${(exception as Error).message?.split('\n')[0]}`,
+      );
+    } else if (problem.status >= 500) {
       this.logger.error(
         `${req.method} ${req.originalUrl} -> ${problem.status} [${traceId}]`,
         exception instanceof Error ? exception.stack : String(exception),

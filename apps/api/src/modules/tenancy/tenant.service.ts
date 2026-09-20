@@ -29,6 +29,6 @@ export class TenantService {
    * other at the same instant then queue instead of racing.
    */
   async lockForUpdate(tx: Tx, tenantId: string): Promise<void> {
-    await tx.$queryRawUnsafe('SELECT id FROM tenant WHERE id = ? FOR UPDATE', tenantId);
+    await tx.$queryRawUnsafe('SELECT id FROM tenant WHERE id = $1::uuid FOR UPDATE', tenantId);
   }
 }

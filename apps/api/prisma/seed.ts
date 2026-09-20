@@ -41,22 +41,27 @@ async function main(): Promise<void> {
   const adminName = arg('admin-name', 'Clinic Administrator');
   const adminEmail = arg('admin-email', 'admin@example.test').toLowerCase();
 
-  const result = await db.withPlatform('seed pilot tenant', async (tx) => {
-    let tenant = await tx.tenant.findFirst({ where: { slug } });
-    if (!tenant) {
-      tenant = await tx.tenant.create({
-        data: {
-          id: newId(),
-          name: tenantName,
-          slug,
-          status: TenantStatus.ACTIVE,
-          settings: {},
-          modules: {},
-        },
-      });
-    }
+  // The tenant row is created in platform scope, because until it exists there
+  // is no tenant to scope to. Everything else is written inside the tenant, the
+  // same way the application does it: branch and role tables have no bypass
+  // policy at all.
+  const tenant = await db.withPlatform('seed tenant row', async (tx) => {
+    const existing = await tx.tenant.findFirst({ where: { slug } });
+    if (existing) return existing;
+    return tx.tenant.create({
+      data: {
+        id: newId(),
+        name: tenantName,
+        slug,
+        status: TenantStatus.ACTIVE,
+        settings: {},
+        modules: {},
+      },
+    });
+  });
 
-    let branch = await tx.branch.findFirst({ where: { tenantId: tenant.id, code: branchCode } });
+  const result = await db.withTenant(tenant.id, async (tx) => {
+    let branch = await tx.branch.findFirst({ where: { code: branchCode } });
     if (!branch) {
       branch = await tx.branch.create({
         data: {
@@ -71,7 +76,7 @@ async function main(): Promise<void> {
       });
     }
 
-    let user = await tx.user.findFirst({ where: { tenantId: tenant.id, email: adminEmail } });
+    let user = await tx.user.findFirst({ where: { email: adminEmail } });
     if (!user) {
       user = await tx.user.create({
         data: {

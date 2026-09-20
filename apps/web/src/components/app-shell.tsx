@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
           <Link href="/workspace" className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-md bg-primary text-xs font-bold text-white">
+            <span className="grid size-7 place-items-center rounded-md bg-primary text-xs font-bold text-on-primary">
               CC
             </span>
             <span className="font-semibold tracking-tight">ClinicCare</span>

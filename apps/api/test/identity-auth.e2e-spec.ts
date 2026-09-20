@@ -7,7 +7,7 @@ import { TokenPurpose } from '../src/generated/prisma/enums.js';
 
 const API = '/api/v1';
 
-describe('IAM — authentication (against real MySQL)', () => {
+describe('IAM — authentication (against real PostgreSQL)', () => {
   const harness = new Harness();
   let fx: Fixture;
 

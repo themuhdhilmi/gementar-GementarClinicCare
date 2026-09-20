@@ -1,7 +1,7 @@
 # @gementar/api
 
-NestJS 12, Prisma, MySQL 8. A modular monolith: one deployable, hard internal
-seams (`documents/planning/02-architecture.md`).
+NestJS 12, Prisma, PostgreSQL 16. A modular monolith: one deployable, hard
+internal seams (`documents/planning/02-architecture.md`).
 
 ```
 src/
@@ -35,14 +35,20 @@ Two layers, because either alone will eventually fail:
    `tenant_id` into every query against a tenant-owned model, and refuses to run
    one at all outside a scope. A model that is neither classified as tenant-owned
    nor platform-owned is refused too, so a new table cannot ship unprotected.
-2. **`prisma/sql/tenant-write-guard.sql`** — triggers that reject any write whose
-   `tenant_id` disagrees with the connection's `@app_tenant_id`. Installed by a
-   DBA, because creating triggers needs privileges the application account does
-   not have. `/api/v1/health` reports whether they are present, and
-   `DB_GUARD_MODE=require` refuses to boot without them.
+2. **`prisma/migrations/*_row_level_security`** — PostgreSQL policies, enabled
+   and FORCED, reading `app.tenant_id` from the transaction. This is what
+   catches raw SQL and forgotten `where` clauses. Unset means deny.
 
-Read `documents/decisions/adr-0001-mysql-instead-of-postgres.md` before changing
-any of it.
+The authentication path needs to read across tenants before it knows the
+tenant, so `tenant`, `user`, `session`, `password_reset_token`, `trusted_device`
+and `mfa_replay` carry a second policy that opens only when a transaction sets
+`app.auth_bypass`. **`branch`, `user_branch_role` and `audit_log` have no bypass
+at all.**
+
+`/api/v1/health` reports the state, and `DB_GUARD_MODE=require` refuses to boot
+if anything is missing or if the database role can bypass policies.
+
+Read `documents/decisions/adr-0002-postgres.md` before changing any of it.
 
 To run this together with the web app, use `./scripts/dev.sh` from the
 repository root rather than starting each one by hand.
@@ -51,7 +57,7 @@ repository root rather than starting each one by hand.
 
 ```bash
 npm run start:dev          # watch mode
-npm run db:migrate         # prisma migrate deploy
+npm run db:migrate         # prisma migrate deploy, including row-level security
 npm run db:seed            # first tenant, branch and administrator
 npm run lint               # oxlint + the two authorisation checks
 npm run lint:routes        # every mutating route declares a permission

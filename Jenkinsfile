@@ -2,11 +2,12 @@
 //
 // What the agent needs:
 //   * Node 20 or newer on PATH (or the NodeJS plugin; see the `tools` note below)
-//   * Either a MySQL 8 database it can reach, or Docker to start a throwaway one
+//   * Either a PostgreSQL 16 database it can reach, or Docker to start a
+//     throwaway one
 //
 // What to configure in Jenkins, once:
 //   * A "Secret text" credential holding the CI DATABASE_URL, for example
-//       mysql://cliniccare:PASSWORD@192.168.1.104:3306/cliniccare_ci
+//       postgresql://cliniccare:PASSWORD@192.168.1.104:5432/cliniccare_ci
 //     and put its id in the DATABASE_CREDENTIAL_ID parameter (default below).
 //   * Nothing else. The encryption keys are minted per build and thrown away.
 //
@@ -18,10 +19,9 @@
 def withDb(Closure body) {
   if (params.DATABASE == 'throwaway-container') {
     withEnv([
-      "DB_URL=mysql://root:root@127.0.0.1:${env.MYSQL_PORT}/cliniccare_ci",
-      // The hardening triggers are installed below, so the application is made
-      // to refuse to start without them. That keeps the DBA script honest.
+      "DB_URL=postgresql://cliniccare:cliniccare@127.0.0.1:${env.PG_PORT}/cliniccare_ci",
       'DB_GUARD_MODE=require',
+      "TEST_ADMIN_DATABASE_URL=postgresql://cliniccare:cliniccare@127.0.0.1:${env.PG_PORT}/cliniccare_ci",
     ]) { body() }
   } else {
     withCredentials([string(credentialsId: params.DATABASE_CREDENTIAL_ID, variable: 'DB_URL')]) {
@@ -48,7 +48,7 @@ pipeline {
     choice(
       name: 'DATABASE',
       choices: ['jenkins-credential', 'throwaway-container'],
-      description: 'Where the tests get their MySQL. The container option needs Docker on the agent.'
+      description: 'Where the tests get their PostgreSQL. The container option needs Docker on the agent.'
     )
     string(
       name: 'DATABASE_CREDENTIAL_ID',
@@ -57,8 +57,8 @@ pipeline {
     )
     choice(
       name: 'EXTERNAL_DB_GUARD_MODE',
-      choices: ['auto', 'require', 'off'],
-      description: 'Whether the API insists on the database write guards. Use "require" once a DBA has installed prisma/sql/tenant-write-guard.sql on the CI database.'
+      choices: ['require', 'auto', 'off'],
+      description: 'Whether the build fails when row-level security is not fully in place. Migrations install it, so "require" should hold.'
     )
     booleanParam(
       name: 'RUN_E2E',
@@ -82,9 +82,9 @@ pipeline {
     // would fire across unrelated tests. Per-email limits stay real.
     LOGIN_MAX_FAILURES_PER_IP = '10000'
 
-    MYSQL_IMAGE = 'mysql:8.3'
-    MYSQL_CONTAINER = "cliniccare-ci-${env.BUILD_NUMBER}"
-    MYSQL_PORT = "${13306 + (env.BUILD_NUMBER as Integer) % 500}"
+    PG_IMAGE = 'postgres:16-alpine'
+    PG_CONTAINER = "cliniccare-ci-${env.BUILD_NUMBER}"
+    PG_PORT = "${15432 + (env.BUILD_NUMBER as Integer) % 500}"
   }
 
   stages {
@@ -127,23 +127,24 @@ pipeline {
       steps {
         sh '''
           set -eu
-          docker rm -f "$MYSQL_CONTAINER" >/dev/null 2>&1 || true
-          docker run -d --name "$MYSQL_CONTAINER" \
-            -e MYSQL_ROOT_PASSWORD=root \
-            -e MYSQL_DATABASE=cliniccare_ci \
-            -p "$MYSQL_PORT":3306 \
-            "$MYSQL_IMAGE" >/dev/null
+          docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+          docker run -d --name "$PG_CONTAINER" \
+            -e POSTGRES_USER=cliniccare \
+            -e POSTGRES_PASSWORD=cliniccare \
+            -e POSTGRES_DB=cliniccare_ci \
+            -p "$PG_PORT":5432 \
+            "$PG_IMAGE" >/dev/null
 
-          echo "Waiting for MySQL on port $MYSQL_PORT"
+          echo "Waiting for PostgreSQL on port $PG_PORT"
           for i in $(seq 1 60); do
-            if docker exec "$MYSQL_CONTAINER" mysqladmin ping -h 127.0.0.1 -uroot -proot --silent >/dev/null 2>&1; then
-              echo "MySQL is ready after ${i}s"
+            if docker exec "$PG_CONTAINER" pg_isready -U cliniccare -d cliniccare_ci >/dev/null 2>&1; then
+              echo "PostgreSQL is ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "MySQL did not become ready in 60s" >&2
-          docker logs "$MYSQL_CONTAINER" | tail -40 >&2
+          echo "PostgreSQL did not become ready in 60s" >&2
+          docker logs "$PG_CONTAINER" | tail -40 >&2
           exit 1
         '''
       }
@@ -162,24 +163,6 @@ pipeline {
         withDb {
           sh 'DATABASE_URL="$DB_URL" npm run db:migrate --workspace @gementar/api'
         }
-      }
-    }
-
-    stage('Install write guards') {
-      when { expression { params.DATABASE == 'throwaway-container' } }
-      steps {
-        // Installed as root, which is the point: CI proves the script a DBA
-        // will run in production actually applies cleanly to this schema.
-        sh '''
-          set -eu
-          docker exec -i "$MYSQL_CONTAINER" \
-            mysql -uroot -proot cliniccare_ci < apps/api/prisma/sql/tenant-write-guard.sql
-          docker exec -i "$MYSQL_CONTAINER" mysql -uroot -proot cliniccare_ci -N -B -e "
-            SELECT CONCAT('tenant write guards installed: ', COUNT(*))
-              FROM information_schema.triggers
-             WHERE trigger_schema = DATABASE()
-               AND trigger_name LIKE 'trg_%_tenant_guard_%';"
-        '''
       }
     }
 
@@ -244,7 +227,7 @@ pipeline {
       archiveArtifacts artifacts: 'apps/api/reports/*.xml', allowEmptyArchive: true, fingerprint: false
       script {
         if (params.DATABASE == 'throwaway-container') {
-          sh 'docker rm -f "$MYSQL_CONTAINER" >/dev/null 2>&1 || true'
+          sh 'docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true'
         }
       }
     }
@@ -252,7 +235,7 @@ pipeline {
       echo 'Green. Identity and access is safe to deploy to staging.'
     }
     failure {
-      echo 'Failed. If it was the end-to-end suite, check the database in DATABASE_CREDENTIAL_ID is reachable and migrated.'
+      echo 'Failed. If it was the end-to-end suite, check the database in DATABASE_CREDENTIAL_ID is reachable, migrated, and that its role does not hold BYPASSRLS.'
     }
   }
 }

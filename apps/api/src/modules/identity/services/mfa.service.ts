@@ -111,22 +111,25 @@ export class MfaService {
     const now = this.clock.now();
     const step = BigInt(Math.floor(now.getTime() / 1000 / PERIOD_SECONDS) + delta);
 
-    try {
-      await tx.mfaReplay.create({
-        data: {
+    // Claim this time step. `skipDuplicates` turns the race into a row count
+    // rather than an exception: on PostgreSQL a failed statement aborts the
+    // whole transaction, so catching a unique violation and carrying on would
+    // poison every query after it.
+    const claimed = await tx.mfaReplay.createMany({
+      data: [
+        {
           id: newId(),
           tenantId: requireTenantId(),
           userId: user.id,
           timeStep: step,
           expiresAt: this.clock.inMinutes(REPLAY_RETENTION_MINUTES, now),
         },
-      });
-    } catch (error) {
-      // Unique violation on (user_id, time_step): the code has already been used.
-      if ((error as { code?: string }).code === 'P2002') return false;
-      throw error;
-    }
-    return true;
+      ],
+      skipDuplicates: true,
+    });
+
+    // Zero rows means this code was already accepted inside its window.
+    return claimed.count === 1;
   }
 
   /** Step 2 of enrolment: the first correct code turns MFA on and issues recovery codes. */

@@ -14,6 +14,10 @@
   --primary: #0f5f4e;
   --primary-hover: #0c4d3f;
   --primary-soft: #e3f1ec;
+  /* Text that sits on a filled primary or danger surface. It flips in dark
+     mode, where those fills are light and white text would fail contrast. */
+  --on-primary: #ffffff;
+  --on-danger: #ffffff;
   --danger: #a3231f;
   --danger-soft: #fbe9e8;
   --warning: #8a5a00;
@@ -21,6 +25,15 @@
   --success: #15683f;
   --success-soft: #e4f3ea;
   --focus: #1d7fd6;
+
+  /* The sign-in brand panel keeps its own colours in both themes, so the
+     product looks the same on the reception PC and the doctor's laptop. */
+  --brand-from: #0c4a3d;
+  --brand-mid: #0f5f4e;
+  --brand-to: #0a3b34;
+  --brand-ink: #f2fbf7;
+  --brand-ink-muted: #a8d6c7;
+  --brand-rule: #2c7b67;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,6 +47,8 @@
     --primary: #3fbf9c;
     --primary-hover: #57d0ae;
     --primary-soft: #14312a;
+    --on-primary: #05231c;
+    --on-danger: #3a0f0d;
     --danger: #ff8a84;
     --danger-soft: #3a1c1b;
     --warning: #f0c070;
@@ -41,6 +56,13 @@
     --success: #6bd39b;
     --success-soft: #12301f;
     --focus: #63b3ed;
+
+    --brand-from: #08251f;
+    --brand-mid: #0c3a30;
+    --brand-to: #061a16;
+    --brand-ink: #e7f5ef;
+    --brand-ink-muted: #8fb9ab;
+    --brand-rule: #1d5347;
   }
 }
 
@@ -52,6 +74,8 @@
   --color-muted: var(--muted);
   --color-line: var(--border);
   --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-on-danger: var(--on-danger);
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-danger: var(--danger);
@@ -60,6 +84,9 @@
   --color-warning-soft: var(--warning-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-ink-muted: var(--brand-ink-muted);
+  --color-brand-rule: var(--brand-rule);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }

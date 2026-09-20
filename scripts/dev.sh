@@ -88,8 +88,8 @@ if [[ ! -f apps/api/.env ]]; then
   die  "Edit apps/api/.env and run this again."
 fi
 
-if ! grep -qE '^DATABASE_URL="?mysql://[^"]*[^"/]' apps/api/.env; then
-  die "apps/api/.env has no usable DATABASE_URL. Point it at your MySQL 8 database."
+if ! grep -qE '^DATABASE_URL="?postgres(ql)?://[^"]*[^"/]' apps/api/.env; then
+  die "apps/api/.env has no usable DATABASE_URL. Point it at your PostgreSQL database."
 fi
 for key in APP_KEK_V1 APP_HASH_PEPPER; do
   if ! grep -qE "^${key}=.+" apps/api/.env; then

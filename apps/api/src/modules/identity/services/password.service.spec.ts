@@ -6,7 +6,7 @@ import { loadAppConfig, type AppConfig } from '../../../config/app-config.js';
 
 function testConfig(overrides: Record<string, string> = {}): AppConfig {
   return loadAppConfig({
-    DATABASE_URL: 'mysql://u:p@localhost:3306/db',
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
     APP_KEK_V1: randomBytes(32).toString('base64'),
     APP_HASH_PEPPER: randomBytes(32).toString('base64'),
     // Keep the unit suite fast; the algorithm is the same at any work factor.

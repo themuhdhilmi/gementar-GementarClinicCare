@@ -16,7 +16,7 @@ const FAILURE_OUTCOMES = [
 export type ThrottleDecision = { limited: false } | { limited: true; retryAfterSeconds: number };
 
 /**
- * Login rate limiting (IAM-F-05), stored in MySQL rather than memory.
+ * Login rate limiting (IAM-F-05), stored in the database rather than memory.
  *
  * Memory would be faster and would also reset every deploy, which is exactly
  * when an attacker benefits. The table is small, indexed on the two windows it

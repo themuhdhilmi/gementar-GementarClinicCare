@@ -16,11 +16,17 @@ import {
 } from '../../src/generated/prisma/enums.js';
 
 /**
- * Integration tests run against the real MySQL database named by DATABASE_URL.
+ * Integration tests run against the real PostgreSQL database named by
+ * DATABASE_URL, with row-level security in force exactly as in production.
  *
  * They never truncate anything: each run creates its own tenant with a random
- * slug and deletes exactly what it made. That way the suite is safe to point at
- * a shared development database.
+ * slug and deletes exactly what it made, so the suite is safe to point at a
+ * shared development database.
+ *
+ * Audit rows are the exception. They are append-only at the database level, so
+ * only an owner connection can remove them: set TEST_ADMIN_DATABASE_URL to have
+ * the suite tidy up after itself completely, or leave it unset and accept that
+ * test audit rows stay behind.
  */
 
 export type SeededUser = {
@@ -103,10 +109,22 @@ export class Harness {
       frontdesk: { id: newId(), email: `front-${suffix}@test.local`, password: DEFAULT_PASSWORD, name: 'Front Faiz' },
     };
 
-    await this.db.withPlatform('test seed', async (tx) => {
-      await tx.tenant.create({
-        data: { id: tenantId, name: `Test ${label}`, slug, status: TenantStatus.ACTIVE, settings: {}, modules: {} },
-      });
+    // The tenant row first, in platform scope; everything else inside the
+    // tenant, because branch and role tables have no bypass policy at all.
+    await this.db.withPlatform('test seed tenant', (tx) =>
+      tx.tenant.create({
+        data: {
+          id: tenantId,
+          name: `Test ${label}`,
+          slug,
+          status: TenantStatus.ACTIVE,
+          settings: {},
+          modules: {},
+        },
+      }),
+    );
+
+    await this.db.withTenant(tenantId, async (tx) => {
       for (const [id, code, name] of [
         [branchAId, 'TA', 'Branch A'],
         [branchBId, 'TB', 'Branch B'],
@@ -166,7 +184,7 @@ export class Harness {
     const email = `u-${id.slice(-12)}@test.local`;
     const hash = await this.passwords.hash(DEFAULT_PASSWORD);
 
-    await this.db.withPlatform('test seed user', async (tx) => {
+    await this.db.withTenant(fixture.tenantId, async (tx) => {
       await tx.user.create({
         data: {
           id,
@@ -195,39 +213,79 @@ export class Harness {
     return { id, email, password: DEFAULT_PASSWORD, name: input.name };
   }
 
+  /**
+   * Removes exactly what this run created.
+   *
+   * Cleanup is an administrative act, not an application one: the audit trail
+   * is append-only and the last-administrator trigger exists precisely to stop
+   * the application doing this. So it runs on one connection as the table
+   * owner, with those triggers briefly disabled, and with `app.tenant_id` set
+   * per tenant so row-level security still limits the blast radius to this
+   * run's data.
+   *
+   * TEST_ADMIN_DATABASE_URL overrides the connection for setups where the
+   * application role is not the owner. If neither account owns the tables, the
+   * rows are left behind, which is the safer failure.
+   */
   async cleanup(): Promise<void> {
     if (this.createdTenantIds.length === 0) return;
     const tenantIds = [...this.createdTenantIds];
     const emails = [...this.createdEmails];
-
-    await this.db.withPlatform('test cleanup', async (tx) => {
-      const where = { tenantId: { in: tenantIds } };
-      // The audit trail is append-only through the ORM by design (AUD-R-01), so
-      // the suite removes its own rows with raw SQL. On a database where the
-      // DBA hardening script is installed this is refused, and the rows are
-      // simply left behind — which is the correct behaviour to leave in place.
-      try {
-        const list = tenantIds.map(() => '?').join(',');
-        await tx.$executeRawUnsafe(
-          `DELETE FROM audit_log WHERE tenant_id IN (${list})`,
-          ...tenantIds,
-        );
-      } catch {
-        /* audit immutability triggers are installed; nothing to do */
-      }
-      await tx.session.deleteMany({ where });
-      await tx.passwordResetToken.deleteMany({ where });
-      await tx.trustedDevice.deleteMany({ where });
-      await tx.mfaReplay.deleteMany({ where });
-      await tx.userBranchRole.deleteMany({ where });
-      await tx.loginAttempt.deleteMany({ where: { emailKey: { in: emails } } });
-      await tx.user.deleteMany({ where });
-      await tx.branch.deleteMany({ where });
-      await tx.tenant.deleteMany({ where: { id: { in: tenantIds } } });
-    });
-
     this.createdTenantIds.length = 0;
     this.createdEmails.length = 0;
+
+    const url = process.env['TEST_ADMIN_DATABASE_URL'] ?? process.env['DATABASE_URL'];
+    if (!url) return;
+
+    const { Client } = await import('pg');
+    const client = new Client({ connectionString: url });
+    await client.connect();
+
+    const guarded = ['audit_log', '"user"', 'user_branch_role'];
+    let disabled = false;
+    try {
+      for (const table of guarded) await client.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
+      disabled = true;
+    } catch {
+      // Not the owner. Carry on; the deletes below will do what they can.
+    }
+
+    try {
+      for (const tenantId of tenantIds) {
+        await client.query("SELECT set_config('app.tenant_id', $1, false)", [tenantId]);
+        for (const table of [
+          'audit_log',
+          'session',
+          'password_reset_token',
+          'trusted_device',
+          'mfa_replay',
+          'user_branch_role',
+          '"user"',
+          'branch',
+        ]) {
+          // No WHERE clause on purpose: row-level security is the filter, which
+          // is one more place the policies get exercised.
+          await client.query(`DELETE FROM ${table}`).catch(() => undefined);
+        }
+      }
+
+      await client.query(
+        "SELECT set_config('app.tenant_id', '', false), set_config('app.auth_bypass', 'on', false)",
+      );
+      await client
+        .query('DELETE FROM login_attempt WHERE email_key = ANY($1::text[])', [emails])
+        .catch(() => undefined);
+      await client
+        .query('DELETE FROM tenant WHERE id = ANY($1::uuid[])', [tenantIds])
+        .catch(() => undefined);
+    } finally {
+      if (disabled) {
+        for (const table of guarded) {
+          await client.query(`ALTER TABLE ${table} ENABLE TRIGGER USER`).catch(() => undefined);
+        }
+      }
+      await client.end();
+    }
   }
 }
 

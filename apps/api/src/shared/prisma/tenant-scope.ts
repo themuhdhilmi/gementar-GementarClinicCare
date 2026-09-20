@@ -4,12 +4,13 @@ import { TenantScopeError } from '../errors/domain-errors.js';
 /**
  * Tenant isolation, layer 1.
  *
- * The planning documents specify Postgres row-level security as the backstop.
- * On MySQL there is no equivalent, so the mechanical guarantee moves here: a
- * Prisma client extension that injects `tenant_id` into every query against a
- * tenant-owned model and refuses to run one at all outside an explicit scope.
- * `documents/decisions/adr-0001-mysql-instead-of-postgres.md` records the
- * trade-off and the compensating controls.
+ * This extension injects `tenant_id` into every query against a tenant-owned
+ * model and refuses to run one at all outside an explicit scope. Layer 2 is
+ * PostgreSQL row-level security, applied by the `*_row_level_security`
+ * migration, which catches anything this misses — including raw SQL.
+ *
+ * Two layers, because either alone will eventually fail
+ * (documents/planning/03-multi-tenancy.md).
  *
  * Nothing in this file trusts request input: the scope is opened by the auth
  * guard from the session, and by nothing else.
@@ -80,9 +81,9 @@ export function currentTenantId(): string | undefined {
 
 /**
  * The tenant id of the open scope. Prisma's generated types require
- * `tenant_id` on every create, so writes name it explicitly and the extension
- * then checks that it agrees with the scope. Explicit and verified beats
- * implicit and hopeful.
+ * `tenant_id` on every create, so writes name it explicitly, the extension
+ * checks it agrees with the scope, and the row-level security WITH CHECK
+ * clause refuses it at the database if both are somehow wrong.
  */
 export function requireTenantId(): string {
   const tenantId = currentTenantId();
