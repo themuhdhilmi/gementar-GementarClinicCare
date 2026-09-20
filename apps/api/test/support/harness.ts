@@ -94,7 +94,7 @@ export class Harness {
     return this.app.getHttpServer();
   }
 
-  /** One tenant, two branches, an ADMIN, a DOCTOR and a FRONTDESK. */
+  /** One tenant, two branches, an ADMIN, a DOCTOR and a RECEPTION user. */
   async seedTenant(label: string): Promise<Fixture> {
     const suffix = newId().slice(-12);
     const slug = `t-${label}-${suffix}`.toLowerCase().slice(0, 60);
@@ -154,7 +154,7 @@ export class Harness {
             defaultBranchId: branchAId,
           },
         });
-        const role = key === 'admin' ? Role.ADMIN : key === 'doctor' ? Role.DOCTOR : Role.FRONTDESK;
+        const role = key === 'admin' ? Role.ADMIN : key === 'doctor' ? Role.DOCTOR : Role.RECEPTION;
         await tx.userBranchRole.create({
           data: { id: newId(), tenantId, userId: user.id, branchId: branchAId, role },
         });

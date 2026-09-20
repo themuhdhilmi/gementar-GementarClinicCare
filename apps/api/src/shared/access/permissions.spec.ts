@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BREAK_GLASS_PERMISSIONS,
+  FRONT_DESK_ROLES,
   PERMISSIONS,
   ROLE_PERMISSIONS,
   isBreakGlass,
@@ -27,9 +28,16 @@ describe('permission catalogue', () => {
 
     // Money that can be undone is administrator-only.
     expect(ROLE_PERMISSIONS.ADMIN).toContain('invoice.void');
-    expect(ROLE_PERMISSIONS.FRONTDESK).not.toContain('invoice.void');
-    expect(ROLE_PERMISSIONS.FRONTDESK).toContain('payment.take');
+    expect(ROLE_PERMISSIONS.CASHIER).not.toContain('invoice.void');
+    expect(ROLE_PERMISSIONS.CASHIER).toContain('payment.take');
     expect(ROLE_PERMISSIONS.DOCTOR).not.toContain('payment.take');
+
+    // The counter is divided: taking money and handing out medicine are
+    // different jobs, and a clinic that separates them can now say so.
+    expect(ROLE_PERMISSIONS.RECEPTION).not.toContain('dispense.perform');
+    expect(ROLE_PERMISSIONS.RECEPTION).not.toContain('payment.take');
+    expect(ROLE_PERMISSIONS.DISPENSER).toContain('dispense.perform');
+    expect(ROLE_PERMISSIONS.DISPENSER).not.toContain('payment.take');
 
     // Stock adjustment moves value without a transaction behind it.
     expect(ROLE_PERMISSIONS.ADMIN).toContain('stock.adjust');
@@ -37,10 +45,25 @@ describe('permission catalogue', () => {
   });
 
   it('combines roles held at the same branch', () => {
-    const both = permissionsFor([Role.FRONTDESK, Role.NURSE]);
+    const both = permissionsFor([Role.CASHIER, Role.NURSE]);
     expect(both).toContain('payment.take');
     expect(both).toContain('triage.write');
     expect(new Set(both).size).toBe(both.length);
+  });
+
+  it('the three front-desk roles together are exactly the old single one', () => {
+    // IAM-Q-01 split FRONTDESK three ways. Nobody should have gained or lost
+    // anything in the process; this is the list as it stood before the split.
+    const before = [
+      'patient.read', 'patient.write', 'patient.unmask_id',
+      'encounter.create', 'encounter.transition', 'encounter.cancel', 'encounter.priority',
+      'dispense.perform', 'dispense.substitute',
+      'stock.read', 'stock.receive', 'stock.count',
+      'invoice.read', 'invoice.issue', 'invoice.discount',
+      'payment.take', 'eod.close',
+      'document.issue', 'document.reprint', 'report.operational',
+    ].sort();
+    expect(permissionsFor(FRONT_DESK_ROLES)).toEqual(before);
   });
 
   it('treats administrator clinical reads as break-glass, and nobody else', () => {
@@ -55,7 +78,7 @@ describe('permission catalogue', () => {
 
   it('requires MFA of administrators only, in V0', () => {
     expect(requiresMfa([Role.ADMIN])).toBe(true);
-    expect(requiresMfa([Role.FRONTDESK, Role.ADMIN])).toBe(true);
-    expect(requiresMfa([Role.DOCTOR, Role.NURSE, Role.FRONTDESK])).toBe(false);
+    expect(requiresMfa([Role.CASHIER, Role.ADMIN])).toBe(true);
+    expect(requiresMfa([Role.DOCTOR, Role.NURSE, ...FRONT_DESK_ROLES])).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import {
   ApiError,
   api,
+  ROLE_DESCRIPTION,
   ROLE_LABEL,
   type Page,
   type Role,
@@ -27,7 +28,7 @@ import {
   timeAgo,
 } from '@/components/ui';
 
-const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'NURSE', 'FRONTDESK'];
+const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTION', 'DISPENSER', 'CASHIER'];
 const STATUSES: UserStatus[] = ['ACTIVE', 'INVITED', 'LOCKED', 'DISABLED'];
 
 type Draft = {
@@ -417,7 +418,9 @@ function UserDrawer({
         <fieldset className="rounded-md border border-line p-3">
           <legend className="px-1 text-sm font-medium">Roles by branch</legend>
           <p className="mb-2 text-xs text-muted">
-            Permissions apply at the branch where they are granted. At least one is required.
+            Permissions apply at the branch where they are granted, and at least one is
+            required. Where one person runs the whole front desk, tick reception, dispenser
+            and cashier together.
           </p>
           <div className="flex flex-col gap-3">
             {branches.map((branch) => (
@@ -425,16 +428,19 @@ function UserDrawer({
                 <p className="text-sm font-medium">
                   {branch.name} <span className="text-muted">({branch.code})</span>
                 </p>
-                <div className="mt-1 flex flex-wrap gap-3">
+                <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
                   {ROLES.map((role) => (
-                    <label key={role} className="flex items-center gap-1.5 text-sm">
+                    <label key={role} className="flex gap-2 text-sm">
                       <input
                         type="checkbox"
-                        className="size-4"
+                        className="mt-0.5 size-4 shrink-0"
                         checked={draft.roles.some((r) => r.branchId === branch.id && r.role === role)}
                         onChange={() => toggle(branch.id, role)}
                       />
-                      {ROLE_LABEL[role]}
+                      <span>
+                        {ROLE_LABEL[role]}
+                        <span className="block text-xs text-muted">{ROLE_DESCRIPTION[role]}</span>
+                      </span>
                     </label>
                   ))}
                 </div>

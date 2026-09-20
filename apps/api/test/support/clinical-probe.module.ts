@@ -3,10 +3,10 @@ import { Ctx, RequirePermission } from '../../src/modules/identity/decorators/au
 import type { TenantContext } from '../../src/modules/tenancy/tenant-context.js';
 
 /**
- * A stand-in for the clinical module, which does not exist yet. It exists so
- * the authorisation behaviour IAM promises to other modules — permission
- * checks per branch, and break-glass auditing — can be tested for real rather
- * than asserted about.
+ * A stand-in for the modules that do not exist yet. It exists so the
+ * authorisation behaviour IAM promises to them — permission checks per branch,
+ * break-glass auditing, and the front-desk split — can be tested for real
+ * rather than asserted about.
  */
 @Controller('clinical-probe')
 export class ClinicalProbeController {
@@ -20,6 +20,18 @@ export class ClinicalProbeController {
   @RequirePermission('clinical.write')
   write(@Ctx() ctx: TenantContext, @Param('patientId') patientId: string) {
     return { patientId, branchId: ctx.branchId, written: true };
+  }
+
+  @Post('payment')
+  @RequirePermission('payment.take')
+  takePayment(@Ctx() ctx: TenantContext) {
+    return { taken: true, branchId: ctx.branchId };
+  }
+
+  @Post('dispense')
+  @RequirePermission('dispense.perform')
+  dispense(@Ctx() ctx: TenantContext) {
+    return { dispensed: true, branchId: ctx.branchId };
   }
 
   @Post('undeclared')

@@ -42,11 +42,16 @@ enum UserStatus {
   LOCKED
 }
 
+/// The front desk is three roles, not one (IAM-Q-01). A small clinic gives one
+/// person all three and they see what a single front-desk role used to show; a
+/// larger one gives each person the part of the counter they actually work.
 enum Role {
   ADMIN
   DOCTOR
   NURSE
-  FRONTDESK
+  RECEPTION
+  DISPENSER
+  CASHIER
 }
 
 enum TokenPurpose {

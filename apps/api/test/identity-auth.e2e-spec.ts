@@ -59,7 +59,7 @@ describe('IAM — authentication (against real PostgreSQL)', () => {
   it('IAM-T-02: the sixth failure inside the window is rate limited and audited', async () => {
     const user = await harness.addUser(fx, {
       name: 'Rate Limited',
-      roles: [{ branchId: fx.branchAId, role: 'FRONTDESK' }],
+      roles: [{ branchId: fx.branchAId, role: 'RECEPTION' }],
     });
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -195,7 +195,7 @@ describe('IAM — authentication (against real PostgreSQL)', () => {
   it('IAM-T-06: a reset token is single-use and revokes every existing session', async () => {
     const user = await harness.addUser(fx, {
       name: 'Reset Me',
-      roles: [{ branchId: fx.branchAId, role: 'FRONTDESK' }],
+      roles: [{ branchId: fx.branchAId, role: 'RECEPTION' }],
     });
 
     const sessionOne = await login(user.email, DEFAULT_PASSWORD).expect(200);

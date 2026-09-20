@@ -1,10 +1,14 @@
 import { Role } from '../../generated/prisma/enums.js';
 
 /**
- * The V0 permission catalogue, exactly as published in
- * `documents/modules/README.md`. Permissions are strings checked at the API
- * layer; V1's `RBC` module makes the role mapping configurable per tenant, so
- * everything here is deliberately data rather than code.
+ * The V0 permission catalogue, as published in `documents/modules/README.md`.
+ * Permissions are strings checked at the API layer; V1's `RBC` module makes
+ * the role mapping configurable per tenant, so everything here is deliberately
+ * data rather than code.
+ *
+ * Six roles, not the four in the original specification: the front desk is
+ * RECEPTION, DISPENSER and CASHIER so that a clinic which separates those
+ * people can say so (IAM-Q-01).
  *
  * IAM owns this catalogue. It lives in `shared` because every module reads it.
  */
@@ -134,7 +138,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     'document.reprint',
     'report.operational',
   ],
-  FRONTDESK: [
+  // The front desk, split three ways (IAM-Q-01). The union of these three is
+  // exactly what the single FRONTDESK role used to hold — nothing was gained
+  // or lost in the split, and a test asserts that.
+  RECEPTION: [
     'patient.read',
     'patient.write',
     'patient.unmask_id',
@@ -142,11 +149,35 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
     'encounter.transition',
     'encounter.cancel',
     'encounter.priority',
+    'stock.read',
+    'invoice.read',
+    'document.issue',
+    'document.reprint',
+    'report.operational',
+  ],
+  DISPENSER: [
+    'patient.read',
+    'patient.write',
+    'encounter.create',
+    'encounter.transition',
+    'encounter.priority',
     'dispense.perform',
     'dispense.substitute',
     'stock.read',
     'stock.receive',
     'stock.count',
+    'document.issue',
+    'document.reprint',
+    'report.operational',
+  ],
+  CASHIER: [
+    'patient.read',
+    'patient.write',
+    'patient.unmask_id',
+    'encounter.create',
+    'encounter.transition',
+    'encounter.priority',
+    'stock.read',
     'invoice.read',
     'invoice.issue',
     'invoice.discount', // capped by billing.max_discount_pct_frontdesk (BIL)
@@ -165,6 +196,9 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, readonly Permission[]>> = {
 export const BREAK_GLASS_PERMISSIONS: Readonly<Partial<Record<Role, readonly Permission[]>>> = {
   ADMIN: ['clinical.read'],
 };
+
+/** The three roles the single FRONTDESK role was split into (IAM-Q-01). */
+export const FRONT_DESK_ROLES: readonly Role[] = [Role.RECEPTION, Role.DISPENSER, Role.CASHIER];
 
 /** Roles for which MFA is mandatory in V0 (IAM-F-09). */
 export const MFA_REQUIRED_ROLES: readonly Role[] = [Role.ADMIN];

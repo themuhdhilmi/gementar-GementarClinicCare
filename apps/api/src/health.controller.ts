@@ -27,7 +27,9 @@ export class HealthController {
           ? 'superuser — row-level security is bypassed'
           : rls.role.bypassRls
             ? 'BYPASSRLS — row-level security is bypassed'
-            : 'unprivileged',
+            : rls.role.ownsTables
+              ? 'table owner — policies apply, but this account could drop them (IAM-Q-05)'
+              : 'unprivileged',
         ...(rls.unprotected.length > 0 ? { unprotected: rls.unprotected } : {}),
         ...(rls.unexpected.length > 0 ? { unclassified: rls.unexpected } : {}),
         enforced: isolated,

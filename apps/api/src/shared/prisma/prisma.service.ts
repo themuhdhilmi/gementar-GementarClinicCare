@@ -60,7 +60,7 @@ export type RlsStatus = {
   protected: string[];
   unprotected: string[];
   unexpected: string[];
-  role: { name: string; superuser: boolean; bypassRls: boolean };
+  role: { name: string; superuser: boolean; bypassRls: boolean; ownsTables: boolean };
 };
 
 @Injectable()
@@ -94,6 +94,16 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>
     >(`SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`);
 
+    // Owning the tables means being able to drop a policy (IAM-Q-05). Policies
+    // still apply, because they are FORCEd, but the account facing the
+    // internet should not be able to remove them.
+    const [owned] = await this.client.$queryRawUnsafe<Array<{ n: bigint | number }>>(
+      `SELECT count(*) AS n FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = current_schema() AND c.relkind = 'r'
+          AND pg_get_userbyid(c.relowner) = current_user`,
+    );
+
     const byName = new Map(tables.map((t) => [t.relname, t]));
     const protectedTables: string[] = [];
     const unprotected: string[] = [];
@@ -120,6 +130,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         name: role?.rolname ?? 'unknown',
         superuser: Boolean(role?.rolsuper),
         bypassRls: Boolean(role?.rolbypassrls),
+        ownsTables: Number(owned?.n ?? 0) > 0,
       },
     };
   }
@@ -153,6 +164,16 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     }
     if (status.role.superuser) {
       problems.push(`the database role ${status.role.name} is a superuser, which bypasses isolation`);
+    }
+
+    // Not a problem, because FORCE means the policies apply to the owner too.
+    // It is worth saying out loud on every boot until it is done (IAM-Q-05).
+    if (status.role.ownsTables) {
+      this.logger.warn(
+        `The application connects as ${status.role.name}, which owns its tables and can ` +
+          'therefore drop a policy. Row-level security is FORCEd so isolation holds; ' +
+          'before go-live, run prisma/sql/app-role.sql and connect as the unprivileged role.',
+      );
     }
 
     if (problems.length === 0) return status;

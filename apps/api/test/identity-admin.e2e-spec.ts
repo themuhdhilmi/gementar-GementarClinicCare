@@ -75,7 +75,7 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
   it('IAM-T-05: disabling a user kills every live session at once', async () => {
     const victim = await harness.addUser(fx, {
       name: 'Departing Staff',
-      roles: [{ branchId: fx.branchAId, role: Role.FRONTDESK }],
+      roles: [{ branchId: fx.branchAId, role: Role.RECEPTION }],
     });
     const one = await signIn(harness, victim.email);
     const two = await signIn(harness, victim.email);
@@ -115,7 +115,7 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
   it('IAM-T-07: FRONTDESK at a branch cannot write clinical data there', async () => {
     const frontdesk = await harness.addUser(fx, {
       name: 'Front Desk B',
-      roles: [{ branchId: fx.branchBId, role: Role.FRONTDESK }],
+      roles: [{ branchId: fx.branchBId, role: Role.RECEPTION }],
     });
     const { cookie } = await signIn(harness, frontdesk.email);
 
@@ -129,6 +129,47 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
       .get(`${API}/clinical-probe/records/patient-1`)
       .set('Cookie', cookie);
     expect(read.status).toBe(403);
+  });
+
+  it('IAM-Q-01: the front desk is three roles, and a cashier cannot dispense', async () => {
+    const [reception, dispenser, cashier, everything] = await Promise.all([
+      harness.addUser(fx, { name: 'Reception Only', roles: [{ branchId: fx.branchAId, role: Role.RECEPTION }] }),
+      harness.addUser(fx, { name: 'Dispenser Only', roles: [{ branchId: fx.branchAId, role: Role.DISPENSER }] }),
+      harness.addUser(fx, { name: 'Cashier Only', roles: [{ branchId: fx.branchAId, role: Role.CASHIER }] }),
+      harness.addUser(fx, {
+        name: 'Whole Counter',
+        roles: [
+          { branchId: fx.branchAId, role: Role.RECEPTION },
+          { branchId: fx.branchAId, role: Role.DISPENSER },
+          { branchId: fx.branchAId, role: Role.CASHIER },
+        ],
+      }),
+    ]);
+
+    // 201 is the probe route succeeding, 403 is the permission guard refusing.
+    const allowed = async (user: { email: string }, path: string) => {
+      const { cookie } = await signIn(harness, user.email);
+      const response = await request(harness.server)
+        .post(`${API}/clinical-probe/${path}`)
+        .set('Cookie', cookie);
+      if (response.status !== 201 && response.status !== 403) {
+        throw new Error(`unexpected ${response.status} from ${path}`);
+      }
+      return response.status === 201;
+    };
+
+    // Each part of the counter does its own job and no more.
+    expect(await allowed(reception, 'payment')).toBe(false);
+    expect(await allowed(reception, 'dispense')).toBe(false);
+    expect(await allowed(dispenser, 'dispense')).toBe(true);
+    expect(await allowed(dispenser, 'payment')).toBe(false);
+    expect(await allowed(cashier, 'payment')).toBe(true);
+    expect(await allowed(cashier, 'dispense')).toBe(false);
+
+    // And a one-person front desk holds all three, which is the same access
+    // the single FRONTDESK role used to give.
+    expect(await allowed(everything, 'payment')).toBe(true);
+    expect(await allowed(everything, 'dispense')).toBe(true);
   });
 
   it('IAM-T-11: an ADMIN reading clinical data is allowed and recorded as break-glass', async () => {
@@ -238,7 +279,7 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
       name: 'Dual Role',
       roles: [
         { branchId: fx.branchAId, role: Role.ADMIN },
-        { branchId: fx.branchBId, role: Role.FRONTDESK },
+        { branchId: fx.branchBId, role: Role.RECEPTION },
       ],
     });
     // MFA is mandatory because they hold ADMIN somewhere.
@@ -265,7 +306,7 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
 
     const atB = await request(harness.server).get(`${API}/auth/me`).set('Cookie', cookie).expect(200);
     expect(atB.body.activeBranchId).toBe(fx.branchBId);
-    expect(atB.body.roles).toEqual(['FRONTDESK']);
+    expect(atB.body.roles).toEqual(['RECEPTION']);
     expect(atB.body.permissions).not.toContain('admin.users');
 
     await request(harness.server).get(`${API}/users`).set('Cookie', cookie).expect(403);
@@ -282,7 +323,7 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
   it('an administrator can force a password reset, revoke sessions and unlock an account', async () => {
     const staff = await harness.addUser(fx, {
       name: 'Needs Help',
-      roles: [{ branchId: fx.branchAId, role: Role.FRONTDESK }],
+      roles: [{ branchId: fx.branchAId, role: Role.RECEPTION }],
     });
     const { cookie } = await signIn(harness, staff.email);
 

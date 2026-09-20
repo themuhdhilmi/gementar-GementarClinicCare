@@ -42,8 +42,10 @@ const schema = z.object({
 
   COOKIE_SECURE: boolish.default(false),
   COOKIE_DOMAIN: z.string().optional(),
-  SESSION_IDLE_MINUTES: z.coerce.number().int().positive().default(720),
-  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().positive().default(168),
+  // Shared clinic workstations (IAM-Q-02): an hour of inactivity closes the
+  // session, and it cannot outlive the shift that started it.
+  SESSION_IDLE_MINUTES: z.coerce.number().int().positive().default(60),
+  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().positive().default(12),
   REAUTH_MINUTES: z.coerce.number().int().positive().default(5),
   TRUSTED_DEVICE_DAYS: z.coerce.number().int().positive().default(30),
 
@@ -61,8 +63,10 @@ const schema = z.object({
   BREACH_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(500),
   BREACH_API_URL: z.string().url().default('https://api.pwnedpasswords.com/range'),
 
-  MAIL_TRANSPORT: z.enum(['console', 'noop']).default('console'),
+  MAIL_TRANSPORT: z.enum(['console', 'noop', 'resend']).default('console'),
   MAIL_FROM: z.string().default('ClinicCare <no-reply@example.test>'),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_API_URL: z.string().url().default('https://api.resend.com/emails'),
 });
 
 export type AppConfig = {
@@ -96,7 +100,11 @@ export type AppConfig = {
   };
   argon2: { memoryCost: number; timeCost: number; parallelism: number };
   breach: { enabled: boolean; timeoutMs: number; apiUrl: string };
-  mail: { transport: 'console' | 'noop'; from: string };
+  mail: {
+    transport: 'console' | 'noop' | 'resend';
+    from: string;
+    resend: { apiKey?: string; apiUrl: string };
+  };
   invite: { expiryHours: number };
   reset: { expiryMinutes: number };
 };
@@ -119,6 +127,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   if (c.NODE_ENV === 'production' && !c.COOKIE_SECURE) {
     throw new Error('Invalid configuration: COOKIE_SECURE must be true in production');
+  }
+  if (c.MAIL_TRANSPORT === 'resend' && !c.RESEND_API_KEY) {
+    throw new Error('Invalid configuration: MAIL_TRANSPORT=resend needs RESEND_API_KEY');
   }
   if (c.NODE_ENV === 'production' && c.MAIL_TRANSPORT === 'console') {
     // The console transport writes invite and reset links to the log. That is
@@ -169,7 +180,11 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       timeoutMs: c.BREACH_CHECK_TIMEOUT_MS,
       apiUrl: c.BREACH_API_URL.replace(/\/$/, ''),
     },
-    mail: { transport: c.MAIL_TRANSPORT, from: c.MAIL_FROM },
+    mail: {
+      transport: c.MAIL_TRANSPORT,
+      from: c.MAIL_FROM,
+      resend: { apiKey: c.RESEND_API_KEY, apiUrl: c.RESEND_API_URL },
+    },
     invite: { expiryHours: 72 },
     reset: { expiryMinutes: 30 },
   };

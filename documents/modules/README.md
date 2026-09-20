@@ -76,51 +76,59 @@ The column lists in each spec omit those standard columns for brevity. They are 
 
 Permissions are strings checked at the API layer. V0 maps them to four fixed roles; V1's `RBC` module makes the mapping configurable per tenant.
 
-| Permission | ADMIN | DOCTOR | NURSE | FRONTDESK |
-|---|:-:|:-:|:-:|:-:|
-| `patient.read` | ✓ | ✓ | ✓ | ✓ |
-| `patient.write` | ✓ | ✓ | ✓ | ✓ |
-| `patient.unmask_id` | ✓ | ✓ | – | ✓ |
-| `patient.merge` | ✓ | – | – | – |
-| `patient.export` | ✓ | – | – | – |
-| `encounter.create` | ✓ | ✓ | ✓ | ✓ |
-| `encounter.transition` | ✓ | ✓ | ✓ | ✓ |
-| `encounter.cancel` | ✓ | ✓ | – | ✓ |
-| `encounter.priority` | ✓ | ✓ | ✓ | ✓ |
-| `triage.write` | ✓ | ✓ | ✓ | – |
-| `clinical.read` | ✓* | ✓ | ✓ | – |
-| `clinical.write` | – | ✓ | – | – |
-| `clinical.sign` | – | ✓ | – | – |
-| `clinical.amend` | – | ✓ | – | – |
-| `rx.write` | – | ✓ | – | – |
-| `rx.override_warning` | – | ✓ | – | – |
-| `dispense.perform` | ✓ | ✓ | ✓ | ✓ |
-| `dispense.substitute` | ✓ | ✓ | – | ✓ |
-| `dispense.cancel` | ✓ | ✓ | – | – |
-| `stock.read` | ✓ | ✓ | ✓ | ✓ |
-| `stock.receive` | ✓ | – | ✓ | ✓ |
-| `stock.adjust` | ✓ | – | – | – |
-| `stock.count` | ✓ | – | ✓ | ✓ |
-| `catalogue.write` | ✓ | – | – | – |
-| `procedure.order` | – | ✓ | – | – |
-| `procedure.perform` | ✓ | ✓ | ✓ | – |
-| `invoice.read` | ✓ | ✓ | – | ✓ |
-| `invoice.issue` | ✓ | – | – | ✓ |
-| `invoice.discount` | ✓ | – | – | ✓† |
-| `invoice.void` | ✓ | – | – | – |
-| `payment.take` | ✓ | – | – | ✓ |
-| `payment.void` | ✓ | – | – | – |
-| `eod.close` | ✓ | – | – | ✓ |
-| `document.issue` | ✓ | ✓ | – | ✓ |
-| `document.reprint` | ✓ | ✓ | ✓ | ✓ |
-| `audit.read` | ✓ | – | – | – |
-| `report.operational` | ✓ | ✓ | ✓ | ✓ |
-| `report.financial` | ✓ | – | – | – |
-| `admin.users` | ✓ | – | – | – |
-| `admin.settings` | ✓ | – | – | – |
+| Permission | ADMIN | DOCTOR | NURSE | RECEPTION | DISPENSER | CASHIER |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| `patient.read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `patient.write` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `patient.unmask_id` | ✓ | ✓ | – | ✓ | – | ✓ |
+| `patient.merge` | ✓ | – | – | – | – | – |
+| `patient.export` | ✓ | – | – | – | – | – |
+| `encounter.create` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `encounter.transition` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `encounter.cancel` | ✓ | ✓ | – | ✓ | – | – |
+| `encounter.priority` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `triage.write` | ✓ | ✓ | ✓ | – | – | – |
+| `clinical.read` | ✓* | ✓ | ✓ | – | – | – |
+| `clinical.write` | – | ✓ | – | – | – | – |
+| `clinical.sign` | – | ✓ | – | – | – | – |
+| `clinical.amend` | – | ✓ | – | – | – | – |
+| `rx.write` | – | ✓ | – | – | – | – |
+| `rx.override_warning` | – | ✓ | – | – | – | – |
+| `dispense.perform` | ✓ | ✓ | ✓ | – | ✓ | – |
+| `dispense.substitute` | ✓ | ✓ | – | – | ✓ | – |
+| `dispense.cancel` | ✓ | ✓ | – | – | – | – |
+| `stock.read` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `stock.receive` | ✓ | – | ✓ | – | ✓ | – |
+| `stock.adjust` | ✓ | – | – | – | – | – |
+| `stock.count` | ✓ | – | ✓ | – | ✓ | – |
+| `catalogue.write` | ✓ | – | – | – | – | – |
+| `procedure.order` | – | ✓ | – | – | – | – |
+| `procedure.perform` | ✓ | ✓ | ✓ | – | – | – |
+| `invoice.read` | ✓ | ✓ | – | ✓ | – | ✓ |
+| `invoice.issue` | ✓ | – | – | – | – | ✓ |
+| `invoice.discount` | ✓ | – | – | – | – | ✓† |
+| `invoice.void` | ✓ | – | – | – | – | – |
+| `payment.take` | ✓ | – | – | – | – | ✓ |
+| `payment.void` | ✓ | – | – | – | – | – |
+| `eod.close` | ✓ | – | – | – | – | ✓ |
+| `document.issue` | ✓ | ✓ | – | ✓ | ✓ | ✓ |
+| `document.reprint` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `audit.read` | ✓ | – | – | – | – | – |
+| `report.operational` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `report.financial` | ✓ | – | – | – | – | – |
+| `admin.users` | ✓ | – | – | – | – | – |
+| `admin.settings` | ✓ | – | – | – | – | – |
+
+The front desk is three roles rather than one, so a clinic that separates the
+counter can say so; where one person does all of it, they hold all three and
+see exactly what a single front-desk role would have shown (IAM-Q-01).
 
 \* ADMIN clinical read is **break-glass**: allowed, but every access is audited and surfaced on the audit dashboard. Tenants may disable it in V1.
-† FRONTDESK discount is capped by a tenant setting (`billing.max_discount_pct_frontdesk`, default 10%). Above the cap requires ADMIN.
+† CASHIER discount is capped by a tenant setting (`billing.max_discount_pct_frontdesk`, default 10%). Above the cap requires ADMIN.
+
+**Module specifications written before this split still say `FRONTDESK`.** Read
+that as "the front-desk function", and map it to the right one of the three
+when the module is picked up. This catalogue is the contract; they are not.
 
 A user has permissions **per branch** via `user_branch_role`. The check is always `(user, branch, permission)`.
 

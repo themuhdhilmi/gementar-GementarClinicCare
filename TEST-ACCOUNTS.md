@@ -11,7 +11,7 @@ in the `klinik-pilot` tenant at branch `KL01` (Cawangan Cheras).
 Sign in at **http://localhost:3000/login** after starting the app with
 `npm run dev`.
 
-All four use the same password:
+All six use the same password:
 
 ```
 ujian-klinik-2026-selamat
@@ -21,8 +21,14 @@ ujian-klinik-2026-selamat
 |---|---|---|---|
 | `doctor@klinikpilot.test` | Dr Farid | Doctor | Straight to the workspace |
 | `nurse@klinikpilot.test` | Jururawat Mei | Nurse | Straight to the workspace |
-| `frontdesk@klinikpilot.test` | Puan Zana | Front desk | Straight to the workspace |
+| `frontdesk@klinikpilot.test` | Puan Zana | Reception + dispenser + cashier | Straight to the workspace |
+| `dispenser@klinikpilot.test` | En Kamal | Dispenser only | Straight to the workspace |
+| `cashier@klinikpilot.test` | Cik Rina | Cashier only | Straight to the workspace |
 | `admin@klinikpilot.test` | Dr Aisyah | Administrator | Stops at MFA enrolment first |
+
+The front desk is three roles rather than one, so a clinic that separates the
+counter can say so. Puan Zana holds all three, which is the one-person front
+desk; En Kamal and Cik Rina hold one each, which is the larger clinic.
 
 Start with the doctor if you only want to look around.
 
@@ -51,19 +57,24 @@ npm run user:create --workspace @gementar/api -- \
 Permissions resolve per role at the active branch, so the difference is visible
 immediately in the header and on the workspace page.
 
-| | Doctor | Nurse | Front desk | Administrator |
-|---|:-:|:-:|:-:|:-:|
-| Permissions at this branch | 24 | 14 | 20 | 34 |
-| Staff tab | – | – | – | ✓ |
-| Audit tab | – | – | – | ✓ |
-| Write clinical notes | ✓ | – | – | – |
-| Take payment | – | – | ✓ | ✓ |
-| Read clinical notes | ✓ | ✓ | – | ✓ break-glass |
+| | Doctor | Nurse | Reception | Dispenser | Cashier | Administrator |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Permissions at this branch | 24 | 14 | 12 | 13 | 15 | 34 |
+| Staff and Audit tabs | – | – | – | – | – | ✓ |
+| Write clinical notes | ✓ | – | – | – | – | – |
+| Dispense medicine | ✓ | ✓ | – | ✓ | – | ✓ |
+| Take payment | – | – | – | – | ✓ | ✓ |
+| Register a patient, run the queue | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Read clinical notes | ✓ | ✓ | – | – | – | ✓ break-glass |
 
 ## Worth trying
 
 - **Sign in as the doctor, then as the front desk.** The workspace lists exactly
   what that role can do; neither sees the Staff or Audit tabs.
+- **Compare the cashier and the dispenser.** Cik Rina can take payment and
+  cannot dispense; En Kamal is the other way round; Puan Zana can do both.
+  Ticking all three boxes in the staff drawer is how a one-person counter is
+  set up.
 - **As the administrator, add a person.** The drawer takes a name, an email and
   a role per branch. Email is not connected yet, so the invitation link is shown
   on screen for you to hand over.
@@ -89,8 +100,9 @@ immediately in the header and on the workspace page.
   DELETE FROM login_attempt;
   ```
 
-- **Signed out after a while.** Sessions idle out after 12 hours and expire
-  after 7 days regardless.
+- **Signed out after a while.** Sessions idle out after an hour and last at
+  most twelve, sized for a shared reception computer. Both are environment
+  settings if your clinic gives everyone their own device.
 - **An invitation link that no longer works.** They are single-use and last 72
   hours; password reset links last 30 minutes.
 - **The administrator cannot disable themselves,** and cannot drop their own
@@ -105,10 +117,11 @@ npm run user:create --workspace @gementar/api -- \
   --role NURSE --branch KL01 --password "another-long-password"
 ```
 
-`--role` can be repeated for someone who holds more than one. Running it again
+`--role` takes `ADMIN`, `DOCTOR`, `NURSE`, `RECEPTION`, `DISPENSER` or
+`CASHIER`, and can be repeated for someone who holds more than one. Running it again
 for an existing address resets that person's password and roles. The password
 must pass the same policy the application enforces: at least 12 characters and
 not on a breach list.
 
 To start over completely, drop the schema, re-run `npm run db:migrate` and
-`npm run db:seed`, then recreate these four.
+`npm run db:seed`, then recreate these six.

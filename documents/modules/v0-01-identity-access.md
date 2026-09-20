@@ -28,15 +28,15 @@ Without it nothing can be audited, nothing can be permissioned, and no clinical 
 | ADMIN | Create, disable, re-enable users; assign roles per branch; force password reset; revoke any session; enable MFA |
 | System | Authenticate every request, resolve `TenantContext`, enforce permissions |
 
-| Action | ADMIN | DOCTOR | NURSE | FRONTDESK |
-|---|:-:|:-:|:-:|:-:|
-| Log in / out | ✓ | ✓ | ✓ | ✓ |
-| Change own password | ✓ | ✓ | ✓ | ✓ |
-| View / revoke own sessions | ✓ | ✓ | ✓ | ✓ |
-| Manage own MFA | ✓ | ✓ | ✓ | ✓ |
-| `admin.users` — create, disable, assign roles | ✓ | – | – | – |
-| Revoke another user's sessions | ✓ | – | – | – |
-| Force password reset for another user | ✓ | – | – | – |
+| Action | ADMIN | DOCTOR | NURSE | RECEPTION | DISPENSER | CASHIER |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Log in / out | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Change own password | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| View / revoke own sessions | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Manage own MFA | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `admin.users` — create, disable, assign roles | ✓ | – | – | – | – | – |
+| Revoke another user's sessions | ✓ | – | – | – | – | – |
+| Force password reset for another user | ✓ | – | – | – | – | – |
 
 ## 3. Functional requirements
 
@@ -45,7 +45,7 @@ Without it nothing can be audited, nothing can be permissioned, and no clinical 
 |---|---|---|
 | IAM-F-01 | Email + password login. Passwords hashed with Argon2id (memory 64 MiB, iterations 3, parallelism 1, or tuned to ~250 ms on the production host). | Must |
 | IAM-F-02 | On success, create a server-side session; return an opaque token in an `httpOnly`, `Secure`, `SameSite=Lax` cookie. No JWTs. | Must |
-| IAM-F-03 | Session idle timeout 12 h, absolute lifetime 7 d. Both tenant-configurable in V1. | Must |
+| IAM-F-03 | Session idle timeout 1 h, absolute lifetime 12 h — shortened from 12 h / 7 d for shared workstations (IAM-Q-02). Both environment settings today, tenant-configurable in V1. | Must |
 | IAM-F-04 | Logout destroys the session server-side immediately. | Must |
 | IAM-F-05 | Login is rate limited: 5 failures per email per 15 min and 20 per IP per 15 min → 429 with `Retry-After`. Failures are audited. | Must |
 | IAM-F-06 | After 10 consecutive failures the account is locked for 30 min; ADMIN can unlock. The lockout response is indistinguishable from a wrong password. | Must |
@@ -70,7 +70,7 @@ Without it nothing can be audited, nothing can be permissioned, and no clinical 
 | ID | Requirement | Priority |
 |---|---|---|
 | IAM-F-19 | A `TenantContext { tenantId, branchId, userId, permissions[] }` is resolved from the session on every request and injected request-scoped. | Must |
-| IAM-F-20 | Permission checks use `(user, branch, permission)`. The four V0 roles map to the permission catalogue in `README.md`. | Must |
+| IAM-F-20 | Permission checks use `(user, branch, permission)`. The six V0 roles map to the permission catalogue in `README.md` — the front desk is RECEPTION, DISPENSER and CASHIER (IAM-Q-01). | Must |
 | IAM-F-21 | The active branch is stored on the session; switching branch is a server-side action that validates the user has a role there. | Must |
 | IAM-F-22 | A `@RequirePermission('x.y')` decorator guards every mutating endpoint. Endpoints without one fail CI (lint rule). | Must |
 | IAM-F-23 | Break-glass: ADMIN reading clinical data is allowed but emits `audit.break_glass` and is surfaced on the audit dashboard. | Must |
@@ -137,7 +137,7 @@ user_branch_role
   tenant_id   uuid not null
   user_id     uuid not null → user
   branch_id   uuid not null → branch
-  role        enum(ADMIN, DOCTOR, NURSE, FRONTDESK) not null
+  role        enum(ADMIN, DOCTOR, NURSE, RECEPTION, DISPENSER, CASHIER) not null
   UNIQUE (user_id, branch_id, role)
   INDEX (branch_id, role)
 
@@ -255,7 +255,7 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 | MFA prompt | 6-digit input auto-submits on 6th digit; recovery-code link; "trust this device" checkbox |
 | Set / reset password | Live strength feedback; breached-password warning explains *why* |
 | My account | Sessions list with "this device" marker; MFA enrol/disable; change password |
-| Admin → Users | List with status chips, search, filter by branch/role; create/edit drawer with per-branch role checkboxes; disable requires confirm |
+| Admin → Users | List with status chips, search, filter by branch/role; create/edit drawer with per-branch role checkboxes, each with a line saying what the role is for; disable requires confirm |
 | Branch switcher | In the app header; shows only branches the user has a role at; switching reloads the workspace |
 
 ## 12. Validation
@@ -282,7 +282,7 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 
 | Case | Decision |
 |---|---|
-| User holds ADMIN at branch A and FRONTDESK at branch B | Permissions resolve per active branch. Switching to B drops admin permissions until switched back. |
+| User holds ADMIN at branch A and RECEPTION at branch B | Permissions resolve per active branch. Switching to B drops admin permissions until switched back. |
 | User disabled mid-consultation | Their next request fails with 401. Draft consultations are preserved and reassignable by ADMIN. |
 | Last ADMIN tries to disable themselves | Rejected with a clear message (IAM-R-05). |
 | MFA device lost, no recovery codes | ADMIN can reset MFA for the user after verifying identity out-of-band; the reset is audited and the user must re-enrol at next login. |
@@ -313,7 +313,7 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 | IAM-T-04 | Given an ADMIN without MFA enrolled, when they log in, then they are forced through MFA enrolment before any other route responds. |
 | IAM-T-05 | Given a user with two active sessions, when ADMIN disables them, then both sessions return 401 on their next request. |
 | IAM-T-06 | Given a password reset token, when it is used, then all pre-existing sessions are revoked and the token cannot be used again. |
-| IAM-T-07 | Given a user with FRONTDESK at branch B only, when they call an endpoint requiring `clinical.write` at branch B, then 403. |
+| IAM-T-07 | Given a user with RECEPTION at branch B only, when they call an endpoint requiring `clinical.write` at branch B, then 403. Also covered for the split itself: a CASHIER cannot dispense and a DISPENSER cannot take payment. |
 | IAM-T-08 | Given a mutating route with no `@RequirePermission`, when CI runs, then the build fails. |
 | IAM-T-09 | Given a tenant's only ACTIVE ADMIN, when they attempt to remove their own ADMIN role, then the request is rejected. |
 | IAM-T-10 | Given a TOTP code, when it is submitted twice within its window, then the second submission is rejected. |
@@ -335,13 +335,167 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 
 ## 20. Open questions
 
-| ID | Question | Who |
+| ID | Question | Who | Status |
+|---|---|---|---|
+| IAM-Q-01 | Does one person at the pilot cover reception, dispensing and cashier? If they are separate people, FRONTDESK should split into RECEPTION / DISPENSER / CASHIER now rather than in V1. | Pilot clinic | **Answered and built** — see below |
+| IAM-Q-02 | Do staff share workstations? Affects idle timeout and whether a fast "switch user" is needed. | Pilot clinic | **Decided** — assume shared, see below |
+| IAM-Q-03 | Which transactional email provider for invites/resets? | You | **Provider built, choice open** — needs a sending domain |
+| IAM-Q-04 | If the same email address is ever used at two tenants, how should the login form resolve it — a clinic picker, a per-clinic subdomain, or a hard rule that addresses are globally unique? Only matters when clinic two arrives. | You | Open — current behaviour is to fail, see note 2 in §22 |
+| IAM-Q-05 | Should the application connect as a non-owner role (`prisma/sql/app-role.sql`) rather than as the table owner? | You / hosting | **Decided and surfaced** — yes, before go-live; the boot log and `/health` now say when it is outstanding |
+
+### IAM-Q-01 — split FRONTDESK now
+
+**Answer: keep it as flexible as possible, which means splitting the role now
+rather than later.**
+
+`FRONTDESK` becomes three roles — `RECEPTION`, `DISPENSER`, `CASHIER` — and
+flexibility comes from the assignment, not from one wide role. A user already
+holds any number of `(branch, role)` pairs, so:
+
+- a small clinic gives one person all three, and they see exactly what
+  `FRONTDESK` shows today;
+- a larger clinic gives each person one, and a cashier cannot dispense;
+- a doctor who also dispenses simply gets `DISPENSER` as well.
+
+Doing it now is the cheap moment. The permission catalogue is a published
+contract that fourteen unbuilt modules will check against, and every one of
+them built against `FRONTDESK` makes the split more expensive. Custom roles and
+an editable permission map are still V1 (`RBC`); this is about having the right
+fixed roles underneath that.
+
+**Proposed permission split, for correction by the clinic.** Everything a
+`FRONTDESK` user can do today stays available; it is only divided up.
+
+| Permission | RECEPTION | DISPENSER | CASHIER |
+|---|:-:|:-:|:-:|
+| `patient.read`, `patient.write` | ✓ | ✓ | ✓ |
+| `patient.unmask_id` | ✓ | – | ✓ |
+| `encounter.create`, `encounter.transition`, `encounter.priority` | ✓ | ✓ | ✓ |
+| `encounter.cancel` | ✓ | – | – |
+| `dispense.perform`, `dispense.substitute` | – | ✓ | – |
+| `stock.read` | ✓ | ✓ | ✓ |
+| `stock.receive`, `stock.count` | – | ✓ | – |
+| `invoice.read` | ✓ | – | ✓ |
+| `invoice.issue`, `invoice.discount` | – | – | ✓ |
+| `payment.take`, `eod.close` | – | – | ✓ |
+| `document.issue` | ✓ | ✓ | ✓ |
+| `document.reprint`, `report.operational` | ✓ | ✓ | ✓ |
+
+**Built.** Migration `20260921020000_split_front_desk_role` replaces the enum
+and expands every existing `FRONTDESK` assignment into all three, so nobody
+lost access; the pilot's front-desk account now holds reception, dispenser and
+cashier. A unit test asserts that the union of the three is exactly the old
+single role, and an end-to-end test proves a cashier cannot dispense and a
+dispenser cannot take payment. The staff drawer lists all six with a line
+describing each.
+
+Module specifications written before this still say `FRONTDESK`; the catalogue
+in `../modules/README.md` is the contract, and each of those modules maps to
+the right role when it is picked up.
+
+### IAM-Q-02 — assume workstations are shared
+
+**Decision: assume they are shared, and shorten the session.**
+
+A single reception computer that several people use during a shift is the norm
+in a small Malaysian general practice, and it is also the less damaging
+assumption to get wrong: a clinic with personal devices loses a little
+convenience, while a clinic with a shared desk keeps an unattended session
+open all night.
+
+| | Was | Now |
 |---|---|---|
-| IAM-Q-01 | Does one person at the pilot cover reception, dispensing and cashier? If they are separate people, FRONTDESK should split into RECEPTION / DISPENSER / CASHIER now rather than in V1. | Pilot clinic |
-| IAM-Q-02 | Do staff share workstations? Affects idle timeout and whether a fast "switch user" is needed. | Pilot clinic |
-| IAM-Q-03 | Which transactional email provider for invites/resets? | You |
-| IAM-Q-04 | If the same email address is ever used at two tenants, how should the login form resolve it — a clinic picker, a per-clinic subdomain, or a hard rule that addresses are globally unique? Only matters when clinic two arrives. | You |
-| IAM-Q-05 | Should the application connect as a non-owner role (`prisma/sql/app-role.sql`) rather than as the table owner? Row-level security is forced either way, so this is about removing the ability to drop a policy from the account that faces the internet. The current account cannot create roles, so someone with more privileges has to do it. | You / hosting |
+| Idle timeout | 12 hours | **1 hour** |
+| Absolute lifetime | 7 days | **12 hours** |
+
+An hour of inactivity is long enough that nobody is signed out mid-task — the
+consultation screen talks to the server constantly — and short enough that a
+counter left at lunchtime is closed by the time it matters. A twelve-hour
+absolute lifetime means a session cannot outlive the shift that started it.
+
+Both remain environment settings today and become per-tenant settings in V1,
+so a clinic with personal laptops can raise them without a deploy. This
+supersedes the numbers in IAM-F-03; recorded as note 12 in §22.
+
+Two follow-ons, both V1 and neither blocking:
+
+- **Fast switch user.** Signing out and back in is four actions on a shared
+  desk. A "switch user" that keeps the branch and pre-fills nothing but the
+  email field is worth building once the queue screens exist.
+- **"Trust this device" on a shared machine.** The MFA screen already warns
+  against it. In V1 a tenant should be able to switch the option off entirely
+  for a given branch.
+
+### IAM-Q-03 — what the email provider decision actually is
+
+**Still yours to make. Here is what it covers.**
+
+**What the system sends.** Two things, both security-critical and both
+time-limited: the invitation link that lets a new member of staff set their
+first password (72 hours, single use), and the password reset link (30 minutes,
+single use). Nothing else. No patient mail, no reminders, no marketing.
+
+**Volume.** At the pilot, tens of messages a month. Every free tier on the
+market covers it several times over, so cost is not the deciding factor.
+
+**What actually matters.** Deliverability. A reset link that lands in spam is a
+member of staff who cannot work, at the moment they have already lost access.
+That means sending from your own domain with SPF, DKIM and DMARC set up, which
+in turn means whoever controls the `gementar.com` DNS has to add three records.
+A personal Gmail account as an SMTP relay will work on the first day and start
+being filtered later; it is the option to avoid.
+
+**What happens today.** `MAIL_TRANSPORT=console` writes the link to the
+application log and returns it in the API response, so an administrator can
+copy it and hand it over in person. Production configuration refuses this
+transport outright, so this cannot ship by accident.
+
+| Option | Setup | Notes |
+|---|---|---|
+| **Resend** | An API key and three DNS records | Simplest for a small transactional volume; good defaults |
+| **Postmark** | API key and DNS | Strongest reputation for transactional mail; paid from the start |
+| **Amazon SES** | IAM user, DNS, and a sandbox-removal request | Cheapest at scale, most setup, worth it only if you are already on AWS |
+| **Brevo / Mailgun** | API key and DNS | Fine; marketing features you will not use |
+| **Google Workspace SMTP** | Existing mailbox | Works immediately, sending limits and poorer reputation for automated mail |
+
+Check current pricing before committing; free tiers move.
+
+**Recommendation, and what is now built.** Resend, on a subdomain such as
+`mail.gementar.com`, so a later move to SES never touches the main domain's
+reputation. The transport is implemented: set `MAIL_TRANSPORT=resend` and
+`RESEND_API_KEY`, and configuration refuses the combination if the key is
+missing. It is a plain HTTP call with no SDK, so swapping provider is one
+adapter method. Sending never throws — it runs after the transaction has
+committed, so a provider outage cannot undo the change that triggered it, and
+a failure is logged with the address masked.
+
+**What I need from you:** the sending domain, and confirmation that whoever
+holds its DNS can add SPF, DKIM and DMARC records.
+
+**Not this decision.** Patient-facing messaging is WhatsApp and SMS, it belongs
+to V1's `NTF` module, and it is a separate choice with different providers.
+
+### IAM-Q-05 — use the unprivileged role, from go-live
+
+**Decision: yes, but it is not urgent, and it is not a pilot blocker.**
+
+Row-level security is already `FORCE`d, so policies apply to the owner as well;
+isolation does not depend on this. What a separate role adds is that the
+account facing the internet loses the ability to drop a policy, disable
+row-level security, or change the schema at all — protection against an
+application compromise rather than against a missing `where` clause.
+
+So: keep connecting as the owner during the pilot build, and make
+`prisma/sql/app-role.sql` part of the go-live checklist, whichever comes first
+of production deployment or a second tenant. It needs a database account with
+`CREATEROLE`, which the current one does not have, so it is a request to
+whoever administers the server rather than something the application can do to
+itself.
+
+**Made visible in the meantime.** The boot log says so every start, and
+`/api/v1/health` reports the role as `table owner — policies apply, but this
+account could drop them`. It is a warning, not a refusal, because isolation
+genuinely does hold without it.
 
 ## 21. Definition of done
 
@@ -353,7 +507,7 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 - [x] Threat-model pass written up — [`documents/security/iam-threat-model.md`](../security/iam-threat-model.md)
 - [x] Web screens (§11) built — sign-in, MFA, forced enrolment, set and reset password, my account, staff administration, audit dashboard
 - [x] Tenant isolation installed by migrations, and asserted at boot (`DB_GUARD_MODE=require` in staging and production)
-- [ ] Open questions answered and recorded — IAM-Q-01, Q-02, Q-03 still open; Q-04 and Q-05 added
+- [ ] Open questions answered and recorded — Q-01, Q-02 and Q-05 answered in §20; **Q-01's role split is decided but not yet built**; Q-03 needs a sending domain from you; Q-04 waits for a second tenant
 
 ### Argon2id cost measurement (IAM-N-02)
 
@@ -391,6 +545,8 @@ is a place where the spec and reality disagreed slightly.
 | 8 | **Disabling a user is refused for your own account outright**, not only when you are the last administrator. | IAM-F-16 reads either way. Nobody has a good reason to disable themselves, and the failure mode of allowing it is an administrator locking the clinic out at 6pm. |
 | 9 | **Services take their transaction from the request scope** rather than receiving `tx` as a parameter, except `AuditService.record`, which still requires it explicitly. | Keeps AUD-R-02 honest where it matters (an audit entry shares its change's transaction) without threading a parameter through forty signatures. |
 | 10 | **A minimal slice of the audit module was built** (append-only table, `record`, redaction, two read endpoints) rather than stubbed. | IAM's definition of done requires audited actions and a visible break-glass count. The rest of `AUD` is unaffected. |
+| 13 | **Six roles, not four**: `FRONTDESK` is now `RECEPTION`, `DISPENSER` and `CASHIER`. | Answering IAM-Q-01 in favour of flexibility. One person can hold all three, so a small clinic is unaffected, while a clinic that separates the counter can now express that. Done early because the permission catalogue is a contract fourteen unbuilt modules will check against. |
+| 12 | **Session idle timeout is 1 hour and the absolute lifetime 12 hours**, not the 12 h / 7 d in IAM-F-03. | Answering IAM-Q-02 in favour of shared workstations. A reception desk used by several people during a shift should not hold an open session overnight. Both are environment settings, so a clinic with personal devices can raise them without a deploy. |
 | 11 | **`audit_log` has no foreign keys**, and the test harness needs an owner connection to clean up after itself. | An append-only log must not be able to block operations on the rows it describes, and its entries have to outlive them. Deleting audit rows is deliberately an administrative act. |
 
 ### How note 1 stands today

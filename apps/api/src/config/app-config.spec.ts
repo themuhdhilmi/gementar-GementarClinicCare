@@ -11,8 +11,8 @@ const base = {
 describe('configuration', () => {
   it('loads with sensible defaults', () => {
     const config = loadAppConfig(base);
-    expect(config.session.idleMinutes).toBe(720);
-    expect(config.session.absoluteHours).toBe(168);
+    expect(config.session.idleMinutes).toBe(60);
+    expect(config.session.absoluteHours).toBe(12);
     expect(config.login.lockoutThreshold).toBe(10);
     expect(config.argon2.memoryCost).toBe(65536);
   });

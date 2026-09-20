@@ -79,7 +79,7 @@ export type Branch = {
   roles: Role[];
 };
 
-export type Role = 'ADMIN' | 'DOCTOR' | 'NURSE' | 'FRONTDESK';
+export type Role = 'ADMIN' | 'DOCTOR' | 'NURSE' | 'RECEPTION' | 'DISPENSER' | 'CASHIER';
 export type UserStatus = 'INVITED' | 'ACTIVE' | 'DISABLED' | 'LOCKED';
 
 export type Me = {
@@ -142,5 +142,20 @@ export const ROLE_LABEL: Record<Role, string> = {
   ADMIN: 'Administrator',
   DOCTOR: 'Doctor',
   NURSE: 'Nurse',
-  FRONTDESK: 'Front desk',
+  RECEPTION: 'Reception',
+  DISPENSER: 'Dispenser',
+  CASHIER: 'Cashier',
+};
+
+/**
+ * What each role is for, shown beside the checkboxes when assigning them. A
+ * clinic where one person does all three ticks all three.
+ */
+export const ROLE_DESCRIPTION: Record<Role, string> = {
+  ADMIN: 'Manages staff and settings. Reads clinical records as break-glass, which is recorded.',
+  DOCTOR: 'Consults, prescribes, signs and amends clinical records.',
+  NURSE: 'Triage and vitals, assists with procedures, reads clinical records.',
+  RECEPTION: 'Registers patients and runs the queue.',
+  DISPENSER: 'Dispenses medicine and receives stock.',
+  CASHIER: 'Issues invoices, takes payment and closes the day.',
 };
