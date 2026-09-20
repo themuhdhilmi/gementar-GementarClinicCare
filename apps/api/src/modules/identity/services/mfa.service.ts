@@ -17,6 +17,8 @@ export type EnrolmentOffer = {
   secret: string;
   otpauthUri: string;
   qrDataUrl: string;
+  /** True when an enrolment already in progress was picked up again. */
+  reused: boolean;
 };
 
 type StoredRecoveryCodes = { codes: Array<{ hash: string; usedAt: string | null }> };
@@ -54,18 +56,34 @@ export class MfaService {
     });
   }
 
-  /** Step 1 of enrolment: offer a secret. Nothing is enabled until it is confirmed. */
-  async offerEnrolment(email: string, issuer: string): Promise<EnrolmentOffer> {
-    const secret = this.crypto.randomBase32(20); // 160-bit, per RFC 4226
-    const uri = this.totp(secret, email, issuer).toString();
+  /**
+   * Step 1 of enrolment: offer a secret. Nothing is enabled until it is
+   * confirmed.
+   *
+   * An enrolment already in progress keeps its secret. Reloading the page
+   * used to mint a new one, which silently invalidated the QR code the person
+   * had just scanned and rejected every code they typed afterwards.
+   */
+  async offerEnrolment(
+    tx: Tx,
+    user: { id: string; email: string; mfaEnabled: boolean; mfaSecretEnc: Uint8Array | null },
+    issuer: string,
+  ): Promise<EnrolmentOffer> {
+    const pending = user.mfaEnabled ? null : this.readSecret(user.id, user.mfaSecretEnc);
+    const secret = pending ?? this.crypto.randomBase32(20); // 160-bit, per RFC 4226
+
+    if (!pending) await this.storePendingSecret(tx, user.id, secret);
+
+    const uri = this.totp(secret, user.email, issuer).toString();
     return {
       secret,
       otpauthUri: uri,
       qrDataUrl: await toDataURL(uri, { errorCorrectionLevel: 'M', margin: 1, width: 240 }),
+      reused: pending !== null,
     };
   }
 
-  async storePendingSecret(tx: Tx, userId: string, secret: string): Promise<void> {
+  private async storePendingSecret(tx: Tx, userId: string, secret: string): Promise<void> {
     await tx.user.update({
       where: { id: userId },
       data: {

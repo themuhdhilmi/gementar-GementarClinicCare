@@ -178,6 +178,19 @@ describe('IAM — authentication (against real PostgreSQL)', () => {
       .send({ code });
     expect(replayed.status).toBe(401);
 
+    // The refusal is recorded and counted, even though the request that
+    // carried it rolled back.
+    const [audited, attempts] = await Promise.all([
+      harness.db.withTenant(fx.tenantId, (tx) =>
+        tx.auditLog.count({ where: { action: 'mfa.failed', entityId: user.id } }),
+      ),
+      harness.db.withPlatform('count attempts', (tx) =>
+        tx.loginAttempt.count({ where: { emailKey: user.email, outcome: 'MFA_FAILED' } }),
+      ),
+    ]);
+    expect(audited).toBe(1);
+    expect(attempts).toBe(1);
+
     const fresh = totpFor(enrol.body.secret, 1);
     const accepted = await request(harness.server)
       .post(`${API}/auth/mfa/verify`)
@@ -190,6 +203,66 @@ describe('IAM — authentication (against real PostgreSQL)', () => {
       .set('Cookie', cookie2)
       .send({ code: fresh });
     expect(again.status).toBe(401);
+  });
+
+  it('reopening MFA enrolment keeps the secret, so an already scanned code still works', async () => {
+    const user = await harness.addUser(fx, {
+      name: 'Scans Once',
+      roles: [{ branchId: fx.branchAId, role: 'DOCTOR' }],
+    });
+    const login = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const cookie = (login.headers['set-cookie'] as unknown as string[]).find((c) =>
+      c.startsWith('cc_session='),
+    )!;
+
+    // Scan the code, then reload the page before typing the digits.
+    const first = await request(harness.server)
+      .post(`${API}/auth/me/mfa/enrol`)
+      .set('Cookie', cookie)
+      .expect(200);
+    const second = await request(harness.server)
+      .post(`${API}/auth/me/mfa/enrol`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(second.body.secret).toBe(first.body.secret);
+    expect(second.body.reused).toBe(true);
+
+    // The code from the first QR is still the right one.
+    await request(harness.server)
+      .post(`${API}/auth/me/mfa/confirm`)
+      .set('Cookie', cookie)
+      .send({ code: totpFor(first.body.secret) })
+      .expect(200);
+  });
+
+  it('a rejected code during enrolment is audited, like one at sign-in', async () => {
+    const user = await harness.addUser(fx, {
+      name: 'Fat Fingers',
+      roles: [{ branchId: fx.branchAId, role: 'NURSE' }],
+    });
+    const login = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const cookie = (login.headers['set-cookie'] as unknown as string[]).find((c) =>
+      c.startsWith('cc_session='),
+    )!;
+    await request(harness.server).post(`${API}/auth/me/mfa/enrol`).set('Cookie', cookie).expect(200);
+
+    await request(harness.server)
+      .post(`${API}/auth/me/mfa/confirm`)
+      .set('Cookie', cookie)
+      .send({ code: '000000' })
+      .expect(401);
+
+    const recorded = await harness.db.withTenant(fx.tenantId, (tx) =>
+      tx.auditLog.count({ where: { action: 'mfa.failed', entityId: user.id } }),
+    );
+    expect(recorded).toBe(1);
   });
 
   it('IAM-T-06: a reset token is single-use and revokes every existing session', async () => {

@@ -8,6 +8,7 @@ import {
   ROLE_LABEL,
   type Page,
   type Role,
+  type StaffStatistics,
   type UserRow,
   type UserStatus,
 } from '@/lib/api';
@@ -41,6 +42,7 @@ type Draft = {
 export default function UsersPage() {
   const { me } = useSession();
   const [page, setPage] = useState<Page<UserRow> | null>(null);
+  const [stats, setStats] = useState<StaffStatistics | null>(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<UserStatus | ''>('');
   const [branchId, setBranchId] = useState('');
@@ -51,6 +53,12 @@ export default function UsersPage() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const loadStats = useCallback(async () => {
+    setStats(await api<StaffStatistics>('/users/statistics'));
+  }, []);
+
+  useAsyncEffect(() => loadStats(), [loadStats]);
 
   const load = useCallback(async () => {
     const result = await api<Page<UserRow>>('/users', {
@@ -71,7 +79,7 @@ export default function UsersPage() {
     setNotice(null);
     try {
       await action();
-      await load();
+      await Promise.all([load(), loadStats()]);
       setNotice(message);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
@@ -109,6 +117,8 @@ export default function UsersPage() {
           </div>
         </Alert>
       )}
+
+      {stats && <StaffSummary stats={stats} />}
 
       <Card>
         <div className="flex flex-wrap items-end gap-3">
@@ -297,6 +307,60 @@ export default function UsersPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+/**
+ * §16: active users by role and branch. Counted by assignment, so someone who
+ * runs the whole counter appears under all three of its roles; the headcount
+ * is given separately because that is the number a manager recognises.
+ */
+function StaffSummary({ stats }: { stats: StaffStatistics }) {
+  const shown: Role[] = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTION', 'DISPENSER', 'CASHIER'];
+
+  return (
+    <Card title="Active staff" description="By role at each branch. Counted per role held.">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs uppercase tracking-wide text-muted">
+            <tr>
+              <th className="pb-2 font-medium">Branch</th>
+              <th className="pb-2 font-medium">People</th>
+              {shown.map((role) => (
+                <th key={role} className="pb-2 text-center font-medium">
+                  {ROLE_LABEL[role]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {stats.byBranch.map((branch) => (
+              <tr key={branch.branchId}>
+                <td className="py-2">
+                  {branch.name} <span className="text-muted">({branch.code})</span>
+                </td>
+                <td className="py-2 font-medium tabular-nums">{branch.people}</td>
+                {shown.map((role) => (
+                  <td
+                    key={role}
+                    className={`py-2 text-center tabular-nums ${
+                      branch.roles[role] === 0 ? 'text-muted' : ''
+                    }`}
+                  >
+                    {branch.roles[role]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
+        {stats.byStatus.ACTIVE} active · {stats.byStatus.INVITED} invited ·{' '}
+        {stats.byStatus.LOCKED} locked · {stats.byStatus.DISABLED} disabled
+      </p>
+    </Card>
   );
 }
 

@@ -1,5 +1,5 @@
 import { Controller, Get, Module, Param, Post } from '@nestjs/common';
-import { Ctx, RequirePermission } from '../../src/modules/identity/decorators/auth.decorators.js';
+import { Ctx, Public, RequirePermission } from '../../src/modules/identity/decorators/auth.decorators.js';
 import type { TenantContext } from '../../src/modules/tenancy/tenant-context.js';
 
 /**
@@ -10,6 +10,18 @@ import type { TenantContext } from '../../src/modules/tenancy/tenant-context.js'
  */
 @Controller('clinical-probe')
 export class ClinicalProbeController {
+  /** Two routes that do nothing, so the auth guard can be timed on its own. */
+  @Get('ping')
+  @Public()
+  ping() {
+    return { ok: true };
+  }
+
+  @Get('ping-auth')
+  pingAuthenticated(@Ctx() ctx: TenantContext) {
+    return { ok: true, userId: ctx.userId };
+  }
+
   @Get('records/:patientId')
   @RequirePermission('clinical.read')
   read(@Ctx() ctx: TenantContext, @Param('patientId') patientId: string) {

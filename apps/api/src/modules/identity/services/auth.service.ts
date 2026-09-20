@@ -399,19 +399,24 @@ export class AuthService {
 
     const actor = this.audit.actorFromContext(ctx);
     if (!ok) {
-      await this.throttle.record(tx, {
-        emailKey: user.email,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-        outcome: LoginOutcome.MFA_FAILED,
-        tenantId: ctx.tenantId,
-        userId: user.id,
-      });
-      await this.audit.record(tx, actor, {
-        action: AuditAction.MfaFailed,
-        entityType: 'user',
-        entityId: user.id,
-        after: { method: looksLikeRecovery ? 'recovery' : 'totp' },
+      // In its own transaction: this request is about to fail, and a rolled
+      // back failure record would neither be audited nor counted towards the
+      // rate limit.
+      await this.db.withTenantIndependently(ctx.tenantId, 'record a failed MFA code', async (own) => {
+        await this.throttle.record(own, {
+          emailKey: user.email,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+          outcome: LoginOutcome.MFA_FAILED,
+          tenantId: ctx.tenantId,
+          userId: user.id,
+        });
+        await this.audit.record(own, actor, {
+          action: AuditAction.MfaFailed,
+          entityType: 'user',
+          entityId: user.id,
+          after: { method: looksLikeRecovery ? 'recovery' : 'totp', stage: 'sign-in' },
+        });
       });
       throw new AuthenticationFailedError('That code is not valid.');
     }
@@ -439,11 +444,16 @@ export class AuthService {
     return { trustedDeviceToken: device.token, trustedDeviceExpiresAt: device.expiresAt };
   }
 
-  async enrolMfa(ctx: TenantContext): Promise<{ secret: string; otpauthUri: string; qrDataUrl: string }> {
+  async enrolMfa(
+    ctx: TenantContext,
+  ): Promise<{ secret: string; otpauthUri: string; qrDataUrl: string; reused: boolean }> {
     const tx = this.db.tx();
-    const offer = await this.mfa.offerEnrolment(ctx.userEmail, this.mfaIssuer());
-    await this.mfa.storePendingSecret(tx, ctx.userId, offer.secret);
-    return offer;
+    const user = await tx.user.findFirst({
+      where: { id: ctx.userId },
+      select: { id: true, email: true, mfaEnabled: true, mfaSecretEnc: true },
+    });
+    if (!user) throw new NotFoundError('User');
+    return this.mfa.offerEnrolment(tx, user, this.mfaIssuer());
   }
 
   async confirmMfa(ctx: TenantContext, code: string): Promise<{ recoveryCodes: string[] }> {
@@ -457,7 +467,19 @@ export class AuthService {
     }
 
     const codes = await this.mfa.confirmEnrolment(tx, user, code, this.mfaIssuer());
-    if (!codes) throw new AuthenticationFailedError('That code is not valid.');
+    if (!codes) {
+      // Recorded like a rejected code at sign-in, and in its own transaction
+      // for the same reason: the request is about to roll back.
+      await this.db.withTenantIndependently(ctx.tenantId, 'record a failed enrolment code', (own) =>
+        this.audit.record(own, this.audit.actorFromContext(ctx), {
+          action: AuditAction.MfaFailed,
+          entityType: 'user',
+          entityId: ctx.userId,
+          after: { method: 'totp', stage: 'enrolment' },
+        }),
+      );
+      throw new AuthenticationFailedError('That code is not valid.');
+    }
 
     await this.sessions.markMfaVerified(tx, ctx.sessionId);
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {

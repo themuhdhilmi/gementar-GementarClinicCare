@@ -47,6 +47,17 @@ export type UserSummary = {
   defaultBranchId: string | null;
 };
 
+export type StaffStatistics = {
+  byStatus: Record<UserStatus, number>;
+  byBranch: Array<{
+    branchId: string;
+    code: string;
+    name: string;
+    people: number;
+    roles: Record<Role, number>;
+  }>;
+};
+
 const USER_SELECT = {
   id: true,
   name: true,
@@ -145,6 +156,53 @@ export class UserService {
     ]);
 
     return toPage(rows.map(toSummary), total, filter.page, filter.pageSize);
+  }
+
+  /**
+   * §16: active users by role and branch, for the admin dashboard.
+   *
+   * Counted by assignment, so somebody who holds three roles at the counter
+   * appears under each of them. `people` is the headcount, which is the
+   * number a clinic manager actually recognises.
+   */
+  async statistics(tx: Tx): Promise<StaffStatistics> {
+    const [byStatus, assignments, branches] = await Promise.all([
+      tx.user.groupBy({ by: ['status'], _count: { _all: true } }),
+      tx.userBranchRole.findMany({
+        where: { user: { status: UserStatus.ACTIVE } },
+        select: { branchId: true, role: true, userId: true },
+      }),
+      tx.branch.findMany({ select: { id: true, code: true, name: true }, orderBy: { code: 'asc' } }),
+    ]);
+
+    const perBranch = new Map<string, { roles: Map<Role, number>; people: Set<string> }>();
+    for (const a of assignments) {
+      const entry = perBranch.get(a.branchId) ?? { roles: new Map(), people: new Set() };
+      entry.roles.set(a.role, (entry.roles.get(a.role) ?? 0) + 1);
+      entry.people.add(a.userId);
+      perBranch.set(a.branchId, entry);
+    }
+
+    return {
+      byStatus: Object.fromEntries(
+        Object.values(UserStatus).map((status) => [
+          status,
+          byStatus.find((row) => row.status === status)?._count._all ?? 0,
+        ]),
+      ) as Record<UserStatus, number>,
+      byBranch: branches.map((branch) => {
+        const entry = perBranch.get(branch.id);
+        return {
+          branchId: branch.id,
+          code: branch.code,
+          name: branch.name,
+          people: entry?.people.size ?? 0,
+          roles: Object.fromEntries(
+            Object.values(Role).map((role) => [role, entry?.roles.get(role) ?? 0]),
+          ) as Record<Role, number>,
+        };
+      }),
+    };
   }
 
   async getOrThrow(tx: Tx, userId: string): Promise<UserSummary> {

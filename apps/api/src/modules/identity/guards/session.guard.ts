@@ -85,33 +85,33 @@ export class SessionGuard implements CanActivate {
     request: Request & { id?: string },
   ): Promise<{ tenantContext: TenantContext; mfaEnabled: boolean; rolesAnywhere: Role[] }> {
     const now = this.clock.now();
-
-    // One indexed read on session.token_hash, before the tenant is known.
-    const session = await this.db.withPlatform('session lookup', (tx) =>
-      this.sessions.findByToken(tx, token),
-    );
-    if (!session || session.revokedAt !== null) throw new SessionInvalidError();
-
-    if (session.expiresAt <= now) {
-      await this.expire(session.tenantId, session.id, 'expired_absolute');
-      throw new SessionInvalidError('Your session has expired. Please sign in again.');
-    }
-    if (this.sessions.isIdleExpired(session.lastSeenAt, now)) {
-      await this.expire(session.tenantId, session.id, 'expired_idle');
-      throw new SessionInvalidError('You were signed out after a period of inactivity.');
-    }
-    if (session.user.status !== UserStatus.ACTIVE) {
-      // IAM-T-05: a disabled user's live sessions stop working immediately.
-      throw new SessionInvalidError('This account is no longer active.');
-    }
-    if (session.user.tenant.status !== TenantStatus.ACTIVE) {
-      throw new SessionInvalidError('This clinic account is not active.');
-    }
-
     const ip = clientIp(request);
     const userAgent = request.get('user-agent') ?? null;
 
-    return this.db.withTenant(session.tenantId, async (tx) => {
+    // One transaction for the whole lookup: the session is found before the
+    // tenant is known, and the rest runs inside that tenant (IAM-N-01).
+    return this.db.withAuthLookup(async (tx, becomeTenant) => {
+      const session = await this.sessions.findByToken(tx, token);
+      if (!session || session.revokedAt !== null) throw new SessionInvalidError();
+
+      if (session.expiresAt <= now) {
+        await this.expire(session.tenantId, session.id, 'expired_absolute');
+        throw new SessionInvalidError('Your session has expired. Please sign in again.');
+      }
+      if (this.sessions.isIdleExpired(session.lastSeenAt, now)) {
+        await this.expire(session.tenantId, session.id, 'expired_idle');
+        throw new SessionInvalidError('You were signed out after a period of inactivity.');
+      }
+      if (session.user.status !== UserStatus.ACTIVE) {
+        // IAM-T-05: a disabled user's live sessions stop working immediately.
+        throw new SessionInvalidError('This account is no longer active.');
+      }
+      if (session.user.tenant.status !== TenantStatus.ACTIVE) {
+        throw new SessionInvalidError('This clinic account is not active.');
+      }
+
+      await becomeTenant(session.tenantId);
+
       const assignments = await this.users.rolesFor(tx, session.userId);
       if (assignments.length === 0) {
         throw new AppError(
@@ -165,7 +165,13 @@ export class SessionGuard implements CanActivate {
     });
   }
 
+  /**
+   * In its own transaction: the request is about to be refused, and a rolled
+   * back revocation would leave the dead session looking alive.
+   */
   private async expire(tenantId: string, sessionId: string, reason: 'expired_idle' | 'expired_absolute') {
-    await this.db.withTenant(tenantId, (tx) => this.sessions.revoke(tx, sessionId, reason));
+    await this.db.withTenantIndependently(tenantId, `expire a session (${reason})`, (tx) =>
+      this.sessions.revoke(tx, sessionId, reason),
+    );
   }
 }

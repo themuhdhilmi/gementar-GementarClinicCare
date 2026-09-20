@@ -399,6 +399,48 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
     expect(audited).toBe(1);
   });
 
+  it('§16: reports active users by role and branch', async () => {
+    const counter = await harness.addUser(fx, {
+      name: 'Whole Counter B',
+      roles: [
+        { branchId: fx.branchBId, role: Role.RECEPTION },
+        { branchId: fx.branchBId, role: Role.DISPENSER },
+        { branchId: fx.branchBId, role: Role.CASHIER },
+      ],
+    });
+    expect(counter.id).toBeDefined();
+
+    const stats = await request(harness.server)
+      .get(`${API}/users/statistics`)
+      .set('Cookie', adminCookie)
+      .expect(200);
+
+    const branchB = stats.body.byBranch.find(
+      (b: { branchId: string }) => b.branchId === fx.branchBId,
+    );
+    // One person holding three roles is one head and three assignments.
+    expect(branchB.people).toBeGreaterThanOrEqual(1);
+    expect(branchB.roles.RECEPTION).toBeGreaterThanOrEqual(1);
+    expect(branchB.roles.DISPENSER).toBeGreaterThanOrEqual(1);
+    expect(branchB.roles.CASHIER).toBeGreaterThanOrEqual(1);
+
+    const branchA = stats.body.byBranch.find(
+      (b: { branchId: string }) => b.branchId === fx.branchAId,
+    );
+    expect(branchA.roles.ADMIN).toBeGreaterThanOrEqual(1);
+    expect(branchA.roles.DOCTOR).toBeGreaterThanOrEqual(1);
+
+    expect(stats.body.byStatus.ACTIVE).toBeGreaterThan(0);
+    expect(Object.keys(stats.body.byStatus).sort()).toEqual(
+      ['ACTIVE', 'DISABLED', 'INVITED', 'LOCKED'].sort(),
+    );
+  });
+
+  it('the statistics are refused to anyone without admin.users', async () => {
+    const { cookie } = await signIn(harness, fx.doctor.email);
+    await request(harness.server).get(`${API}/users/statistics`).set('Cookie', cookie).expect(403);
+  });
+
   it('filters the user list by status, branch, role and free text', async () => {
     const list = await request(harness.server)
       .get(`${API}/users`)

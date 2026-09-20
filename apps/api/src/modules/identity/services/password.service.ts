@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { hash, parseOptions, verify } from '@node-rs/argon2';
 import type { Algorithm } from '@node-rs/argon2';
 
@@ -35,7 +35,7 @@ const PROBLEM_MESSAGES: Record<PasswordProblem, string> = {
  * Length plus a breach check is the current guidance and the better trade.
  */
 @Injectable()
-export class PasswordService {
+export class PasswordService implements OnModuleInit {
   private readonly logger = new Logger(PasswordService.name);
   /** A real hash to verify against when no user exists, for constant timing. */
   private readonly decoyHash: Promise<string>;
@@ -45,6 +45,37 @@ export class PasswordService {
     private readonly breached: BreachedPasswordService,
   ) {
     this.decoyHash = this.hash('decoy-password-for-timing-equalisation');
+  }
+
+  /**
+   * IAM-N-02: the cost has to be right for the machine that runs it, and only
+   * that machine can say. Timing one hash at startup turns a manual
+   * benchmarking step into something every deployment reports for itself.
+   *
+   * 200–300 ms is the target: high enough to make offline cracking expensive,
+   * low enough that a clinic signing in does not notice.
+   */
+  async onModuleInit(): Promise<void> {
+    if (this.config.nodeEnv === 'test') return;
+
+    const started = process.hrtime.bigint();
+    await this.hash('cost-measurement-at-startup');
+    const ms = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
+    const settings = `${this.config.argon2.memoryCost} KiB, ${this.config.argon2.timeCost} iterations`;
+
+    if (ms < 150) {
+      this.logger.warn(
+        `Password hashing takes ${ms} ms on this host (${settings}), below the 200–300 ms ` +
+          'target. Run `npm run measure:argon2` here and raise ARGON2_ITERATIONS.',
+      );
+    } else if (ms > 400) {
+      this.logger.warn(
+        `Password hashing takes ${ms} ms on this host (${settings}), above the 200–300 ms ` +
+          'target. Sign-in will feel slow; lower ARGON2_ITERATIONS.',
+      );
+    } else {
+      this.logger.log(`Password hashing takes ${ms} ms on this host (${settings}).`);
+    }
   }
 
   private get options() {

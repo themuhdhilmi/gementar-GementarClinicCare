@@ -125,6 +125,17 @@ export type Page<T> = {
   pageCount: number;
 };
 
+export type StaffStatistics = {
+  byStatus: Record<UserStatus, number>;
+  byBranch: Array<{
+    branchId: string;
+    code: string;
+    name: string;
+    people: number;
+    roles: Record<Role, number>;
+  }>;
+};
+
 export type AuditRow = {
   id: string;
   action: string;

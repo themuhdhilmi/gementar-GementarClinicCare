@@ -271,12 +271,50 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 
 | ID | Requirement |
 |---|---|
-| IAM-N-01 | Auth guard adds ≤ 5 ms p95 per request (session lookup by token hash, indexed). |
-| IAM-N-02 | Password hash cost tuned to 200–300 ms on production hardware; re-tune yearly. |
+| IAM-N-01 | Auth guard adds ≤ 5 ms p95 per request (session lookup by token hash, indexed). **Measured: 11 ms p50, 17.6 ms p95 against a database on the LAN.** See below. |
+| IAM-N-02 | Password hash cost tuned to 200–300 ms on production hardware; re-tune yearly. **The process now times one hash at startup and says whether the host is inside that band**, so every deployment reports its own number. |
 | IAM-N-03 | Expired sessions purged nightly; table never exceeds ~50 rows per active user. |
 | IAM-N-04 | All auth endpoints served only over TLS; HSTS 1 year with preload. |
 | IAM-N-05 | No credentials, tokens, or secrets in logs at any level. |
 | IAM-N-06 | Login availability is the whole system's availability — no external dependency on the login path (breach-list check has a 500 ms timeout and fails open). |
+
+### IAM-N-01, measured rather than assumed
+
+`test/auth-latency.e2e-spec.ts` times an authenticated no-op route against a
+public one and reports the difference. Run it on any host; the numbers below
+are from a development machine with the database on the same LAN.
+
+| | p50 | p95 |
+|---|---|---|
+| Public route, no guard | 0.9 ms | 1.0 ms |
+| Authenticated route | 11.9 ms | 18.6 ms |
+| **Guard overhead** | **11.0 ms** | **17.6 ms** |
+| Sign-in, then `/auth/me` | 86 ms | 127 ms |
+
+**The 5 ms budget is not met here, and the reason is arithmetic.** A round trip
+to this database costs 0.73 ms, and the guard needs six of them: begin, open
+the authentication bypass, read the session, switch to the tenant, read the
+roles, commit. That is 4.4 ms of pure network before any work happens. The
+remaining ~6 ms is the ORM and the guard chain.
+
+It used to be worse. The guard ran two separate transactions, which cost an
+extra begin and commit on every request; merging them into one
+(`DbService.withAuthLookup`) took p95 from 35.6 ms to 17.6 ms.
+
+**What to expect in production.** The planned topology puts PostgreSQL on the
+same VPS as the API, where a round trip is nearer 0.05 ms than 0.73 ms. That
+removes about 4 ms, leaving roughly 7 ms p50. Closer to the budget, probably
+still above it.
+
+**Recommendation.** Treat 5 ms as the aspiration and ~10 ms as the honest
+figure for this design, or revisit the design if it ever matters. It has not
+been made faster by caching sessions in memory on purpose: "disable a member of
+staff and they are signed out everywhere, in the same moment" (IAM-F-13) is
+worth more to a clinic than five milliseconds. Re-measure on the production
+host with `npm run test:e2e -- test/auth-latency.e2e-spec.ts`.
+
+The sign-in figure, 127 ms p95 to a usable workspace, is comfortably inside the
+one second §11 asks for, and most of it is the password hash doing its job.
 
 ## 14. Edge cases & failure modes
 
@@ -299,9 +337,17 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 
 ## 16. Reporting outputs
 
-- Active users by role and branch (admin dashboard)
-- Failed logins last 24 h / 7 d (audit dashboard)
-- Break-glass access count (audit dashboard)
+All three are built.
+
+| Output | Where |
+|---|---|
+| Active users by role and branch | `GET /users/statistics`, shown at the top of Admin → Staff |
+| Failed logins last 24 h / 7 d | `GET /audit/summary`, shown on Admin → Audit |
+| Break-glass access count | `GET /audit/summary`, shown on Admin → Audit |
+
+Staff are counted per role held, so one person who runs the whole counter
+appears under reception, dispenser and cashier; the headcount is given
+separately, because that is the number a clinic manager recognises.
 
 ## 17. Acceptance tests
 
@@ -500,18 +546,18 @@ genuinely does hold without it.
 ## 21. Definition of done
 
 - [x] All Must requirements implemented (API); Should items IAM-F-10, F-11, F-18 — F-10 and F-11 done, F-18 deferred with HR
-- [x] IAM-T-01 … T-11 green against a real PostgreSQL database with row-level security in force (`npm run test:e2e`, 42 end-to-end tests; 64 unit tests). Each one exists as a test named after its requirement id.
+- [x] IAM-T-01 … T-11 green against a real PostgreSQL database with row-level security in force (`npm run test:e2e`, 48 end-to-end tests; 64 unit tests). Each one exists as a test named after its requirement id.
 - [x] `@RequirePermission` rule enforced — `npm run lint:routes`, plus a runtime refusal for undeclared mutating routes
-- [x] Argon2id cost measured and recorded (below); **re-measure on the production VPS before go-live**
 - [x] Break-glass audit recorded and exposed — `GET /api/v1/audit/summary` and `/audit/events`
 - [x] Threat-model pass written up — [`documents/security/iam-threat-model.md`](../security/iam-threat-model.md)
 - [x] Web screens (§11) built — sign-in, MFA, forced enrolment, set and reset password, my account, staff administration, audit dashboard
 - [x] Tenant isolation installed by migrations, and asserted at boot (`DB_GUARD_MODE=require` in staging and production)
 - [x] Open questions answered and recorded — Q-01, Q-02 and Q-05 answered in §20 and built; Q-03's transport is built and needs a sending domain from you; Q-04 waits for a second tenant
-- [ ] **IAM-N-01 measured.** The auth guard's p95 has never been timed, and neither has the "under 1 s to workspace" target in §11.
-- [ ] **§16 reporting: active users by role and branch.** The other two outputs, failed logins and break-glass count, are on the audit dashboard.
-- [ ] **Argon2id re-measured on the production host.** The recorded numbers are from a development machine.
-- [ ] **MFA enrolment sharp edges.** Reopening the enrolment screen rotates the secret, which invalidates a QR code already scanned; a rejected code during enrolment is not audited, unlike one at sign-in.
+- [x] **IAM-N-01 measured** — `test/auth-latency.e2e-spec.ts`, numbers and reasoning in §13. The guard costs 11 ms p50 here against a LAN database, not the 5 ms budgeted; the two-transaction lookup was merged into one, which halved the p95. Sign-in to workspace is 127 ms p95, inside the one second §11 asks for.
+- [x] **§16 reporting complete** — active users by role and branch is `GET /users/statistics`, shown on Admin → Staff.
+- [x] **Argon2id cost reported by the host itself** — the process times one hash at startup and warns if it falls outside 200–300 ms, so this stops being a manual step that is forgotten. On the production VPS, read the first log line and set `ARGON2_ITERATIONS` from it.
+- [x] **MFA enrolment fixed** — re-opening the screen keeps the secret already scanned, and a rejected code is audited at enrolment as well as at sign-in.
+- [ ] **Re-measure on the production host.** Both numbers above are from a development machine with the database one hop away; neither is the number that matters.
 
 ### Traceability, checked mechanically on 2026-09-21
 
@@ -529,6 +575,7 @@ is silently absent:
 | Those events audited | 12 of 12 | each maps to an `AuditAction` that is recorded |
 | Validation rules in §12 enforced | 13 of 13 | each rule located in code |
 | Permission catalogue matches the code | exact | 6 roles compared cell by cell |
+| Reporting outputs in §16 built | 3 of 3 | endpoint and screen for each |
 
 ### Argon2id cost measurement (IAM-N-02)
 
@@ -566,6 +613,9 @@ is a place where the spec and reality disagreed slightly.
 | 8 | **Disabling a user is refused for your own account outright**, not only when you are the last administrator. | IAM-F-16 reads either way. Nobody has a good reason to disable themselves, and the failure mode of allowing it is an administrator locking the clinic out at 6pm. |
 | 9 | **Services take their transaction from the request scope** rather than receiving `tx` as a parameter, except `AuditService.record`, which still requires it explicitly. | Keeps AUD-R-02 honest where it matters (an audit entry shares its change's transaction) without threading a parameter through forty signatures. |
 | 10 | **A minimal slice of the audit module was built** (append-only table, `record`, redaction, two read endpoints) rather than stubbed. | IAM's definition of done requires audited actions and a visible break-glass count. The rest of `AUD` is unaffected. |
+| 16 | **The auth guard uses one transaction, not two.** `DbService.withAuthLookup` opens the lookup in platform scope and switches to the tenant mid-transaction, closing the authentication bypass as it does. | Two transactions cost an extra begin and commit on every request: a third of the IAM-N-01 budget. The switch is inside the helper so a caller cannot leave the bypass open. |
+| 15 | **A rejected verification code is recorded in its own transaction** (`DbService.withTenantIndependently`). | The request that carried it is about to roll back, and a rolled-back failure record is neither audited nor counted towards the rate limit. Found by writing the test for it; the sign-in path had the same bug. |
+| 14 | **Re-opening MFA enrolment keeps the secret already issued.** | It used to mint a new one, which silently invalidated a QR code the person had just scanned and rejected every code they typed. |
 | 13 | **Six roles, not four**: `FRONTDESK` is now `RECEPTION`, `DISPENSER` and `CASHIER`. | Answering IAM-Q-01 in favour of flexibility. One person can hold all three, so a small clinic is unaffected, while a clinic that separates the counter can now express that. Done early because the permission catalogue is a contract fourteen unbuilt modules will check against. |
 | 12 | **Session idle timeout is 1 hour and the absolute lifetime 12 hours**, not the 12 h / 7 d in IAM-F-03. | Answering IAM-Q-02 in favour of shared workstations. A reception desk used by several people during a shift should not hold an open session overnight. Both are environment settings, so a clinic with personal devices can raise them without a deploy. |
 | 11 | **`audit_log` has no foreign keys**, and the test harness needs an owner connection to clean up after itself. | An append-only log must not be able to block operations on the rows it describes, and its entries have to outlive them. Deleting audit rows is deliberately an administrative act. |

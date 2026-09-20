@@ -6,7 +6,7 @@ import { scopeStorage, type ScopeStore, type TenantScope } from './tenant-scope.
 
 export type { Tx };
 
-type TxOptions = { timeoutMs?: number; maxWaitMs?: number };
+type TxOptions = { timeoutMs?: number; maxWaitMs?: number; independent?: boolean };
 
 /**
  * Every unit of work runs inside one transaction with the tenant fixed for its
@@ -70,6 +70,53 @@ export class DbService {
   }
 
   /**
+   * Runs the work in a transaction of its own, even when one is already open.
+   *
+   * For the one case where a record has to outlive a failure: a rejected
+   * verification code must be audited and counted even though the request
+   * carrying it is about to roll back. Everything else should use
+   * `withTenant`, because two open transactions touching the same rows can
+   * deadlock. Keep the work here narrow and additive — inserts, not updates
+   * to rows the caller is holding.
+   */
+  withTenantIndependently<T>(
+    tenantId: string,
+    reason: string,
+    fn: (tx: Tx) => Promise<T>,
+    options?: TxOptions,
+  ): Promise<T> {
+    this.logger.debug(`independent transaction: ${reason}`);
+    return this.run({ kind: 'tenant', tenantId }, fn, { ...options, independent: true });
+  }
+
+  /**
+   * The authentication lookup, in one transaction rather than two.
+   *
+   * A request has to find its session before it knows which tenant it belongs
+   * to, and then read that tenant's data. Doing it as two transactions costs
+   * an extra BEGIN and COMMIT on every single request — about a third of the
+   * guard's latency budget (IAM-N-01). This opens one transaction in platform
+   * scope and hands the caller a `becomeTenant` it must call before touching
+   * anything tenant-owned; the switch closes the authentication bypass at the
+   * same moment, so it cannot be left open by a forgetful caller.
+   */
+  async withAuthLookup<T>(
+    fn: (tx: Tx, becomeTenant: (tenantId: string) => Promise<void>) => Promise<T>,
+  ): Promise<T> {
+    return this.withPlatform('authenticate a request', async (tx) => {
+      const store = scopeStorage.getStore();
+      const becomeTenant = async (tenantId: string) => {
+        await tx.$executeRawUnsafe(
+          "SELECT set_config('app.tenant_id', $1, true), set_config('app.auth_bypass', 'off', true)",
+          tenantId,
+        );
+        if (store) store.scope = { kind: 'tenant', tenantId };
+      };
+      return fn(tx, becomeTenant);
+    });
+  }
+
+  /**
    * Unscoped access. Legitimate uses are narrow and each one is named:
    * resolving a login before the tenant is known, the nightly cleanup job,
    * seeding, and tests. The reason is logged in development.
@@ -83,7 +130,7 @@ export class DbService {
     fn: (tx: Tx) => Promise<T>,
     options?: TxOptions,
   ): Promise<T> {
-    const existing = scopeStorage.getStore();
+    const existing = options?.independent ? undefined : scopeStorage.getStore();
     if (existing?.tx) {
       // Prisma transactions do not nest. Re-entering the *same* scope simply
       // joins the open transaction, which is what callers mean. Re-entering a

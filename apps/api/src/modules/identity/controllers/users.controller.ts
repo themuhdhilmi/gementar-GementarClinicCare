@@ -67,6 +67,14 @@ export class UsersController {
     };
   }
 
+  /** §16: active users by role and branch. Declared before `:id` so the path wins. */
+  @Get('statistics')
+  @RequirePermission('admin.users')
+  async statistics(@Ctx() ctx: TenantContext) {
+    void ctx;
+    return this.users.statistics(this.db.tx());
+  }
+
   @Get(':id')
   @RequirePermission('admin.users')
   async get(@Ctx() ctx: TenantContext, @Param('id') id: string) {
