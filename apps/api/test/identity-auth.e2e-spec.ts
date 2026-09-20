@@ -265,6 +265,142 @@ describe('IAM — authentication (against real PostgreSQL)', () => {
     expect(recorded).toBe(1);
   });
 
+  it('IAM-F-10: a trusted device skips the second factor, and only the second factor', async () => {
+    const user = await harness.addUser(fx, {
+      name: 'Own Laptop',
+      roles: [{ branchId: fx.branchAId, role: 'DOCTOR' }],
+    });
+    const signIn = () =>
+      request(harness.server)
+        .post(`${API}/auth/login`)
+        .send({ email: user.email, password: DEFAULT_PASSWORD });
+    const cookieFrom = (response: request.Response, name: string) =>
+      (response.headers['set-cookie'] as unknown as string[] | undefined)?.find((c) =>
+        c.startsWith(`${name}=`),
+      );
+
+    // Enrol, so there is a second factor to skip.
+    const first = await signIn().expect(200);
+    const session1 = cookieFrom(first, 'cc_session')!;
+    const enrol = await request(harness.server)
+      .post(`${API}/auth/me/mfa/enrol`)
+      .set('Cookie', session1)
+      .expect(200);
+    await request(harness.server)
+      .post(`${API}/auth/me/mfa/confirm`)
+      .set('Cookie', session1)
+      .send({ code: totpFor(enrol.body.secret) })
+      .expect(200);
+
+    // Sign in again and tick "trust this device".
+    const second = await signIn().expect(200);
+    expect(second.body.mfaRequired).toBe(true);
+    const session2 = cookieFrom(second, 'cc_session')!;
+    const verified = await request(harness.server)
+      .post(`${API}/auth/mfa/verify`)
+      .set('Cookie', session2)
+      .send({ code: totpFor(enrol.body.secret, 1), trustDevice: true, deviceLabel: 'Own laptop' })
+      .expect(200);
+    const device = cookieFrom(verified, 'cc_device');
+    expect(device).toBeDefined();
+    expect(verified.body.deviceTrusted).toBe(true);
+
+    // The next sign-in on that device still wants the password, and no code.
+    const third = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .set('Cookie', device!)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    expect(third.body.mfaRequired).toBe(false);
+    const session3 = cookieFrom(third, 'cc_session')!;
+    await request(harness.server).get(`${API}/auth/me`).set('Cookie', session3).expect(200);
+
+    // A wrong password on a trusted device is still a wrong password.
+    await request(harness.server)
+      .post(`${API}/auth/login`)
+      .set('Cookie', device!)
+      .send({ email: user.email, password: 'not-the-password-at-all' })
+      .expect(401);
+
+    // The same device on somebody else's account proves nothing.
+    const other = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .set('Cookie', device!)
+      .send({ email: fx.doctor.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    expect(other.body.mfaRequired).toBe(false); // that account has no MFA at all
+  });
+
+  it('IAM-F-10: resetting a lost second factor also untrusts the devices', async () => {
+    const user = await harness.addUser(fx, {
+      name: 'Lost The Lot',
+      roles: [{ branchId: fx.branchAId, role: 'NURSE' }],
+    });
+    const cookieFrom = (response: request.Response, name: string) =>
+      (response.headers['set-cookie'] as unknown as string[] | undefined)?.find((c) =>
+        c.startsWith(`${name}=`),
+      );
+
+    const first = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const session1 = cookieFrom(first, 'cc_session')!;
+    const enrol = await request(harness.server)
+      .post(`${API}/auth/me/mfa/enrol`)
+      .set('Cookie', session1)
+      .expect(200);
+    await request(harness.server)
+      .post(`${API}/auth/me/mfa/confirm`)
+      .set('Cookie', session1)
+      .send({ code: totpFor(enrol.body.secret) })
+      .expect(200);
+
+    const second = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const verified = await request(harness.server)
+      .post(`${API}/auth/mfa/verify`)
+      .set('Cookie', cookieFrom(second, 'cc_session')!)
+      .send({ code: totpFor(enrol.body.secret, 1), trustDevice: true })
+      .expect(200);
+    const device = cookieFrom(verified, 'cc_device')!;
+
+    // An administrator resets the second factor, as they would for a lost phone.
+    await harness.db.withTenant(fx.tenantId, async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { mfaEnabled: false, mfaSecretEnc: null, mfaRecoveryEnc: null },
+      });
+      await tx.trustedDevice.updateMany({ where: { userId: user.id }, data: { revokedAt: new Date() } });
+    });
+
+    // Enrol again, and the old device cookie no longer counts for anything.
+    const third = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .set('Cookie', device)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    const session3 = cookieFrom(third, 'cc_session')!;
+    const reEnrol = await request(harness.server)
+      .post(`${API}/auth/me/mfa/enrol`)
+      .set('Cookie', session3)
+      .expect(200);
+    await request(harness.server)
+      .post(`${API}/auth/me/mfa/confirm`)
+      .set('Cookie', session3)
+      .send({ code: totpFor(reEnrol.body.secret) })
+      .expect(200);
+
+    const fourth = await request(harness.server)
+      .post(`${API}/auth/login`)
+      .set('Cookie', device)
+      .send({ email: user.email, password: DEFAULT_PASSWORD })
+      .expect(200);
+    expect(fourth.body.mfaRequired).toBe(true);
+  });
+
   it('IAM-T-06: a reset token is single-use and revokes every existing session', async () => {
     const user = await harness.addUser(fx, {
       name: 'Reset Me',

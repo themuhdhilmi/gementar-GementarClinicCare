@@ -11,6 +11,7 @@
 | **Est. effort** | ~20 h |
 | **Built** | `apps/api/src/modules/identity`, `.../tenancy`, `.../audit`, `apps/api/prisma` |
 | **Database** | PostgreSQL 16 — see [ADR-0002](../decisions/adr-0002-postgres.md) |
+| **Open items** | [v0-01-identity-access-end-item-OPEN.md](v0-01-identity-access-end-item-OPEN.md) — what is still owed, and what blocks go-live |
 
 ---
 
@@ -557,7 +558,8 @@ genuinely does hold without it.
 - [x] **§16 reporting complete** — active users by role and branch is `GET /users/statistics`, shown on Admin → Staff.
 - [x] **Argon2id cost reported by the host itself** — the process times one hash at startup and warns if it falls outside 200–300 ms, so this stops being a manual step that is forgotten. On the production VPS, read the first log line and set `ARGON2_ITERATIONS` from it.
 - [x] **MFA enrolment fixed** — re-opening the screen keeps the secret already scanned, and a rejected code is audited at enrolment as well as at sign-in.
-- [ ] **Re-measure on the production host.** Both numbers above are from a development machine with the database one hop away; neither is the number that matters.
+- [x] **IAM-F-10 proven**, not just implemented — a trusted device skips the second factor and nothing else, and stops counting once an administrator resets MFA
+- [ ] **Everything in [the open-items register](v0-01-identity-access-end-item-OPEN.md).** Twenty-two items: two measurements to redo on the real host, four decisions that are yours, five operational things that block go-live, seven waiting on other modules, three to confirm with the clinic in the room.
 
 ### Traceability, checked mechanically on 2026-09-21
 
@@ -613,6 +615,7 @@ is a place where the spec and reality disagreed slightly.
 | 8 | **Disabling a user is refused for your own account outright**, not only when you are the last administrator. | IAM-F-16 reads either way. Nobody has a good reason to disable themselves, and the failure mode of allowing it is an administrator locking the clinic out at 6pm. |
 | 9 | **Services take their transaction from the request scope** rather than receiving `tx` as a parameter, except `AuditService.record`, which still requires it explicitly. | Keeps AUD-R-02 honest where it matters (an audit entry shares its change's transaction) without threading a parameter through forty signatures. |
 | 10 | **A minimal slice of the audit module was built** (append-only table, `record`, redaction, two read endpoints) rather than stubbed. | IAM's definition of done requires audited actions and a visible break-glass count. The rest of `AUD` is unaffected. |
+| 17 | **The TOTP replay cache is cleared when a new secret is issued.** | It is keyed on the user and the time step, not the secret, so a leftover entry would refuse a good code from a new secret — in exactly the flow where that is most likely, a lost phone reset and re-enrolled within the minute. |
 | 16 | **The auth guard uses one transaction, not two.** `DbService.withAuthLookup` opens the lookup in platform scope and switches to the tenant mid-transaction, closing the authentication bypass as it does. | Two transactions cost an extra begin and commit on every request: a third of the IAM-N-01 budget. The switch is inside the helper so a caller cannot leave the bypass open. |
 | 15 | **A rejected verification code is recorded in its own transaction** (`DbService.withTenantIndependently`). | The request that carried it is about to roll back, and a rolled-back failure record is neither audited nor counted towards the rate limit. Found by writing the test for it; the sign-in path had the same bug. |
 | 14 | **Re-opening MFA enrolment keeps the secret already issued.** | It used to mint a new one, which silently invalidated a QR code the person had just scanned and rejected every code they typed. |

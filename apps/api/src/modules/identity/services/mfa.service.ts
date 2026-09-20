@@ -92,6 +92,12 @@ export class MfaService {
         mfaEnrolledAt: null,
       },
     });
+
+    // The replay cache is keyed on the user and the time step, not on the
+    // secret, so entries from the previous secret would refuse a perfectly
+    // good code from this one. That matters in the flow it is most likely to
+    // happen in: a lost phone, reset and re-enrolled inside the same minute.
+    await tx.mfaReplay.deleteMany({ where: { userId } });
   }
 
   private readSecret(userId: string, blob: Uint8Array | null): string | null {
