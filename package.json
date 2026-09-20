@@ -6,12 +6,18 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "bash scripts/dev.sh",
+    "dev:prod": "bash scripts/dev.sh --prod",
     "dev:web": "npm run dev --workspace @gementar/web",
     "dev:api": "npm run start:dev --workspace @gementar/api",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace @gementar/api",
+    "db:migrate": "npm run db:migrate --workspace @gementar/api",
+    "db:seed": "npm run db:seed --workspace @gementar/api",
+    "key": "node scripts/random-key.mjs"
   },
   "engines": {
     "node": ">=20"

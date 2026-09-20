@@ -26,7 +26,10 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:harden": "echo 'Run as a DBA: mysql -h HOST -u admin -p DATABASE < prisma/sql/tenant-write-guard.sql'",
-    "measure:argon2": "tsx scripts/measure-argon2.ts"
+    "measure:argon2": "tsx scripts/measure-argon2.ts",
+    "test:ci": "vitest run --reporter=default --reporter=junit --outputFile=reports/unit.junit.xml",
+    "test:e2e:ci": "vitest run --config ./vitest.config.e2e.ts --reporter=default --reporter=junit --outputFile=reports/e2e.junit.xml",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

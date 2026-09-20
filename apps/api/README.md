@@ -44,6 +44,9 @@ Two layers, because either alone will eventually fail:
 Read `documents/decisions/adr-0001-mysql-instead-of-postgres.md` before changing
 any of it.
 
+To run this together with the web app, use `./scripts/dev.sh` from the
+repository root rather than starting each one by hand.
+
 ## Scripts
 
 ```bash
@@ -53,8 +56,11 @@ npm run db:seed            # first tenant, branch and administrator
 npm run lint               # oxlint + the two authorisation checks
 npm run lint:routes        # every mutating route declares a permission
 npm run lint:dto           # no DTO accepts a tenant id
+npm run typecheck          # tsc, no emit
 npm test                   # unit tests
 npm run test:e2e           # end-to-end, against the database in DATABASE_URL
+npm run test:ci            # unit tests, JUnit XML into reports/ for Jenkins
+npm run test:e2e:ci        # end-to-end, JUnit XML into reports/
 npm run measure:argon2     # tune the password hash cost for this host
 ```
 
