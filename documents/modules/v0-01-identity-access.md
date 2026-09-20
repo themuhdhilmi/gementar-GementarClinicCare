@@ -390,5 +390,32 @@ is a place where the spec and reality disagreed slightly.
 | 7 | **The rate limit reaches 5 before the lockout reaches 10.** With the specified numbers, 5 failures per email per 15 minutes means 10 *consecutive* failures can only accumulate across windows. | Both controls are in the spec and both are implemented as written. The interaction is worth knowing: in practice the rate limiter is what a live attacker meets, and the lockout catches the patient one. Worth revisiting the pair of numbers together, not separately. |
 | 8 | **Disabling a user is refused for your own account outright**, not only when you are the last administrator. | IAM-F-16 reads either way. Nobody has a good reason to disable themselves, and the failure mode of allowing it is an administrator locking the clinic out at 6pm. |
 | 9 | **Services take their transaction from the request scope** rather than receiving `tx` as a parameter, except `AuditService.record`, which still requires it explicitly. | Keeps AUD-R-02 honest where it matters (an audit entry shares its change's transaction) without threading a parameter through forty signatures. |
-| 11 | **`audit_log` has no foreign keys**, and the test harness needs an owner connection to clean up after itself. | An append-only log must not be able to block operations on the rows it describes, and its entries have to outlive them. Deleting audit rows is deliberately an administrative act. |
 | 10 | **A minimal slice of the audit module was built** (append-only table, `record`, redaction, two read endpoints) rather than stubbed. | IAM's definition of done requires audited actions and a visible break-glass count. The rest of `AUD` is unaffected. |
+| 11 | **`audit_log` has no foreign keys**, and the test harness needs an owner connection to clean up after itself. | An append-only log must not be able to block operations on the rows it describes, and its entries have to outlive them. Deleting audit rows is deliberately an administrative act. |
+
+### How note 1 stands today
+
+Verified against the live database on 2026-09-21, not asserted:
+
+| Claim | State |
+|---|---|
+| PostgreSQL 16 | 16.15 |
+| RLS enabled **and forced** | 9 of 9 tenant-owned tables |
+| Tables without RLS | `login_attempt` and `_prisma_migrations`, both on the written exemption list |
+| Narrow authentication bypass | `tenant`, `user`, `session`, `password_reset_token`, `trusted_device`, `mfa_replay` |
+| No bypass at all | `branch`, `user_branch_role`, `audit_log` |
+| Composite `(id, tenant_id)` foreign keys | 8 of the 15 foreign keys; the rest are single-column references to `tenant` |
+| Application role | not a superuser, no `BYPASSRLS` |
+
+Covered by 17 tests in `test/tenant-isolation.e2e-spec.ts`, including the two
+that only PostgreSQL can satisfy: raw SQL with no tenant filter sees one
+tenant, and with `app.tenant_id` unset every tenant table returns nothing and
+refuses inserts. The process also checks all of the above at boot and, with
+`DB_GUARD_MODE=require`, refuses to serve if any of it is untrue.
+
+**Still open, deliberately:** the application connects as the owner of its
+tables. Row-level security is forced, so policies apply to the owner too, but
+an unprivileged role (`prisma/sql/app-role.sql`) would additionally remove the
+ability to drop a policy from the account that faces the internet. The current
+database account cannot create roles, so this needs someone with more
+privileges. Tracked as IAM-Q-05.
