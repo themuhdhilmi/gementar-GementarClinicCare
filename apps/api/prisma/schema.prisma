@@ -1,0 +1,339 @@
+// Gementar ClinicCare — database schema (MySQL 8).
+//
+// Conventions (documents/planning/04-data-model.md, adapted for MySQL in
+// documents/decisions/adr-0001-mysql-instead-of-postgres.md):
+//   * Primary keys        UUID v7, generated in the application, stored CHAR(36) ASCII
+//   * Table / column case snake_case, mapped to camelCase in TypeScript
+//   * Timestamps          DATETIME(3), always UTC (the app pins the session time zone)
+//   * Tenancy             tenant_id on every tenant-owned table; composite foreign keys
+//                         (id, tenant_id) so a row can never point across tenants
+//   * Deletes             no hard deletes on people or records; status columns instead
+//
+// Every tenant-owned table also carries an INSERT/UPDATE trigger that rejects writes
+// which disagree with the connection's @app_tenant_id. See the migration
+// `*_tenant_write_guard`.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+  LOCKED
+}
+
+enum Role {
+  ADMIN
+  DOCTOR
+  NURSE
+  FRONTDESK
+}
+
+enum TokenPurpose {
+  RESET
+  INVITE
+}
+
+enum LoginOutcome {
+  SUCCESS
+  BAD_CREDENTIALS
+  UNKNOWN_EMAIL
+  AMBIGUOUS_EMAIL
+  NOT_LOGINABLE
+  RATE_LIMITED
+  MFA_FAILED
+}
+
+/// The paying customer: a clinic company. Not itself tenant-scoped — it *is* the tenant.
+model Tenant {
+  id            String       @id @db.Char(36)
+  name          String       @db.VarChar(200)
+  slug          String       @unique(map: "tenant_slug_key") @db.VarChar(60)
+  status        TenantStatus
+  plan          String       @default("pilot") @db.VarChar(40)
+  timezone      String       @default("Asia/Kuala_Lumpur") @db.VarChar(60)
+  currency      String       @default("MYR") @db.Char(3)
+  settings      Json
+  modules       Json
+  tin           String?      @db.VarChar(40)
+  businessRegNo String?      @map("business_reg_no") @db.VarChar(40)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy     String?      @map("created_by") @db.Char(36)
+  updatedBy     String?      @map("updated_by") @db.Char(36)
+
+  branches            Branch[]
+  users               User[]
+  userBranchRoles     UserBranchRole[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  trustedDevices      TrustedDevice[]
+  mfaReplays          MfaReplay[]
+  auditLogs           AuditLog[]
+
+  @@index([status], map: "tenant_status_idx")
+  @@map("tenant")
+}
+
+/// A physical clinic.
+model Branch {
+  id             String       @id @db.Char(36)
+  tenantId       String       @map("tenant_id") @db.Char(36)
+  code           String       @db.VarChar(16)
+  name           String       @db.VarChar(200)
+  addressLine1   String?      @map("address_line1") @db.VarChar(200)
+  addressLine2   String?      @map("address_line2") @db.VarChar(200)
+  city           String?      @db.VarChar(100)
+  state          String?      @db.VarChar(100)
+  postcode       String?      @db.VarChar(20)
+  phone          String?      @db.VarChar(32)
+  email          String?      @db.VarChar(254)
+  licenceNo      String?      @map("licence_no") @db.VarChar(60)
+  timezone       String?      @db.VarChar(60)
+  operatingHours Json         @map("operating_hours")
+  settings       Json
+  letterhead     Json?
+  status         BranchStatus
+  createdAt      DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy      String?      @map("created_by") @db.Char(36)
+  updatedBy      String?      @map("updated_by") @db.Char(36)
+
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  usersWithDefault User[]           @relation("UserDefaultBranch")
+  userBranchRoles  UserBranchRole[]
+  sessions         Session[]
+  auditLogs        AuditLog[]
+
+  @@unique([tenantId, code], map: "branch_tenant_code_key")
+  @@unique([id, tenantId], map: "branch_id_tenant_key")
+  @@index([tenantId, status], map: "branch_tenant_status_idx")
+  @@map("branch")
+}
+
+/// A staff login. Owned by IAM; employment lives in HR (V2 `DRM`).
+model User {
+  id     String @id @db.Char(36)
+  tenantId String @map("tenant_id") @db.Char(36)
+  /// Stored lower-cased and trimmed; the column collation is case-insensitive as a backstop.
+  email  String @db.VarChar(254)
+  /// Argon2id PHC string. Empty only for INVITED users who have not set one yet.
+  passwordHash      String?    @map("password_hash") @db.VarChar(255)
+  name              String     @db.VarChar(120)
+  phone             String?    @db.VarChar(32)
+  status            UserStatus
+  lockedUntil       DateTime?  @map("locked_until") @db.DateTime(3)
+  failedAttempts    Int        @default(0) @map("failed_attempts")
+  /// AES-256-GCM envelope over the TOTP secret. Key lives outside the database.
+  mfaSecretEnc      Bytes?     @map("mfa_secret_enc") @db.VarBinary(1024)
+  mfaEnabled        Boolean    @default(false) @map("mfa_enabled")
+  /// AES-256-GCM envelope over a JSON array of peppered recovery-code hashes.
+  mfaRecoveryEnc    Bytes?     @map("mfa_recovery_enc") @db.VarBinary(4096)
+  mfaEnrolledAt     DateTime?  @map("mfa_enrolled_at") @db.DateTime(3)
+  permissionVersion Int        @default(1) @map("permission_version")
+  lastLoginAt       DateTime?  @map("last_login_at") @db.DateTime(3)
+  defaultBranchId   String?    @map("default_branch_id") @db.Char(36)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy         String?    @map("created_by") @db.Char(36)
+  updatedBy         String?    @map("updated_by") @db.Char(36)
+
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  defaultBranch       Branch?              @relation("UserDefaultBranch", fields: [defaultBranchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  branchRoles         UserBranchRole[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  trustedDevices      TrustedDevice[]
+  mfaReplays          MfaReplay[]
+
+  @@unique([tenantId, email], map: "user_tenant_email_key")
+  @@unique([id, tenantId], map: "user_id_tenant_key")
+  @@index([tenantId, status], map: "user_tenant_status_idx")
+  @@index([email], map: "user_email_idx")
+  @@index([defaultBranchId, tenantId], map: "user_default_branch_idx")
+  @@map("user")
+}
+
+/// What a user may do, at which branch. The unit of permission resolution.
+model UserBranchRole {
+  id        String   @id @db.Char(36)
+  tenantId  String   @map("tenant_id") @db.Char(36)
+  userId    String   @map("user_id") @db.Char(36)
+  branchId  String   @map("branch_id") @db.Char(36)
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  createdBy String?  @map("created_by") @db.Char(36)
+  updatedBy String?  @map("updated_by") @db.Char(36)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  branch Branch @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([userId, branchId, role], map: "ubr_user_branch_role_key")
+  @@index([branchId, role], map: "ubr_branch_role_idx")
+  @@index([tenantId, role], map: "ubr_tenant_role_idx")
+  @@index([branchId, tenantId], map: "ubr_branch_tenant_idx")
+  @@map("user_branch_role")
+}
+
+/// Server-side session. The cookie carries an opaque token; only its hash is stored.
+model Session {
+  id                String    @id @db.Char(36)
+  tenantId          String    @map("tenant_id") @db.Char(36)
+  userId            String    @map("user_id") @db.Char(36)
+  tokenHash         Bytes     @map("token_hash") @db.Binary(32)
+  activeBranchId    String    @map("active_branch_id") @db.Char(36)
+  permissionVersion Int       @map("permission_version")
+  mfaVerified       Boolean   @default(false) @map("mfa_verified")
+  /// Set when the user proved identity again; valid for a few minutes (IAM-F-11).
+  reauthAt          DateTime? @map("reauth_at") @db.DateTime(3)
+  ip                String?   @db.VarChar(45)
+  userAgent         String?   @map("user_agent") @db.VarChar(512)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  lastSeenAt        DateTime  @map("last_seen_at") @db.DateTime(3)
+  expiresAt         DateTime  @map("expires_at") @db.DateTime(3)
+  revokedAt         DateTime? @map("revoked_at") @db.DateTime(3)
+  revokedReason     String?   @map("revoked_reason") @db.VarChar(120)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  branch Branch @relation(fields: [activeBranchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tokenHash], map: "session_token_hash_key")
+  @@index([userId, revokedAt], map: "session_user_revoked_idx")
+  @@index([expiresAt], map: "session_expires_idx")
+  @@index([tenantId, userId], map: "session_tenant_user_idx")
+  @@index([activeBranchId, tenantId], map: "session_branch_tenant_idx")
+  @@map("session")
+}
+
+/// Single-use link for "set your password" (invite) and "reset your password".
+model PasswordResetToken {
+  id        String       @id @db.Char(36)
+  tenantId  String       @map("tenant_id") @db.Char(36)
+  userId    String       @map("user_id") @db.Char(36)
+  tokenHash Bytes        @map("token_hash") @db.Binary(32)
+  purpose   TokenPurpose
+  expiresAt DateTime     @map("expires_at") @db.DateTime(3)
+  usedAt    DateTime?    @map("used_at") @db.DateTime(3)
+  createdAt DateTime     @default(now()) @map("created_at") @db.DateTime(3)
+  createdBy String?      @map("created_by") @db.Char(36)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tokenHash], map: "prt_token_hash_key")
+  @@index([userId, usedAt], map: "prt_user_used_idx")
+  @@index([expiresAt], map: "prt_expires_idx")
+  @@map("password_reset_token")
+}
+
+/// "Remember this device" for MFA (IAM-F-10).
+model TrustedDevice {
+  id         String    @id @db.Char(36)
+  tenantId   String    @map("tenant_id") @db.Char(36)
+  userId     String    @map("user_id") @db.Char(36)
+  tokenHash  Bytes     @map("token_hash") @db.Binary(32)
+  label      String?   @db.VarChar(200)
+  lastSeenAt DateTime? @map("last_seen_at") @db.DateTime(3)
+  expiresAt  DateTime  @map("expires_at") @db.DateTime(3)
+  revokedAt  DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([tokenHash], map: "td_token_hash_key")
+  @@index([userId, revokedAt], map: "td_user_revoked_idx")
+  @@index([expiresAt], map: "td_expires_idx")
+  @@map("trusted_device")
+}
+
+/// One row per accepted TOTP step, so a code cannot be replayed inside its window.
+model MfaReplay {
+  id        String   @id @db.Char(36)
+  tenantId  String   @map("tenant_id") @db.Char(36)
+  userId    String   @map("user_id") @db.Char(36)
+  timeStep  BigInt   @map("time_step")
+  expiresAt DateTime @map("expires_at") @db.DateTime(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user   User   @relation(fields: [userId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([userId, timeStep], map: "mfa_replay_user_step_key")
+  @@index([expiresAt], map: "mfa_replay_expires_idx")
+  @@map("mfa_replay")
+}
+
+/// Login attempts, for rate limiting and for the failed-login report.
+/// Deliberately NOT tenant-scoped: an attempt may not resolve to a tenant at all.
+model LoginAttempt {
+  id          String       @id @db.Char(36)
+  emailKey    String       @map("email_key") @db.VarChar(254)
+  ip          String?      @db.VarChar(45)
+  userAgent   String?      @map("user_agent") @db.VarChar(512)
+  outcome     LoginOutcome
+  tenantId    String?      @map("tenant_id") @db.Char(36)
+  userId      String?      @map("user_id") @db.Char(36)
+  attemptedAt DateTime     @default(now()) @map("attempted_at") @db.DateTime(3)
+
+  @@index([emailKey, attemptedAt], map: "login_attempt_email_time_idx")
+  @@index([ip, attemptedAt], map: "login_attempt_ip_time_idx")
+  @@index([attemptedAt], map: "login_attempt_time_idx")
+  @@map("login_attempt")
+}
+
+/// Append-only audit trail (module AUD). Updates and deletes are blocked by triggers.
+model AuditLog {
+  id               String   @id @db.Char(36)
+  tenantId         String   @map("tenant_id") @db.Char(36)
+  branchId         String?  @map("branch_id") @db.Char(36)
+  actorId          String?  @map("actor_id") @db.Char(36)
+  actorName        String   @map("actor_name") @db.VarChar(120)
+  actorRole        String?  @map("actor_role") @db.VarChar(40)
+  action           String   @db.VarChar(80)
+  entityType       String   @map("entity_type") @db.VarChar(60)
+  entityId         String?  @map("entity_id") @db.Char(36)
+  subjectPatientId String?  @map("subject_patient_id") @db.Char(36)
+  before           Json?
+  after            Json?
+  diff             Json?
+  reason           String?  @db.VarChar(500)
+  ip               String?  @db.VarChar(45)
+  userAgent        String?  @map("user_agent") @db.VarChar(512)
+  requestId        String?  @map("request_id") @db.VarChar(64)
+  occurredAt       DateTime @default(now()) @map("occurred_at") @db.DateTime(3)
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  branch Branch? @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, occurredAt], map: "audit_tenant_time_idx")
+  @@index([tenantId, actorId, occurredAt], map: "audit_tenant_actor_time_idx")
+  @@index([tenantId, subjectPatientId, occurredAt], map: "audit_tenant_patient_time_idx")
+  @@index([tenantId, entityType, entityId], map: "audit_tenant_entity_idx")
+  @@index([tenantId, action, occurredAt], map: "audit_tenant_action_time_idx")
+  @@index([branchId, tenantId], map: "audit_branch_tenant_idx")
+  @@map("audit_log")
+}

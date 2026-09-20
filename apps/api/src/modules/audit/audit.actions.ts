@@ -1,0 +1,30 @@
+/** Audit action names are a stable contract; renaming one is a breaking change. */
+export const AuditAction = {
+  UserCreated: 'user.created',
+  UserUpdated: 'user.updated',
+  UserDisabled: 'user.disabled',
+  UserEnabled: 'user.enabled',
+  UserUnlocked: 'user.unlocked',
+  UserRoleChanged: 'user.role_changed',
+  UserPasswordForceReset: 'user.password_force_reset',
+  UserMfaReset: 'user.mfa_reset',
+  AuthLogin: 'auth.login',
+  AuthLoginFailed: 'auth.login_failed',
+  AuthLogout: 'auth.logout',
+  AuthLocked: 'auth.locked',
+  AuthReauth: 'auth.reauth',
+  AuthPasswordChanged: 'auth.password_changed',
+  AuthPasswordReset: 'auth.password_reset',
+  AuthPasswordResetRequested: 'auth.password_reset_requested',
+  AuthBranchSwitched: 'auth.branch_switched',
+  SessionRevoked: 'session.revoked',
+  MfaEnrolled: 'mfa.enrolled',
+  MfaDisabled: 'mfa.disabled',
+  MfaRecoveryUsed: 'mfa.recovery_used',
+  MfaFailed: 'mfa.failed',
+  TrustedDeviceAdded: 'device.trusted',
+  TrustedDeviceRevoked: 'device.revoked',
+  BreakGlass: 'audit.break_glass',
+} as const;
+
+export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

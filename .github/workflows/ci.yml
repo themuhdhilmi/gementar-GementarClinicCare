@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API — lint, types, tests against MySQL
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.3
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: cliniccare_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      # The application connects as a least-privileged account, as it does in
+      # production. Migrations and the hardening script run as root.
+      DATABASE_URL: 'mysql://cliniccare:cliniccare@127.0.0.1:3306/cliniccare_test'
+      NODE_ENV: test
+      # Tenant write guards are installed below, so CI refuses to run without
+      # them. That is what keeps the DBA script honest.
+      DB_GUARD_MODE: require
+      MAIL_TRANSPORT: noop
+      BREACH_CHECK_ENABLED: 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Create the application database account
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "
+            CREATE USER 'cliniccare'@'%' IDENTIFIED BY 'cliniccare';
+            GRANT ALL PRIVILEGES ON cliniccare_test.* TO 'cliniccare'@'%';
+            FLUSH PRIVILEGES;"
+
+      - name: Generate secrets for this run
+        run: |
+          {
+            echo "APP_KEK_V1=$(openssl rand -base64 32)"
+            echo "APP_HASH_PEPPER=$(openssl rand -base64 32)"
+          } >> "$GITHUB_ENV"
+
+      - name: Apply migrations
+        working-directory: apps/api
+        run: npx prisma migrate deploy
+
+      - name: Install the tenant write guards
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot cliniccare_test \
+            < apps/api/prisma/sql/tenant-write-guard.sql
+
+      - name: Generate the Prisma client
+        working-directory: apps/api
+        run: npx prisma generate
+
+      - name: Lint, including the authorisation checks
+        working-directory: apps/api
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: apps/api
+        run: npx tsc -p tsconfig.build.json --noEmit
+
+      - name: Unit tests
+        working-directory: apps/api
+        run: npm test
+
+      - name: End-to-end tests against MySQL
+        working-directory: apps/api
+        run: npm run test:e2e
+
+      - name: Build
+        working-directory: apps/api
+        run: npx nest build
+
+  web:
+    name: Web — lint, types, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate the Prisma client
+        working-directory: apps/api
+        run: npx prisma generate
+        env:
+          DATABASE_URL: 'mysql://user:pass@127.0.0.1:3306/unused'
+
+      - name: Lint
+        working-directory: apps/web
+        run: npx eslint
+
+      - name: Type-check
+        working-directory: apps/web
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: apps/web
+        run: npx next build

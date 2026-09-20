@@ -1,9 +1,15 @@
+import 'reflect-metadata';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
+import { configureApp } from './bootstrap.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000' });
-  await app.listen(process.env.PORT ?? 3001);
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const config = configureApp(app);
+  await app.listen(config.port);
+  new Logger('Bootstrap').log(`API listening on :${config.port} (${config.nodeEnv})`);
 }
+
 await bootstrap();
