@@ -39,6 +39,16 @@ const schema = z.object({
   /** TEN-N-05: the longest any one unit of work may hold a transaction. */
   DB_TX_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(5000),
 
+  /**
+   * Where uploaded files are written. A directory today; an object storage
+   * bucket in V1, at which point this becomes the bucket name. It must be on
+   * the same backup schedule as the database, because a patient document
+   * whose row survives and whose bytes do not is worse than neither.
+   */
+  STORAGE_ROOT: z.string().min(1).default('./var/storage'),
+  /** PAT-F-23: the largest a patient document may be. */
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(100_000).max(100_000_000).default(20_000_000),
+
   APP_KEK_ACTIVE: z.string().regex(/^v\d+$/).default('v1'),
   APP_KEK_V1: base64Key,
   APP_KEK_V2: base64Key.optional(),
@@ -88,6 +98,7 @@ export type AppConfig = {
     transactionTimeoutMs: number;
   };
   crypto: { keks: Record<string, Buffer>; activeKekId: string; hashPepper: Buffer };
+  storage: { root: string; maxUploadBytes: number };
   cookie: {
     sessionName: string;
     deviceName: string;
@@ -167,6 +178,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       transactionTimeoutMs: c.DB_TX_TIMEOUT_MS,
     },
     crypto: { keks, activeKekId: c.APP_KEK_ACTIVE, hashPepper: c.APP_HASH_PEPPER },
+    storage: { root: c.STORAGE_ROOT, maxUploadBytes: c.UPLOAD_MAX_BYTES },
     cookie: {
       sessionName: 'cc_session',
       deviceName: 'cc_device',

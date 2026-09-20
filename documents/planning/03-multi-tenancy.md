@@ -130,6 +130,23 @@ tenant-isolation.spec.ts
 
 Run it in CI on every push. Then add one generated test that, for **every** table in the schema, asserts RLS is enabled and forced — so a new table added in eighteen months cannot silently ship unprotected. That single generated test is worth more than any amount of care.
 
+## Indexing the referencing side of a foreign key
+
+PostgreSQL indexes the *referenced* side of a foreign key, because that is
+where the unique constraint is. It does not index the referencing side. Every
+delete of a parent row then has to prove that nothing points at it, and with
+no index that proof is a sequential scan of the child table.
+
+This is easy to miss, because it costs nothing until the table is large. It
+was measured on `patient`, whose `merged_into_id` points at another patient:
+deleting a hundred thousand rows took **over fifteen minutes** without the
+index and **3.4 seconds** with it.
+
+**The rule for this codebase:** every column that references another row gets
+an index, and because everything here is tenant-scoped, that index leads with
+`tenant_id`. Composite indexes that already start `(tenant_id, patient_id)`
+satisfy it; a bare foreign key column does not.
+
 ## Branch-level access
 
 RLS handles tenants. Branch access is finer-grained and belongs in the application layer, because the rules are genuinely conditional: an org admin sees all branches, a receptionist sees one, a locum doctor sees the branches they are rostered to.

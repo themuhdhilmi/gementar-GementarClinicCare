@@ -26,6 +26,20 @@ export const TENANT_SCOPED_MODELS = new Set([
   'TrustedDevice',
   'MfaReplay',
   'AuditLog',
+  'Patient',
+  'PatientContact',
+  'PatientConsent',
+  'PatientAllergy',
+  'PatientCondition',
+  'PatientDocument',
+  'PatientImportBatch',
+  'PatientRecent',
+  'MrnSequence',
+  'Encounter',
+  'EncounterEvent',
+  'BranchRoom',
+  'QueueSequence',
+  'DisplayToken',
 ]);
 
 /**
@@ -49,8 +63,19 @@ const READ_OPERATIONS = new Set([
 const WHERE_WRITE_OPERATIONS = new Set(['update', 'updateMany', 'delete', 'deleteMany']);
 const CREATE_OPERATIONS = new Set(['create', 'createMany', 'createManyAndReturn']);
 
-/** Append-only: the audit trail may only ever be inserted into (AUD-R-01). */
-const APPEND_ONLY_MODELS = new Set(['AuditLog']);
+/**
+ * Append-only. The audit trail (AUD-R-01), and the encounter timeline
+ * (ENC-F-04), which is the evidence for who waited how long and in what
+ * order they were seen.
+ */
+const APPEND_ONLY_MODELS = new Set(['AuditLog', 'EncounterEvent']);
+
+/**
+ * PAT-R-03: an allergy is never deleted. Removing one is a status of REFUTED,
+ * with a reason and an author, so the history of what was believed and when
+ * survives. A database trigger refuses the delete as well.
+ */
+const NO_DELETE_MODELS = new Set(['PatientAllergy']);
 
 export type TenantScope =
   | { readonly kind: 'tenant'; readonly tenantId: string }
@@ -62,6 +87,8 @@ export type ScopeStore = {
   tx?: unknown;
   /** Domain events published during the unit of work, emitted after commit. */
   pendingEvents: Array<() => void>;
+  /** Slow work deferred past the commit, and awaited before responding. */
+  pendingWork: Array<() => Promise<unknown>>;
   /**
    * TEN-N-04: values resolved once per unit of work. It lives and dies with
    * the transaction, so a change made by one request is visible to the next
@@ -181,6 +208,12 @@ export async function scopedOperation({ model, operation, args, query }: Operati
 
   if (APPEND_ONLY_MODELS.has(model) && (WHERE_WRITE_OPERATIONS.has(operation) || operation === 'upsert')) {
     throw new TenantScopeError(`${model} is append-only: ${operation} is not permitted.`);
+  }
+
+  if (NO_DELETE_MODELS.has(model) && (operation === 'delete' || operation === 'deleteMany')) {
+    throw new TenantScopeError(
+      `${model} rows are never deleted. Set status = REFUTED with a reason instead (PAT-R-03).`,
+    );
   }
 
   if (!store) {

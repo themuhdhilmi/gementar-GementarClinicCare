@@ -7,7 +7,7 @@ import {
   type ModuleFlags,
   type ModuleKey,
 } from './module-flags.js';
-import { resolveSettings, type TenantSettings } from './tenant-settings.js';
+import { resolveSettings, TENANT_ONLY_GROUPS, type TenantSettings } from './tenant-settings.js';
 
 /**
  * TEN-F-04: the one way a module reads a setting.
@@ -41,11 +41,27 @@ export class SettingsService {
     });
   }
 
+  /**
+   * Settings with the branch layer left out, for the things that must be the
+   * same everywhere. A patient number cannot depend on which door the patient
+   * came through, so `patient.mrnPrefix` is read through here.
+   */
+  async clinicWide(): Promise<TenantSettings> {
+    return this.db.once('settings:clinic', async () => {
+      const tenant = await this.db.tx().tenant.findFirst({ select: { settings: true } });
+      return resolveSettings(tenant?.settings as Record<string, unknown> | null, null);
+    });
+  }
+
   /** One group, for a caller that only needs billing or only needs queue. */
   async group<K extends keyof TenantSettings>(
     branchId: string,
     name: K,
   ): Promise<TenantSettings[K]> {
+    // A group that must not vary by branch is resolved without one, whichever
+    // way it is asked for, so a caller cannot get the wrong answer by
+    // reaching for the obvious method.
+    if (TENANT_ONLY_GROUPS.has(name)) return (await this.clinicWide())[name];
     return (await this.at(branchId))[name];
   }
 
@@ -73,6 +89,7 @@ export class SettingsService {
   /** Called after a change, so the rest of this request sees the new value. */
   invalidate(branchId?: string): void {
     this.db.forget('modules');
+    this.db.forget('settings:clinic');
     if (branchId) this.db.forget(`settings:${branchId}`);
   }
 }

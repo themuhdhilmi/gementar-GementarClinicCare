@@ -37,6 +37,43 @@ export const AuditAction = {
   TenantUpdated: 'tenant.updated',
   TenantSettingsChanged: 'tenant.settings_changed',
   BranchSettingsChanged: 'branch.settings_changed',
+
+  // Patient registry (PAT, v0-03).
+  PatientRegistered: 'patient.registered',
+  PatientUpdated: 'patient.updated',
+  PatientMerged: 'patient.merged',
+  PatientUnmerged: 'patient.unmerged',
+  PatientDeleted: 'patient.deleted',
+  PatientIdUnmasked: 'patient.id_unmasked',
+  PatientExported: 'patient.exported',
+  PatientImported: 'patient.imported',
+  PatientAllergyAdded: 'patient.allergy_added',
+  PatientAllergyVerified: 'patient.allergy_verified',
+  PatientAllergyRefuted: 'patient.allergy_refuted',
+  PatientNkdaRecorded: 'patient.nkda_recorded',
+  PatientConditionChanged: 'patient.condition_changed',
+  PatientConsentChanged: 'patient.consent_changed',
+  PatientContactChanged: 'patient.contact_changed',
+  PatientDocumentAdded: 'patient.document_added',
+  PatientDocumentViewed: 'patient.document_viewed',
+  PatientDocumentDeleted: 'patient.document_deleted',
+  ClinicalViewed: 'clinical.viewed',
+
+  // Encounter and queue (ENC, v0-04).
+  EncounterCreated: 'encounter.created',
+  EncounterStatusChanged: 'encounter.status_changed',
+  EncounterCalled: 'encounter.called',
+  EncounterSkipped: 'encounter.skipped',
+  EncounterPriorityChanged: 'encounter.priority_changed',
+  EncounterReassigned: 'encounter.reassigned',
+  EncounterCancelled: 'encounter.cancelled',
+  EncounterNoShow: 'encounter.no_show',
+  EncounterReopened: 'encounter.reopened',
+  /// Loud on purpose: an administrator overriding the state machine.
+  EncounterForced: 'encounter.force_transition',
+  DisplayTokenIssued: 'display_token.issued',
+  DisplayTokenRevoked: 'display_token.revoked',
+  BranchRoomChanged: 'branch_room.changed',
   BranchLetterheadChanged: 'branch.letterhead_changed',
 } as const;
 

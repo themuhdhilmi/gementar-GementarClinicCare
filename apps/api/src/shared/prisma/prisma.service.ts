@@ -15,6 +15,20 @@ export const RLS_PROTECTED_TABLES = [
   'trusted_device',
   'mfa_replay',
   'audit_log',
+  'patient',
+  'patient_contact',
+  'patient_consent',
+  'patient_allergy',
+  'patient_condition',
+  'patient_document',
+  'patient_import_batch',
+  'patient_recent',
+  'mrn_sequence',
+  'encounter',
+  'encounter_event',
+  'branch_room',
+  'queue_sequence',
+  'display_token',
 ] as const;
 
 /**

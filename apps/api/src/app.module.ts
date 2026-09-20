@@ -10,6 +10,8 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { EventsModule } from './modules/events/events.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
 import { HealthController } from './health.controller.js';
+import { PatientModule } from './modules/patient/patient.module.js';
+import { EncounterModule } from './modules/encounter/encounter.module.js';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { HealthController } from './health.controller.js';
     AuditModule,
     TenancyModule,
     IdentityModule,
+    PatientModule,
+    EncounterModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [HealthController],

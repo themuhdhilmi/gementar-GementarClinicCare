@@ -44,6 +44,51 @@ const queue = z
       .boolean()
       .default(true)
       .describe('Start queue numbers again at 1 each morning.'),
+    triageRequired: z
+      .enum(['ALWAYS', 'OPTIONAL', 'NEVER'])
+      .default('OPTIONAL')
+      .describe(
+        'Whether every patient is triaged before seeing the doctor. "Optional" lets the front desk decide per patient.',
+      ),
+    paymentBeforeDispense: z
+      .boolean()
+      .default(false)
+      .describe('Patients pay first and collect medicine afterwards, rather than the other way round.'),
+    requireDispenseBeforeComplete: z
+      .boolean()
+      .default(true)
+      .describe('A visit cannot be finished while prescribed medicine has not been handed over.'),
+    requirePaymentBeforeComplete: z
+      .boolean()
+      .default(true)
+      .describe('A visit cannot be finished while there is still something to pay.'),
+    displayShowFirstName: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Show a first name beside the queue number on the waiting-room screen. Turn off for number only.',
+      ),
+    waitAmberMinutes: z
+      .number()
+      .int()
+      .min(5)
+      .max(240)
+      .default(30)
+      .describe('How long someone waits at one station before the board turns their row amber.'),
+    waitRedMinutes: z
+      .number()
+      .int()
+      .min(5)
+      .max(480)
+      .default(60)
+      .describe('And red. Should be longer than the amber threshold.'),
+    noShowAfterCalls: z
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(3)
+      .describe('How many times a patient is called before the front desk is asked to mark them absent.'),
   })
   .strict();
 
@@ -56,7 +101,33 @@ const clinical = z
   })
   .strict();
 
-const GROUPS = { billing, queue, clinical } as const;
+const patient = z
+  .object({
+    mrnPrefix: z
+      .string()
+      .regex(/^[A-Z]{0,6}$/, 'Up to six capital letters, or empty.')
+      .default('P')
+      .describe('Letters in front of the patient number, for example "GC" giving GC-000123.'),
+    mrnDigits: z
+      .number()
+      .int()
+      .min(4)
+      .max(10)
+      .default(6)
+      .describe('How many digits the patient number is padded to. Six allows a million patients.'),
+  })
+  .strict();
+
+const GROUPS = { billing, queue, clinical, patient } as const;
+
+/**
+ * Settings that must not differ between branches.
+ *
+ * A patient belongs to the clinic company rather than to a building
+ * (PAT-R-08), so their number cannot depend on where they happened to walk
+ * in. `SettingsService.clinicWide` resolves these without the branch layer.
+ */
+export const TENANT_ONLY_GROUPS: ReadonlySet<keyof typeof GROUPS> = new Set(['patient']);
 
 export const tenantSettingsSchema = z.object(GROUPS).strict();
 export type TenantSettings = { [K in keyof typeof GROUPS]: z.infer<(typeof GROUPS)[K]> };
@@ -91,6 +162,7 @@ export const settingsPatchSchema = z
     billing: patchGroup(billing).optional(),
     queue: patchGroup(queue).optional(),
     clinical: patchGroup(clinical).optional(),
+    patient: patchGroup(patient).optional(),
   })
   .strict();
 
@@ -104,6 +176,7 @@ export const DEFAULT_SETTINGS: TenantSettings = {
   billing: billing.parse({}),
   queue: queue.parse({}),
   clinical: clinical.parse({}),
+  patient: patient.parse({}),
 };
 
 type Layer = Record<string, unknown> | null | undefined;

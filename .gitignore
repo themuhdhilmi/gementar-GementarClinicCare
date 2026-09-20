@@ -38,3 +38,8 @@ apps/api/src/generated/
 
 # test reports
 reports/
+
+# Uploaded files. Local object storage until V1 brings a bucket; it must be
+# on the same backup schedule as the database, and never in the repository.
+var/
+apps/api/var/

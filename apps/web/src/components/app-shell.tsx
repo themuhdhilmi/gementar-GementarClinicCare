@@ -22,6 +22,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const links = [
     { href: '/workspace', label: 'Workspace', show: true },
+    { href: '/queue', label: 'Today', show: can('patient.read') },
+    { href: '/patients', label: 'Patients', show: can('patient.read') },
     { href: '/admin/users', label: 'Staff', show: can('admin.users') },
     { href: '/admin/branches', label: 'Branches', show: can('admin.settings') },
     { href: '/admin/clinic', label: 'Clinic', show: can('admin.settings') },

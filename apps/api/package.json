@@ -32,7 +32,8 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "user:create": "tsx scripts/create-user.ts",
     "tenant": "tsx scripts/tenant.ts",
-    "lint:slow": "tsx scripts/check-slow-work.ts"
+    "lint:slow": "tsx scripts/check-slow-work.ts",
+    "patients:seed": "tsx scripts/seed-patients.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

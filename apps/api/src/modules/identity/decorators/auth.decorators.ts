@@ -11,6 +11,7 @@ export const NO_PERMISSION_KEY = 'iam:no-permission';
 export const REAUTH_KEY = 'iam:reauth';
 export const PRE_MFA_KEY = 'iam:pre-mfa';
 export const MFA_ENROLMENT_KEY = 'iam:mfa-enrolment';
+export const NO_REQUEST_TRANSACTION_KEY = 'iam:no-request-transaction';
 
 /** No session required. Use sparingly; every use is a route an attacker can reach. */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -34,6 +35,23 @@ export const AllowPreMfa = () => SetMetadata(PRE_MFA_KEY, true);
 
 /** Reachable by a session that still has to enrol in MFA before anything else. */
 export const AllowDuringMfaEnrolment = () => SetMetadata(MFA_ENROLMENT_KEY, true);
+
+/**
+ * Do not wrap this route in the per-request transaction.
+ *
+ * Every other authenticated route runs inside one, which is what lets a
+ * service take the transaction from the scope instead of threading it
+ * through every signature. A streaming route cannot: it is open for hours,
+ * and holding a database connection for that long would exhaust the pool
+ * after a few dozen clients and breach the transaction cap (TEN-N-05) on
+ * the first one.
+ *
+ * A route marked this way opens its own short scopes, explicitly, for each
+ * thing it needs to read. The reason is required and shows up in the lint
+ * output, because this is a thing to do deliberately and rarely.
+ */
+export const NoRequestTransaction = (reason: string) =>
+  SetMetadata(NO_REQUEST_TRANSACTION_KEY, reason);
 
 export const Ctx = createParamDecorator((_data: unknown, context: ExecutionContext): TenantContext => {
   const request = context.switchToHttp().getRequest<Request & RequestWithContext>();

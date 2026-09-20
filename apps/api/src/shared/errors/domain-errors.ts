@@ -97,8 +97,13 @@ export class RateLimitedError extends AppError {
 }
 
 export class InvariantViolationError extends AppError {
-  constructor(code: string, detail: string) {
-    super(422, code, 'Rule violation', detail);
+  /**
+   * `extra` carries the machine-readable half of the refusal. A screen that
+   * is told a transition is not allowed should be able to offer the ones
+   * that are, without parsing the sentence it was given.
+   */
+  constructor(code: string, detail: string, extra?: Record<string, unknown>) {
+    super(422, code, 'Rule violation', detail, extra);
   }
 }
 

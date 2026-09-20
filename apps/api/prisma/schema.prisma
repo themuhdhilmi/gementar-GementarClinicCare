@@ -89,6 +89,7 @@ model Tenant {
 
   branches            Branch[]
   users               User[]
+  patients            Patient[]
   userBranchRoles     UserBranchRole[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -129,6 +130,9 @@ model Branch {
 
   tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   usersWithDefault User[]           @relation("UserDefaultBranch")
+  encounters       Encounter[]
+  rooms            BranchRoom[]
+  displayTokens    DisplayToken[]
   userBranchRoles  UserBranchRole[]
   sessions         Session[]
 
@@ -345,4 +349,561 @@ model AuditLog {
   @@index([tenantId, entityType, entityId], map: "audit_tenant_entity_idx")
   @@index([tenantId, action, occurredAt], map: "audit_tenant_action_time_idx")
   @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// Patient Registry (PAT, v0-03-patient.md)
+//
+// The patient is tenant-scoped and carries no branch (PAT-R-08): one patient,
+// one record, across every branch of the clinic company. It is the visit that
+// happened somewhere, not the person.
+// ---------------------------------------------------------------------------
+
+enum IdType {
+  MYKAD
+  MYKID
+  PASSPORT
+  ARMY
+  POLICE
+  OTHER
+  NONE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  UNKNOWN
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+  UNKNOWN
+}
+
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+  UNKNOWN
+}
+
+enum PatientStatus {
+  ACTIVE
+  DECEASED
+  MERGED
+  DELETED
+}
+
+enum AllergyType {
+  DRUG
+  FOOD
+  ENVIRONMENT
+  OTHER
+}
+
+enum AllergySeverity {
+  MILD
+  MODERATE
+  SEVERE
+  LIFE_THREATENING
+}
+
+/// An allergy is never deleted (PAT-R-03). Removal is REFUTED, with a reason.
+enum AllergyStatus {
+  UNVERIFIED
+  VERIFIED
+  REFUTED
+}
+
+enum ConditionStatus {
+  ACTIVE
+  RESOLVED
+}
+
+enum ConsentChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+}
+
+enum ConsentPurpose {
+  REMINDERS
+  MARKETING
+}
+
+enum PatientDocumentType {
+  ID_COPY
+  REFERRAL_IN
+  LAB_RESULT
+  CONSENT
+  PHOTO
+  OTHER
+}
+
+model Patient {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+
+  /// Human-readable and immutable, never reused (PAT-R-02).
+  mrn  String @db.VarChar(40)
+  name String @db.VarChar(150)
+
+  /// Maintained by a database trigger, never by the application (PAT-R-09).
+  /// Lower case, diacritics stripped, "bin", "binti", "a/l" and the like
+  /// removed, so that "Ali bin Ahmad" and "ali ahmad" are the same search.
+  nameNormalised String @default("") @map("name_normalised") @db.VarChar(200)
+
+  idType         IdType  @map("id_type")
+  /// Stored as given; masked on read unless the caller holds
+  /// `patient.unmask_id` and asks, which is audited (PAT-R-05).
+  idNumber       String? @map("id_number") @db.VarChar(40)
+  /// So the counter can search on the last four without unmasking anything.
+  idNumberLast4  String? @map("id_number_last4") @db.VarChar(4)
+  passportCountry String? @map("passport_country") @db.Char(2)
+  passportExpiry DateTime? @map("passport_expiry") @db.Date
+
+  dateOfBirth  DateTime? @map("date_of_birth") @db.Date
+  dobEstimated Boolean   @default(false) @map("dob_estimated")
+  gender       Gender
+  nationality  String    @default("MY") @db.Char(2)
+
+  race              String?        @db.VarChar(60)
+  religion          String?        @db.VarChar(60)
+  maritalStatus     MaritalStatus? @map("marital_status")
+  occupation        String?        @db.VarChar(120)
+  preferredLanguage String?        @map("preferred_language") @db.VarChar(8)
+
+  phone    String? @db.VarChar(24)
+  phoneAlt String? @map("phone_alt") @db.VarChar(24)
+  email    String? @db.VarChar(254)
+
+  addressLine1 String? @map("address_line1") @db.VarChar(200)
+  addressLine2 String? @map("address_line2") @db.VarChar(200)
+  postcode     String? @db.VarChar(20)
+  city         String? @db.VarChar(100)
+  state        String? @db.VarChar(100)
+  country      String? @default("MY") @db.Char(2)
+
+  bloodGroup BloodGroup? @map("blood_group")
+
+  /// Null means nobody has asked (PAT-F-12). True is an explicit "no known
+  /// drug allergies". False means there are some. The three states are
+  /// different and the header says which.
+  nkdaRecorded   Boolean?  @map("nkda_recorded")
+  nkdaRecordedBy String?   @map("nkda_recorded_by") @db.Uuid
+  nkdaRecordedAt DateTime? @map("nkda_recorded_at") @db.Timestamptz(3)
+
+  notes    String? @db.VarChar(1000)
+  photoKey String? @map("photo_key") @db.VarChar(200)
+
+  status       PatientStatus @default(ACTIVE)
+  mergedIntoId String?       @map("merged_into_id") @db.Uuid
+  mergedAt     DateTime?     @map("merged_at") @db.Timestamptz(3)
+  /// What the merge moved, so it can be put back within 30 days (PAT-R-06).
+  mergeManifest Json?        @map("merge_manifest") @db.JsonB
+  deceasedAt   DateTime?     @map("deceased_at") @db.Date
+
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedReason String?   @map("deleted_reason") @db.VarChar(500)
+
+  /// 'MANUAL', or 'IMPORT:<batch id>'.
+  source String @default("MANUAL") @db.VarChar(60)
+
+  /// Denormalised from encounter.completed, for the search result row only.
+  lastVisitAt DateTime? @map("last_visit_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy String?  @map("created_by") @db.Uuid
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  mergedInto Patient? @relation("PatientMerge", fields: [mergedIntoId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  mergedFrom Patient[] @relation("PatientMerge")
+
+  contacts   PatientContact[]
+  consents   PatientConsent[]
+  allergies  PatientAllergy[]
+  conditions PatientCondition[]
+  documents  PatientDocument[]
+  recentlyOpened PatientRecent[]
+  encounters Encounter[]
+
+  @@unique([tenantId, mrn], map: "patient_tenant_mrn_key")
+  @@unique([id, tenantId], map: "patient_id_tenant_key")
+  @@index([tenantId, phone], map: "patient_tenant_phone_idx")
+  @@index([tenantId, idNumberLast4], map: "patient_tenant_id4_idx")
+  /// Search by the whole number, which cannot use the partial unique index
+  /// because that one also keys on the document type.
+  @@index([tenantId, idNumber], map: "patient_tenant_id_number_idx")
+  @@index([tenantId, status], map: "patient_tenant_status_idx")
+  @@index([tenantId, lastVisitAt], map: "patient_tenant_last_visit_idx")
+  /// The referencing side of the merge self-reference. PostgreSQL does not
+  /// index it for you, and without it every patient delete scans the table.
+  @@index([tenantId, mergedIntoId], map: "patient_merged_into_idx")
+  @@map("patient")
+}
+
+model PatientContact {
+  id        String  @id @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  patientId String  @map("patient_id") @db.Uuid
+  name      String  @db.VarChar(150)
+  relationship String? @db.VarChar(60)
+  phone     String  @db.VarChar(24)
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, patientId], map: "patient_contact_patient_idx")
+  @@map("patient_contact")
+}
+
+model PatientConsent {
+  id         String         @id @db.Uuid
+  tenantId   String         @map("tenant_id") @db.Uuid
+  patientId  String         @map("patient_id") @db.Uuid
+  channel    ConsentChannel
+  purpose    ConsentPurpose
+  granted    Boolean
+  recordedBy String?        @map("recorded_by") @db.Uuid
+  recordedAt DateTime       @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  source     String?        @db.VarChar(60)
+
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([patientId, channel, purpose], map: "patient_consent_unique")
+  @@index([tenantId, patientId], map: "patient_consent_patient_idx")
+  @@map("patient_consent")
+}
+
+model PatientAllergy {
+  id        String      @id @db.Uuid
+  tenantId  String      @map("tenant_id") @db.Uuid
+  patientId String      @map("patient_id") @db.Uuid
+  type      AllergyType
+  substance String      @db.VarChar(120)
+  /// Filled in when the substance was picked from the catalogue. Free text is
+  /// allowed and common, and RX warns that it can only be matched by hand.
+  productId String?     @map("product_id") @db.Uuid
+  drugClass String?     @map("drug_class") @db.VarChar(120)
+  reaction  String?     @db.VarChar(300)
+  severity  AllergySeverity?
+  status    AllergyStatus
+
+  recordedBy String   @map("recorded_by") @db.Uuid
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  verifiedBy String?  @map("verified_by") @db.Uuid
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(3)
+  refutedBy  String?  @map("refuted_by") @db.Uuid
+  refutedAt  DateTime? @map("refuted_at") @db.Timestamptz(3)
+  refutedReason String? @map("refuted_reason") @db.VarChar(500)
+  notes      String?  @db.VarChar(500)
+
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, patientId, status], map: "patient_allergy_patient_status_idx")
+  @@map("patient_allergy")
+}
+
+model PatientCondition {
+  id        String          @id @db.Uuid
+  tenantId  String          @map("tenant_id") @db.Uuid
+  patientId String          @map("patient_id") @db.Uuid
+  condition String          @db.VarChar(200)
+  icd10Code String?         @map("icd10_code") @db.VarChar(10)
+  onsetDate DateTime?       @map("onset_date") @db.Date
+  status    ConditionStatus @default(ACTIVE)
+
+  recordedBy String   @map("recorded_by") @db.Uuid
+  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  resolvedAt DateTime? @map("resolved_at") @db.Date
+  notes      String?  @db.VarChar(500)
+
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, patientId, status], map: "patient_condition_patient_status_idx")
+  @@map("patient_condition")
+}
+
+model PatientDocument {
+  id        String              @id @db.Uuid
+  tenantId  String              @map("tenant_id") @db.Uuid
+  patientId String              @map("patient_id") @db.Uuid
+  type      PatientDocumentType
+  filename  String              @db.VarChar(255)
+  mime      String              @db.VarChar(100)
+  sizeBytes Int                 @map("size_bytes")
+  /// Where the bytes are. A path under the configured store today, an object
+  /// key when there is object storage (V1). The route is the same either way.
+  storageKey String             @map("storage_key") @db.VarChar(300)
+
+  uploadedBy String   @map("uploaded_by") @db.Uuid
+  uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  scannedAt  DateTime? @map("scanned_at") @db.Timestamptz(3)
+  scanResult String?  @map("scan_result") @db.VarChar(60)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedBy  String?  @map("deleted_by") @db.Uuid
+
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, patientId, type], map: "patient_document_patient_type_idx")
+  @@map("patient_document")
+}
+
+model PatientImportBatch {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  filename String @db.VarChar(255)
+  rowCount Int    @default(0) @map("row_count")
+  imported Int    @default(0)
+  skipped  Int    @default(0)
+  merged   Int    @default(0)
+  dryRun   Boolean @map("dry_run")
+  /// The per-row verdicts, so the clinic can be shown exactly what happened.
+  report   Json?   @db.JsonB
+  runBy    String  @map("run_by") @db.Uuid
+  runAt    DateTime @default(now()) @map("run_at") @db.Timestamptz(3)
+
+  @@index([tenantId, runAt], map: "patient_import_tenant_time_idx")
+  @@map("patient_import_batch")
+}
+
+/// PAT-F-19: what the search box shows before anything is typed.
+///
+/// Per user and per branch, because the useful list is "who was I dealing
+/// with at this counter", not "who has this clinic seen". Kept out of the
+/// audit trail on purpose: browsing a name is not an event worth recording
+/// forever, and recording it would bury the events that are.
+model PatientRecent {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  patientId String   @map("patient_id") @db.Uuid
+  openedAt  DateTime @default(now()) @map("opened_at") @db.Timestamptz(3)
+
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([tenantId, userId, branchId, patientId])
+  @@index([tenantId, userId, branchId, openedAt], map: "patient_recent_lookup_idx")
+  @@map("patient_recent")
+}
+
+/// One row per tenant, taken with FOR UPDATE when a number is issued. A
+/// sequence object cannot be used: numbering is per tenant, and the row lock
+/// is what makes two receptionists registering at once safe (PAT-F-03).
+model MrnSequence {
+  tenantId String @id @map("tenant_id") @db.Uuid
+  next     Int    @default(1)
+
+  @@map("mrn_sequence")
+}
+
+// ---------------------------------------------------------------------------
+// Encounter & Queue (ENC, v0-04-encounter-queue.md)
+//
+// An encounter is one visit, and it is the spine every clinical record hangs
+// from. The queue is the same row seen from the waiting room: its position in
+// the clinic's physical flow, which is why both live here.
+// ---------------------------------------------------------------------------
+
+enum EncounterType {
+  WALK_IN
+  APPOINTMENT
+  FOLLOW_UP
+  EMERGENCY
+}
+
+/// §6. Ordered roughly as the day runs, which is also the order a board
+/// groups them in.
+enum EncounterStatus {
+  REGISTERED
+  TRIAGE_WAITING
+  TRIAGE_IN_PROGRESS
+  DOCTOR_WAITING
+  IN_CONSULTATION
+  PROCEDURE_WAITING
+  PROCEDURE_DONE
+  PHARMACY_WAITING
+  DISPENSING
+  PAYMENT_WAITING
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum EncounterPriority {
+  NORMAL
+  URGENT
+  EMERGENCY
+}
+
+enum RoomType {
+  CONSULT
+  TRIAGE
+  PROCEDURE
+  OTHER
+}
+
+model Encounter {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  patientId String @map("patient_id") @db.Uuid
+
+  /// `KL01-20260920-017`: readable, and unique for the day it belongs to.
+  encounterNo String @map("encounter_no") @db.VarChar(40)
+  /// `A-017`: what is called out and shown on the screen.
+  queueNo     String @map("queue_no") @db.VarChar(20)
+
+  type     EncounterType
+  status   EncounterStatus
+  priority EncounterPriority @default(NORMAL)
+  priorityReason String?     @map("priority_reason") @db.VarChar(300)
+
+  /// Null means "any available doctor", which is a real answer rather than
+  /// a missing one: the next free doctor calls the patient.
+  attendingDoctorId String? @map("attending_doctor_id") @db.Uuid
+  roomId            String? @map("room_id") @db.Uuid
+
+  registeredBy String   @map("registered_by") @db.Uuid
+  registeredAt DateTime @default(now()) @map("registered_at") @db.Timestamptz(3)
+  /// When the current status was entered. The queue is ordered by it, so it
+  /// is the one timestamp that must never drift.
+  statusSince  DateTime @default(now()) @map("status_since") @db.Timestamptz(3)
+
+  calledAt  DateTime? @map("called_at") @db.Timestamptz(3)
+  callCount Int       @default(0) @map("call_count")
+  skipCount Int       @default(0) @map("skip_count")
+
+  triageAt              DateTime? @map("triage_at") @db.Timestamptz(3)
+  consultationStartedAt DateTime? @map("consultation_started_at") @db.Timestamptz(3)
+  consultationEndedAt   DateTime? @map("consultation_ended_at") @db.Timestamptz(3)
+  dispensedAt           DateTime? @map("dispensed_at") @db.Timestamptz(3)
+  paidAt                DateTime? @map("paid_at") @db.Timestamptz(3)
+  completedAt           DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason  String?   @map("cancel_reason") @db.VarChar(500)
+  cancelledBy   String?   @map("cancelled_by") @db.Uuid
+
+  reopenedAt   DateTime? @map("reopened_at") @db.Timestamptz(3)
+  reopenedBy   String?   @map("reopened_by") @db.Uuid
+  reopenReason String?   @map("reopen_reason") @db.VarChar(500)
+
+  followUpDue  DateTime? @map("follow_up_due") @db.Date
+  followUpNote String?   @map("follow_up_note") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch  Branch  @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  patient Patient @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  room    BranchRoom? @relation(fields: [roomId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  events  EncounterEvent[]
+
+  @@unique([tenantId, encounterNo], map: "encounter_tenant_no_key")
+  @@unique([id, tenantId], map: "encounter_id_tenant_key")
+  /// The queue boards, which are the hottest read in the clinic.
+  @@index([tenantId, branchId, status, priority, statusSince], map: "encounter_queue_idx")
+  @@index([tenantId, patientId, registeredAt], map: "encounter_patient_idx")
+  @@index([tenantId, branchId, registeredAt], map: "encounter_branch_day_idx")
+  @@index([tenantId, attendingDoctorId, status], map: "encounter_doctor_idx")
+  @@map("encounter")
+}
+
+/// Append-only. Every transition leaves exactly one of these, and together
+/// they are the evidence for any question about who waited how long and in
+/// what order they were seen.
+model EncounterEvent {
+  id          String @id @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  encounterId String @map("encounter_id") @db.Uuid
+
+  fromStatus String? @map("from_status") @db.VarChar(30)
+  toStatus   String  @map("to_status") @db.VarChar(30)
+  /// check_in, call, skip, transition, reassign, priority, cancel, no_show,
+  /// reopen, force.
+  action     String  @db.VarChar(20)
+
+  actorId   String? @map("actor_id") @db.Uuid
+  /// Snapshotted, so the timeline still reads correctly after a rename.
+  actorName String  @map("actor_name") @db.VarChar(120)
+  note      String? @db.VarChar(500)
+
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  encounter Encounter @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([tenantId, encounterId, occurredAt], map: "encounter_event_timeline_idx")
+  @@index([tenantId, occurredAt], map: "encounter_event_time_idx")
+  @@map("encounter_event")
+}
+
+model BranchRoom {
+  id       String   @id @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  branchId String   @map("branch_id") @db.Uuid
+  name     String   @db.VarChar(60)
+  code     String   @db.VarChar(16)
+  type     RoomType @default(CONSULT)
+  active   Boolean  @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  branch     Branch      @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  encounters Encounter[]
+
+  @@unique([tenantId, branchId, code], map: "branch_room_code_key")
+  @@unique([id, tenantId], map: "branch_room_id_tenant_key")
+  @@index([tenantId, branchId, active], map: "branch_room_branch_idx")
+  @@map("branch_room")
+}
+
+/// Per branch per day, taken with FOR UPDATE. Numbers restart each morning
+/// because that is what a patient expects of a queue number, and they are
+/// never reused within the day (ENC-R-05).
+model QueueSequence {
+  tenantId String   @map("tenant_id") @db.Uuid
+  branchId String   @map("branch_id") @db.Uuid
+  /// The clinic's own day, in the branch time zone, not UTC.
+  day      DateTime @db.Date
+  prefix   String   @db.VarChar(8)
+  next     Int      @default(1)
+
+  @@id([tenantId, branchId, day, prefix])
+  @@map("queue_sequence")
+}
+
+/// What a waiting-room screen authenticates with. Hashed, because the screen
+/// is in a public room and the token is in its address bar.
+model DisplayToken {
+  id        String    @id @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  branchId  String    @map("branch_id") @db.Uuid
+  tokenHash Bytes     @map("token_hash")
+  label     String    @db.VarChar(80)
+  createdBy String?   @map("created_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  branch Branch @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tokenHash], map: "display_token_hash_key")
+  @@index([tenantId, branchId], map: "display_token_branch_idx")
+  @@map("display_token")
 }

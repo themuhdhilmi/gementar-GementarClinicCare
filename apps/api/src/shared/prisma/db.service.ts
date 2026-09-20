@@ -74,6 +74,31 @@ export class DbService {
     store.pendingEvents.push(fn);
   }
 
+  /**
+   * Slow work that must happen after the commit, and whose failure must
+   * still reach the caller.
+   *
+   * `afterCommit` is fire-and-forget, which is right for publishing an event
+   * and wrong for writing an uploaded file: the caller is about to be told
+   * the document was saved. Work registered here runs once the transaction
+   * has committed and before the unit of work returns, and a rejection
+   * propagates out of it as an ordinary error.
+   *
+   * It deliberately does not return a promise to await. Awaiting it inside
+   * the handler would deadlock: the transaction cannot commit until the
+   * handler returns, and the handler would be waiting for the commit.
+   *
+   * Outside a scope the work simply runs, which is what jobs and tests want.
+   */
+  deferUntilCommitted(fn: () => Promise<unknown>): void {
+    const store = scopeStorage.getStore();
+    if (!store) {
+      void fn();
+      return;
+    }
+    store.pendingWork.push(fn);
+  }
+
   withTenant<T>(tenantId: string, fn: (tx: Tx) => Promise<T>, options?: TxOptions): Promise<T> {
     return this.run({ kind: 'tenant', tenantId }, fn, options);
   }
@@ -180,7 +205,7 @@ export class DbService {
 
     const label =
       options?.label ?? (scope.kind === 'platform' ? scope.reason : `tenant ${scope.tenantId}`);
-    const store: ScopeStore = { scope, pendingEvents: [], label };
+    const store: ScopeStore = { scope, pendingEvents: [], pendingWork: [], label };
     const timeout = options?.timeoutMs ?? this.config.database.transactionTimeoutMs;
     const startedAt = Date.now();
 
@@ -228,6 +253,12 @@ export class DbService {
       } catch (error) {
         this.logger.error('after-commit handler failed', error as Error);
       }
+    }
+
+    // Awaited, unlike the events above: the caller is waiting on these and a
+    // failure has to reach them rather than being logged and swallowed.
+    for (const work of store.pendingWork) {
+      await work();
     }
     return result;
   }

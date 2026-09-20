@@ -10,12 +10,12 @@ const TENANT = '01a00000-0000-7000-8000-000000000001';
 const OTHER = '01a00000-0000-7000-8000-000000000002';
 
 function inTenant<T>(fn: () => Promise<T>): Promise<T> {
-  const store: ScopeStore = { scope: { kind: 'tenant', tenantId: TENANT }, pendingEvents: [] };
+  const store: ScopeStore = { scope: { kind: 'tenant', tenantId: TENANT }, pendingEvents: [], pendingWork: [] };
   return scopeStorage.run(store, fn);
 }
 
 function inPlatform<T>(fn: () => Promise<T>): Promise<T> {
-  const store: ScopeStore = { scope: { kind: 'platform', reason: 'test' }, pendingEvents: [] };
+  const store: ScopeStore = { scope: { kind: 'platform', reason: 'test' }, pendingEvents: [], pendingWork: [] };
   return scopeStorage.run(store, fn);
 }
 
@@ -177,7 +177,7 @@ describe('Slow work outside the transaction (TEN-F-17)', () => {
 
   it('allows it inside a scope whose transaction has already closed', () => {
     // This is what afterCommit handlers see, and it is the intended path.
-    scopeStorage.run({ scope: { kind: 'platform', reason: 'test' }, pendingEvents: [] }, () => {
+    scopeStorage.run({ scope: { kind: 'platform', reason: 'test' }, pendingEvents: [], pendingWork: [] }, () => {
       expect(() => assertOutsideScope('Sending mail')).not.toThrow();
     });
   });
@@ -186,7 +186,7 @@ describe('Slow work outside the transaction (TEN-F-17)', () => {
     scopeStorage.run(
       {
         scope: { kind: 'tenant', tenantId: 'a' },
-        pendingEvents: [],
+        pendingEvents: [], pendingWork: [],
         tx: {},
         label: 'BranchesController.create',
       },

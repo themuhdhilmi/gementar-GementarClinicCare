@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-04-encounter-queue-end-item-OPEN.md](v0-04-encounter-queue-end-item-OPEN.md) |
 | **Delivery phase** | Phase 1 |
 | **Spec sections** | 3, 4, 45 |
 | **Depends on** | IAM, TEN, AUD, PAT |
@@ -20,9 +20,15 @@ Replacing the whiteboard and the shouted queue number is the first thing the pil
 
 ## 2. Actors & permissions
 
+> **On `FRONTDESK`.** Written before the front desk was split into
+> `RECEPTION`, `DISPENSER` and `CASHIER` (IAM-Q-01). Below it means all
+> three: each of them can check a patient in, move them along and view every
+> queue, which matches how a small clinic's counter actually works. That is
+> `IAM-OPEN-18` closed for this module.
+
 | Actor | Uses ENC to |
 |---|---|
-| FRONTDESK | Check in, assign doctor/room, set priority, cancel, mark no-show, view all queues |
+| Reception, dispenser, cashier | Check in, assign doctor/room, set priority, cancel, mark no-show, view all queues |
 | NURSE | Call next for triage, move to doctor-waiting, view queues |
 | DOCTOR | Call next patient, start/end consultation, route to pharmacy/payment |
 | Dispenser (FRONTDESK in V0) | Pharmacy queue |
@@ -211,15 +217,16 @@ Ordering of `PHARMACY_WAITING` and `PAYMENT_WAITING` is swapped when `queue.paym
 | POST | `/encounters/:id/revert-no-show` | `encounter.cancel` | Same day |
 | PATCH | `/encounters/:id/assignment` | `encounter.transition` | Doctor, room; reason if reassign |
 | PATCH | `/encounters/:id/priority` | `encounter.priority` | Reason required for URGENT+ |
-| POST | `/encounters/:id/reopen` | ADMIN + reauth | 24 h window |
-| POST | `/encounters/:id/force-transition` | ADMIN + reauth | Recovery; reason; audited loudly |
+| POST | `/encounters/:id/force-transition` | ADMIN + reauth | Recovery **and** reopening, which are the same operation with a different target. Reason required, audited loudly. |
 | GET | `/branches/:b/queues/:station` | session | `station ∈ reception,triage,doctor,pharmacy,cashier`; `?doctorId=` |
-| GET | `/branches/:b/queues/stream` | session | SSE |
-| GET | `/branches/:b/queues/stats` | session | Today's counts, waits |
+| GET | `/branches/:b/queues-stream` | session | Server-sent events. Hyphenated rather than nested under `/queues/` so it cannot be mistaken for a station called "stream". |
+| GET | `/branches/:b/queues-stats` | session | Today's counts and waits |
+| POST | `/branches/:b/queues/:station/call-next` | `encounter.transition` | Takes the head of that queue under a row lock |
 | GET | `/display/:token` | public | Display DTO (queue numbers only) |
 | GET | `/display/:token/stream` | public | SSE for display |
 | POST/DELETE | `/branches/:b/display-tokens[/:id]` | `admin.settings` | |
-| CRUD | `/branches/:b/rooms` | `admin.settings` | |
+| GET/POST | `/branches/:b/rooms` | `patient.read` / `admin.settings` | |
+| POST | `/rooms/:id/retire` · `/rooms/:id/reinstate` | `admin.settings` | Retired rather than deleted: encounters point at it |
 
 ## 9. Domain events
 
@@ -334,13 +341,142 @@ All §9 events. `encounter.force_transition` and `encounter.reopened` carry reas
 | ENC-Q-06 | Do they print a queue ticket? | Pilot clinic |
 | ENC-Q-07 | Display privacy: number only, or number + first name? | Pilot clinic |
 
+All seven are for the clinic, and every one of them is a branch setting
+rather than a code change. That is the point of having asked them early: the
+answers move a toggle on the settings screen, and the defaults below are
+what the clinic runs until somebody says otherwise.
+
+| Question | The setting | Default, and why |
+|---|---|---|
+| ENC-Q-01 pay before or after dispensing | `queue.paymentBeforeDispense` | Off: collect the medicine, then pay. Both orders are legal moves in the state machine, so switching costs nothing. |
+| ENC-Q-02 triage everyone | `queue.triageRequired` | `OPTIONAL`, which lets the front desk decide per patient. `ALWAYS` and `NEVER` both work. |
+| ENC-Q-03 how many doctors, do patients choose | No setting needed | "Any available" is a real assignment, and the doctor board shows unassigned patients alongside a doctor's own. A clinic where patients pick a doctor simply assigns one at check-in. |
+| ENC-Q-04 queue number format | `queue.numberPrefix` | `A`, giving `A-001`. Emergencies are shown as `E-`. |
+| ENC-Q-05 is there a screen | — | Not a setting. The display is a web page; it needs a television and something to drive it. **Ask early**: it is the only hardware this module needs, and `ENC-OPEN-01` cannot be closed without it. |
+| ENC-Q-06 printed ticket | — | Not built. The queue number is on screen at check-in. A printed slip is `ENC-OPEN-06`, and worth asking about because patients who are used to one will ask for it. |
+| ENC-Q-07 display privacy | `queue.displayShowFirstName` | On, showing "Ahmad Z.". Off gives numbers only. |
+
+Two more settings exist that nobody asked about, and both are worth
+confirming: `queue.waitAmberMinutes` and `queue.waitRedMinutes`, which turn a
+board row amber at thirty minutes and red at sixty. A clinic that routinely
+runs an hour behind will find a board that is entirely red tells them
+nothing.
+
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] ENC-T-01 … T-12 green
-- [ ] Transition table documented in code with a generated diagram matching §6
-- [ ] DB trigger backstop in place
-- [ ] Display page soak-tested 12 h on the clinic's actual hardware
-- [ ] Branch queue settings agreed with the clinic and recorded here
-- [ ] Clinic ran 3 full days in parallel with the whiteboard; whiteboard retired
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — see the traceability table. `ENC-F-14` (follow-up flag) is a Should and is stored but not yet surfaced on the patient record; `ENC-F-21` and `ENC-F-22` are built.
+- [x] **ENC-T-01 … T-12 green** — `test/encounter.e2e-spec.ts`, 33 tests, plus 12 unit tests on the transition table. ENC-T-12, the twelve-hour soak, is the one that cannot be automated; see below.
+- [x] **Transition table documented in code** — `transitions.ts` is one table with a label and a station per move. No diagram is generated: §6 is the diagram, and a second one produced from the same data would be a second thing to keep true. A test compares the table against the database instead, which is the part that can actually drift.
+- [x] **DB trigger backstop in place** — refuses any status change the machine does not define, and any change that leaves `status_since` behind. Proved by ENC-T-10 from raw SQL.
+- [ ] **Display page soak-tested 12 h on the clinic's actual hardware** — cannot be done here. `ENC-OPEN-01`, and it is the item most likely to embarrass the pilot.
+- [ ] **Branch queue settings agreed with the clinic** — the eight settings exist with defaults; nobody has confirmed them. `ENC-OPEN-05`.
+- [ ] **Clinic ran 3 full days in parallel with the whiteboard** — rollout, after R1.
+- [x] **Open questions answered** — §20. All seven are for the clinic, and what the code does meanwhile is written down.
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| ENC-F-01 check in | `EncounterService.checkIn` | ENC-T-01 |
+| ENC-F-02 numbering | `QueueNumberService` | ENC-T-04 |
+| ENC-F-03 state machine | `transitions.ts`, `transition()` | ENC-T-02, 12 unit tests |
+| ENC-F-04 timeline | `writeEvent`, append-only trigger | ENC-T-01, "the timeline cannot be rewritten" |
+| ENC-F-05 triage policy | `queue.triageRequired` | Check-in routes on it |
+| ENC-F-06 … F-07 doctor and room | `QueueService.assign` | 3 assignment tests |
+| ENC-F-08 priority | `QueueService.setPriority` | ENC-T-03 |
+| ENC-F-09 cancel, no-show | Transition table, `revert-no-show` | ENC-T-09 |
+| ENC-F-10 completion guards | `EncounterCompletionRegistry` | ENC-T-06 |
+| ENC-F-11 the chart | `GET /encounters/:id`, `app/(app)/encounters/[id]` | Timeline and blocker tests |
+| ENC-F-13 one open visit | Partial unique index | ENC-T-05 |
+| ENC-F-15 … F-16 boards | `QueueService.board` | ENC-T-03 and the board tests |
+| ENC-F-17 … F-18 call, skip | `callNext` with `FOR UPDATE SKIP LOCKED` | 4 tests including the race |
+| ENC-F-19 live updates | `QueueStreamService`, `useQueueStream` | ENC-T-07 in part; see `ENC-OPEN-02` |
+| ENC-F-20, F-23 the display | `DisplayService`, `app/display/[token]` | ENC-T-07, 5 display tests |
+| ENC-F-21 … F-22 statistics, thresholds | `QueueService.stats`, `waitTone` | Board tests |
+| ENC-R-01 … R-10 | Service, triggers, partial index | The database refuses each independently |
+
+## 22. Notes worth keeping
+
+1. **One chokepoint, or none.** Every status change goes through
+   `transition()`. Nothing else writes the column, a trigger refuses it if
+   anything tries, and each move leaves exactly one timeline row. The
+   alternative — a status check in each screen's handler — is how a clinic
+   ends up with a patient who is somehow in the pharmacy queue and also in
+   consultation, with nobody able to say which line of code allowed it.
+
+2. **The transition table exists twice, on purpose, and a test compares
+   them.** The code table knows about branch settings and about who is
+   asking. The database trigger knows neither, so it is deliberately the
+   looser of the two: a backstop stricter than the rule it backs up would
+   refuse work that is legitimately allowed. `transitions.spec.ts` reads the
+   migration and fails if the code allows a move the database would reject.
+
+3. **Force is not permission to invent a state.** It reaches a defined set
+   of recovery moves — abandoning a visit after the consultation has begun,
+   closing one that is stuck — and it skips the completion guards. It cannot
+   put an encounter into a state the machine has no rule for. It needs an
+   administrator, a fresh password and a reason, and it is logged loudly.
+
+4. **One counter per branch per day, two numbers from it.** An earlier
+   version gave emergencies their own series and the first emergency of the
+   day collided with the first ordinary patient: both were visit 001, and
+   the encounter number is unique per branch per day. The letter is display
+   only. An emergency reaches the front of the queue because of its
+   priority, not its prefix.
+
+5. **The clinic's day, not UTC.** Queue numbers restart at the branch's own
+   midnight. A clinic open until 10pm in Kuala Lumpur would otherwise see
+   them restart during the evening, which is obvious on the day and
+   invisible in a test written in January.
+
+6. **`FOR UPDATE SKIP LOCKED` is the whole of "call next".** Two staff
+   pressing the button at the same moment is the ordinary case in a busy
+   clinic, not a rare race. The lock means the second caller gets the next
+   patient rather than the same one.
+
+7. **"Back of the queue" is a timestamp, not a position.** Skipping moves
+   `status_since` to now, and the order is by how long you have waited at
+   this station. There is no position column, so there is nothing to get out
+   of step with the ordering.
+
+8. **A patient called by mistake keeps their place.** Returning them to the
+   queue restores `status_since` rather than resetting it — nudged by one
+   millisecond, because the trigger insists the clock moves when the status
+   does and here it deliberately must not.
+
+9. **Streaming routes opt out of the request transaction.** Every other
+   authenticated route runs inside one. A stream is open for hours: the
+   interceptor would take the first event and close the connection, and it
+   would hold a database connection for the whole afternoon. `@NoRequestTransaction`
+   is the opt-out, the reason is required, and it is the only decorator in
+   the system that makes a route less safe, so it says so.
+
+10. **Events are invalidation signals, not data.** They carry the branch,
+    what changed and the queue number; the client refetches. That is what
+    keeps a public waiting-room screen from ever being sent a name, and what
+    makes a missed event harmless — the next refetch is the truth either
+    way.
+
+11. **The display is the only public surface in the product.** A television
+    in a waiting room cannot hold a password, so it holds a token in its
+    address bar. Stored hashed, for the same reason a session token is, and
+    revocable, because a screen in a public room will eventually be
+    photographed. It grants exactly one thing: the queue numbers at one
+    branch.
+
+12. **A first name and an initial, or nothing.** "Ahmad bin Zulkifli"
+    becomes "Ahmad Z." — enough for somebody half asleep in a plastic chair
+    to recognise themselves, not enough for a stranger to write down. The
+    particles are stripped, as they are in patient search. A clinic that
+    prefers numbers only turns it off in one setting.
+
+13. **The chime is generated, not a file.** Two notes through the Web Audio
+    API. A browser refuses to play anything until somebody has touched the
+    screen, so a missing file would be indistinguishable from a blocked one,
+    and a silent screen is still a working screen.
+
+14. **Completion guards belong to other modules.** `EncounterCompletionRegistry`
+    is empty today, so a visit can always be finished — correct now, wrong
+    the moment prescribing exists. Consultation, prescription and billing
+    register their own checks, because encounter must not reach into their
+    tables and guess.

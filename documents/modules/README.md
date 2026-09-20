@@ -184,8 +184,8 @@ The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — 
 | [Identity & Access](v0-01-identity-access.md) · [open items](v0-01-identity-access-end-item-OPEN.md) | IAM | 0 | ~20 h | Built; open items before go-live |
 | [Tenancy & Branch](v0-02-tenancy-branch.md) · [open items](v0-02-tenancy-branch-end-item-OPEN.md) | TEN | 0 | ~20 h | Built; open items before go-live |
 | [Audit Trail](v0-14-audit-trail.md) | AUD | 0 | ~15 h | Part-built by IAM |
-| [Patient Registry](v0-03-patient.md) | PAT | 1 | ~35 h | Not started |
-| [Encounter & Queue](v0-04-encounter-queue.md) | ENC | 1 | ~40 h | Not started |
+| [Patient Registry](v0-03-patient.md) · [open items](v0-03-patient-end-item-OPEN.md) | PAT | 1 | ~35 h | Built; open items before go-live |
+| [Encounter & Queue](v0-04-encounter-queue.md) · [open items](v0-04-encounter-queue-end-item-OPEN.md) | ENC | 1 | ~40 h | Built; open items before go-live |
 | [Triage](v0-05-triage.md) | TRI | 2 | ~10 h | Not started |
 | [Consultation / EMR](v0-06-consultation.md) | CON | 2 | ~45 h | Not started |
 | [Prescription](v0-07-prescription.md) | RX | 2 | ~20 h | Not started |

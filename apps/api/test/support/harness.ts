@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { TOTP, Secret } from 'otpauth';
@@ -70,6 +72,8 @@ export class Harness {
     // CI installs the DBA hardening script and sets this to `require`, so the
     // suite also proves the triggers do not get in the way of normal work.
     process.env['DB_GUARD_MODE'] ??= 'off';
+    // Uploads go to a scratch directory, never into the working tree.
+    process.env['STORAGE_ROOT'] ??= join(tmpdir(), `cliniccare-test-storage-${process.pid}`);
     for (const [key, value] of Object.entries(overrides)) process.env[key] = value;
   }
 
@@ -241,7 +245,10 @@ export class Harness {
     const client = new Client({ connectionString: url });
     await client.connect();
 
-    const guarded = ['audit_log', '"user"', 'user_branch_role'];
+    // Tables whose triggers refuse the deletes a cleanup has to do: the
+    // append-only audit trail, the last-administrator rule, and the rule
+    // that an allergy is never deleted (PAT-R-03).
+    const guarded = ['audit_log', '"user"', 'user_branch_role', 'patient_allergy'];
     let disabled = false;
     try {
       for (const table of guarded) await client.query(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
@@ -259,6 +266,16 @@ export class Harness {
           'password_reset_token',
           'trusted_device',
           'mfa_replay',
+          // Patient registry, children before the patient they hang off.
+          'patient_allergy',
+          'patient_condition',
+          'patient_consent',
+          'patient_contact',
+          'patient_document',
+          'patient_import_batch',
+          'patient_recent',
+          'patient',
+          'mrn_sequence',
           'user_branch_role',
           '"user"',
           'branch',
