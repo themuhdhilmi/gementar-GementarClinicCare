@@ -500,14 +500,35 @@ genuinely does hold without it.
 ## 21. Definition of done
 
 - [x] All Must requirements implemented (API); Should items IAM-F-10, F-11, F-18 — F-10 and F-11 done, F-18 deferred with HR
-- [x] IAM-T-01 … T-11 green against a real PostgreSQL database with row-level security in force (`npm run test:e2e`, 41 end-to-end tests; 57 unit tests)
+- [x] IAM-T-01 … T-11 green against a real PostgreSQL database with row-level security in force (`npm run test:e2e`, 42 end-to-end tests; 64 unit tests). Each one exists as a test named after its requirement id.
 - [x] `@RequirePermission` rule enforced — `npm run lint:routes`, plus a runtime refusal for undeclared mutating routes
 - [x] Argon2id cost measured and recorded (below); **re-measure on the production VPS before go-live**
 - [x] Break-glass audit recorded and exposed — `GET /api/v1/audit/summary` and `/audit/events`
 - [x] Threat-model pass written up — [`documents/security/iam-threat-model.md`](../security/iam-threat-model.md)
 - [x] Web screens (§11) built — sign-in, MFA, forced enrolment, set and reset password, my account, staff administration, audit dashboard
 - [x] Tenant isolation installed by migrations, and asserted at boot (`DB_GUARD_MODE=require` in staging and production)
-- [ ] Open questions answered and recorded — Q-01, Q-02 and Q-05 answered in §20; **Q-01's role split is decided but not yet built**; Q-03 needs a sending domain from you; Q-04 waits for a second tenant
+- [x] Open questions answered and recorded — Q-01, Q-02 and Q-05 answered in §20 and built; Q-03's transport is built and needs a sending domain from you; Q-04 waits for a second tenant
+- [ ] **IAM-N-01 measured.** The auth guard's p95 has never been timed, and neither has the "under 1 s to workspace" target in §11.
+- [ ] **§16 reporting: active users by role and branch.** The other two outputs, failed logins and break-glass count, are on the audit dashboard.
+- [ ] **Argon2id re-measured on the production host.** The recorded numbers are from a development machine.
+- [ ] **MFA enrolment sharp edges.** Reopening the enrolment screen rotates the secret, which invalidates a QR code already scanned; a rejected code during enrolment is not audited, unlike one at sign-in.
+
+### Traceability, checked mechanically on 2026-09-21
+
+Not a claim that the module is finished, only that nothing in the specification
+is silently absent:
+
+| | Count | Verified by |
+|---|---|---|
+| Functional requirements cited in code | 26 of 26 | grep for each `IAM-F-nn` |
+| Invariants cited | 9 of 9 | grep for each `IAM-R-nn` |
+| Non-functional requirements cited | 6 of 6 | grep for each `IAM-N-nn` |
+| Acceptance tests with a matching named test | 11 of 11 | test-name match on `IAM-T-nn` |
+| Routes in §8 implemented | 24 of 24 | controller decorators compared to the table |
+| Domain events in §9 published | 12 of 12 | event names found at `publish()` sites |
+| Those events audited | 12 of 12 | each maps to an `AuditAction` that is recorded |
+| Validation rules in §12 enforced | 13 of 13 | each rule located in code |
+| Permission catalogue matches the code | exact | 6 roles compared cell by cell |
 
 ### Argon2id cost measurement (IAM-N-02)
 

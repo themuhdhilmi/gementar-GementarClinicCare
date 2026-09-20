@@ -112,9 +112,9 @@ describe('IAM — administration and authorisation (against real PostgreSQL)', (
     await signIn(harness, victim.email);
   });
 
-  it('IAM-T-07: FRONTDESK at a branch cannot write clinical data there', async () => {
+  it('IAM-T-07: RECEPTION at a branch cannot write clinical data there', async () => {
     const frontdesk = await harness.addUser(fx, {
-      name: 'Front Desk B',
+      name: 'Reception B',
       roles: [{ branchId: fx.branchBId, role: Role.RECEPTION }],
     });
     const { cookie } = await signIn(harness, frontdesk.email);

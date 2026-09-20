@@ -110,6 +110,7 @@ export class SessionService {
     });
   }
 
+  /** IAM-F-03: idle timeout, measured from the last request this session made. */
   isIdleExpired(lastSeenAt: Date, now = this.clock.now()): boolean {
     return lastSeenAt.getTime() + this.config.session.idleMinutes * 60_000 <= now.getTime();
   }
@@ -151,7 +152,12 @@ export class SessionService {
     });
   }
 
-  /** Idempotent: revoking an already-revoked session is a no-op, not an error. */
+  /**
+   * IAM-F-04: logout destroys the session here, not in the browser, so a
+   * copied cookie stops working too.
+   *
+   * Idempotent: revoking an already-revoked session is a no-op, not an error.
+   */
   async revoke(tx: Tx, sessionId: string, reason: SessionRevokeReason): Promise<number> {
     const result = await tx.session.updateMany({
       where: { id: sessionId, revokedAt: null },

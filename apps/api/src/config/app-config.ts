@@ -42,8 +42,9 @@ const schema = z.object({
 
   COOKIE_SECURE: boolish.default(false),
   COOKIE_DOMAIN: z.string().optional(),
-  // Shared clinic workstations (IAM-Q-02): an hour of inactivity closes the
-  // session, and it cannot outlive the shift that started it.
+  // IAM-F-03, sized for shared clinic workstations (IAM-Q-02): an hour of
+  // inactivity closes the session, and it cannot outlive the shift that
+  // started it.
   SESSION_IDLE_MINUTES: z.coerce.number().int().positive().default(60),
   SESSION_ABSOLUTE_HOURS: z.coerce.number().int().positive().default(12),
   REAUTH_MINUTES: z.coerce.number().int().positive().default(5),

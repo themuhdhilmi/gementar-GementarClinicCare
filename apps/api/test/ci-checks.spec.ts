@@ -13,7 +13,7 @@ ${body}
 `;
 
 describe('IAM-T-08: CI refuses a mutating route with no permission declaration', () => {
-  it('flags a POST with no decoration', () => {
+  it('IAM-T-08: flags a POST with no decoration', () => {
     const findings = checkSource(
       'things.controller.ts',
       CONTROLLER(`

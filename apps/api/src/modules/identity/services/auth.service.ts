@@ -563,7 +563,8 @@ export class AuthService {
     const tx = this.db.tx();
     const assignments = await this.users.rolesFor(tx, ctx.userId);
     if (!assignments.some((a) => a.branchId === branchId)) {
-      // TEN-R-06. The client is never trusted to say where it may work.
+      // IAM-F-21 and TEN-R-06: switching branch is a server-side action, and
+      // the client is never trusted to say where it may work.
       throw new ForbiddenError('You do not have a role at that branch.');
     }
     const branch = await this.branches.getOrThrow(tx, branchId);

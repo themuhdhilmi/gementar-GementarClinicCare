@@ -380,6 +380,7 @@ export class UserService {
     const tx = this.db.tx();
     await this.tenants.lockForUpdate(tx, ctx.tenantId);
 
+    // IAM-F-16: not even the last administrator can disable themselves.
     if (userId === ctx.userId) {
       throw new InvariantViolationError(
         'cannot_disable_self',
@@ -498,6 +499,7 @@ export class UserService {
     return after;
   }
 
+  /** IAM-F-25: an administrator can sign anyone out of everywhere at once. */
   async revokeAllSessions(ctx: TenantContext, userId: string): Promise<number> {
     const tx = this.db.tx();
     await this.getOrThrow(tx, userId);
