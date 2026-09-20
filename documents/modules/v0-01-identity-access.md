@@ -272,7 +272,7 @@ Every event in §9 is audited with actor, target user, IP, user agent. `auth.log
 
 | ID | Requirement |
 |---|---|
-| IAM-N-01 | Auth guard adds ≤ 5 ms p95 per request (session lookup by token hash, indexed). **Measured: 11 ms p50, 17.6 ms p95 against a database on the LAN.** See below. |
+| IAM-N-01 | Auth guard adds ≤ 5 ms p95 per request (session lookup by token hash, indexed). **Measured: 11 ms p50, 17.6 ms p95 against a database on the LAN — eleven round trips, of which 8 ms is network this host has and production will not.** See below. |
 | IAM-N-02 | Password hash cost tuned to 200–300 ms on production hardware; re-tune yearly. **The process now times one hash at startup and says whether the host is inside that band**, so every deployment reports its own number. |
 | IAM-N-03 | Expired sessions purged nightly; table never exceeds ~50 rows per active user. |
 | IAM-N-04 | All auth endpoints served only over TLS; HSTS 1 year with preload. |
@@ -292,23 +292,40 @@ are from a development machine with the database on the same LAN.
 | **Guard overhead** | **11.0 ms** | **17.6 ms** |
 | Sign-in, then `/auth/me` | 86 ms | 127 ms |
 
-**The 5 ms budget is not met here, and the reason is arithmetic.** A round trip
-to this database costs 0.73 ms, and the guard needs six of them: begin, open
-the authentication bypass, read the session, switch to the tenant, read the
-roles, commit. That is 4.4 ms of pure network before any work happens. The
-remaining ~6 ms is the ORM and the guard chain.
+**The 5 ms budget is not met here, and the reason is arithmetic.** An
+authenticated request makes **eleven round trips**. That is not inferred from
+the timings above; `test/roundtrips.e2e-spec.ts` counts the statements from the
+driver's own query log, and fails if one is added:
+
+| | Round trips |
+|---|---|
+| The guard's lookup: begin, open the authentication bypass, read the session, read its user, read that user's tenant, switch to the tenant, read the roles, commit | 8 |
+| The request's own transaction: begin, set the scope, commit | 3 |
+
+At 0.73 ms each that is 8.0 ms of pure network before any work happens, which
+accounts for nearly all of the 11 ms. Only about 3 ms is the ORM and the guard
+chain.
+
+Three of the eight are the ORM splitting one nested read — session, then its
+user, then that user's tenant — into separate statements. A hand-written join
+would make it one. That is `IAM-OPEN-23`, and it is deliberately not done:
+against a local database it would save about 0.2 ms, which is not worth
+hand-writing SQL in the most security-sensitive query in the system.
 
 It used to be worse. The guard ran two separate transactions, which cost an
 extra begin and commit on every request; merging them into one
 (`DbService.withAuthLookup`) took p95 from 35.6 ms to 17.6 ms.
 
 **What to expect in production.** The planned topology puts PostgreSQL on the
-same VPS as the API, where a round trip is nearer 0.05 ms than 0.73 ms. That
-removes about 4 ms, leaving roughly 7 ms p50. Closer to the budget, probably
-still above it.
+same VPS as the API, where a round trip is nearer 0.05 ms than 0.73 ms. Eleven
+of those cost 0.6 ms rather than 8.0 ms, leaving roughly **3.5 ms p50** — inside
+the budget. The measurement here is dominated by a network that production will
+not have, which is why `IAM-OPEN-01` asks for it to be redone on the real host
+before anyone concludes the requirement fails.
 
-**Recommendation.** Treat 5 ms as the aspiration and ~10 ms as the honest
-figure for this design, or revisit the design if it ever matters. It has not
+**Recommendation.** Do not act on this number. Re-measure on the production
+host, where the arithmetic says the budget is met; only if it is missed there
+is the design worth revisiting. It has not
 been made faster by caching sessions in memory on purpose: "disable a member of
 staff and they are signed out everywhere, in the same moment" (IAM-F-13) is
 worth more to a clinic than five milliseconds. Re-measure on the production
@@ -554,7 +571,7 @@ genuinely does hold without it.
 - [x] Web screens (§11) built — sign-in, MFA, forced enrolment, set and reset password, my account, staff administration, audit dashboard
 - [x] Tenant isolation installed by migrations, and asserted at boot (`DB_GUARD_MODE=require` in staging and production)
 - [x] Open questions answered and recorded — Q-01, Q-02 and Q-05 answered in §20 and built; Q-03's transport is built and needs a sending domain from you; Q-04 waits for a second tenant
-- [x] **IAM-N-01 measured** — `test/auth-latency.e2e-spec.ts`, numbers and reasoning in §13. The guard costs 11 ms p50 here against a LAN database, not the 5 ms budgeted; the two-transaction lookup was merged into one, which halved the p95. Sign-in to workspace is 127 ms p95, inside the one second §11 asks for.
+- [x] **IAM-N-01 measured** — `test/auth-latency.e2e-spec.ts`, numbers and reasoning in §13. The guard costs 11 ms p50 here against a LAN database, not the 5 ms budgeted; the two-transaction lookup was merged into one, which halved the p95. `test/roundtrips.e2e-spec.ts` then counted where the time goes: eleven round trips, so 8 ms of the 11 is a network production will not have, and the same design should come in near 3.5 ms there. Sign-in to workspace is 127 ms p95, inside the one second §11 asks for.
 - [x] **§16 reporting complete** — active users by role and branch is `GET /users/statistics`, shown on Admin → Staff.
 - [x] **Argon2id cost reported by the host itself** — the process times one hash at startup and warns if it falls outside 200–300 ms, so this stops being a manual step that is forgotten. On the production VPS, read the first log line and set `ARGON2_ITERATIONS` from it.
 - [x] **MFA enrolment fixed** — re-opening the screen keeps the secret already scanned, and a rejected code is audited at enrolment as well as at sign-in.
