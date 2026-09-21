@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
-import Image from 'next/image';
-import { ApiError, api } from '@/lib/api';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Card, Field, Input } from './ui';
+import { useCallback, useState } from "react";
+import Image from "next/image";
+import { ApiError, api } from "@/lib/api";
+import { useAsyncEffect } from "@/lib/use-async";
+import { Alert, Button, Card, Field, Input } from "./ui";
 
 type Offer = { secret: string; otpauthUri: string; qrDataUrl: string };
 
@@ -20,7 +20,7 @@ export function MfaEnrolment({
   onDone: () => void;
 }) {
   const [offer, setOffer] = useState<Offer | null>(null);
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,9 +29,13 @@ export function MfaEnrolment({
   const start = useCallback(async () => {
     setError(null);
     try {
-      setOffer(await api<Offer>('/auth/me/mfa/enrol', { method: 'POST' }));
+      setOffer(await api<Offer>("/auth/me/mfa/enrol", { method: "POST" }));
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not start enrolment.');
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not start enrolment.",
+      );
     }
   }, []);
 
@@ -42,14 +46,21 @@ export function MfaEnrolment({
     setBusy(true);
     setError(null);
     try {
-      const result = await api<{ recoveryCodes: string[] }>('/auth/me/mfa/confirm', {
-        method: 'POST',
-        body: { code },
-      });
+      const result = await api<{ recoveryCodes: string[] }>(
+        "/auth/me/mfa/confirm",
+        {
+          method: "POST",
+          body: { code },
+        },
+      );
       setRecoveryCodes(result.recoveryCodes);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not confirm that code.');
-      setCode('');
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not confirm that code.",
+      );
+      setCode("");
     } finally {
       setBusy(false);
     }
@@ -57,14 +68,21 @@ export function MfaEnrolment({
 
   if (recoveryCodes) {
     return (
-      <Card title="Save your recovery codes" description="This is the only time they are shown.">
+      <Card
+        title="Save your recovery codes"
+        description="This is the only time they are shown."
+      >
         <Alert tone="warning">
-          Each code signs you in once if you lose your phone. Print them, or put them somewhere only
-          you can reach. Without them, an administrator has to reset your second factor in person.
+          Each code signs you in once if you lose your phone. Print them, or put
+          them somewhere only you can reach. Without them, an administrator has
+          to reset your second factor in person.
         </Alert>
         <ul className="my-4 grid grid-cols-2 gap-2 font-mono text-sm">
           {recoveryCodes.map((recoveryCode) => (
-            <li key={recoveryCode} className="rounded-md bg-surface-muted px-3 py-2 text-center">
+            <li
+              key={recoveryCode}
+              className="rounded-md bg-surface-muted px-3 py-2 text-center"
+            >
               {recoveryCode}
             </li>
           ))}
@@ -72,18 +90,22 @@ export function MfaEnrolment({
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
-            onClick={() => void navigator.clipboard.writeText(recoveryCodes.join('\n'))}
+            onClick={() =>
+              void navigator.clipboard.writeText(recoveryCodes.join("\n"))
+            }
           >
             Copy all
           </Button>
           <Button
             variant="secondary"
             onClick={() => {
-              const blob = new Blob([recoveryCodes.join('\n')], { type: 'text/plain' });
+              const blob = new Blob([recoveryCodes.join("\n")], {
+                type: "text/plain",
+              });
               const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
+              const link = document.createElement("a");
               link.href = url;
-              link.download = 'cliniccare-recovery-codes.txt';
+              link.download = "cliniccare-recovery-codes.txt";
               link.click();
               URL.revokeObjectURL(url);
             }}
@@ -98,11 +120,15 @@ export function MfaEnrolment({
 
   return (
     <Card
-      title={forced ? 'Set up two-step verification' : 'Turn on two-step verification'}
+      title={
+        forced
+          ? "Set up two-step verification"
+          : "Turn on two-step verification"
+      }
       description={
         forced
-          ? 'Administrators can read every clinical record, so a second factor is required before you can continue.'
-          : 'Adds a code from your phone to your password.'
+          ? "Administrators can read every clinical record, so a second factor is required before you can continue."
+          : "Adds a code from your phone to your password."
       }
     >
       {error && <Alert>{error}</Alert>}
@@ -112,7 +138,9 @@ export function MfaEnrolment({
       ) : (
         <div className="flex flex-col gap-4">
           <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
-            <li>Open an authenticator app such as Google Authenticator or Aegis.</li>
+            <li>
+              Open an authenticator app such as Google Authenticator or Aegis.
+            </li>
             <li>Scan this code.</li>
             <li>Type the 6 digits it shows.</li>
           </ol>
@@ -132,7 +160,7 @@ export function MfaEnrolment({
             className="text-sm text-muted underline underline-offset-4"
             onClick={() => setShowKey(!showKey)}
           >
-            {showKey ? 'Hide the setup key' : 'Cannot scan? Show the setup key'}
+            {showKey ? "Hide the setup key" : "Cannot scan? Show the setup key"}
           </button>
           {showKey && (
             <p className="rounded-md bg-surface-muted px-3 py-2 text-center font-mono text-sm break-all">
@@ -149,7 +177,9 @@ export function MfaEnrolment({
                 autoFocus
                 value={code}
                 className="text-center font-mono text-2xl tracking-[0.5em]"
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                }
               />
             </Field>
             <Button type="submit" loading={busy} disabled={code.length !== 6}>

@@ -1,19 +1,27 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
-import { ApiError, api, type SessionRow } from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { useReauth } from '@/components/reauth';
-import { MfaEnrolment } from '@/components/mfa-enrolment';
-import { PasswordField } from '@/components/password-field';
-import { Alert, Button, Card, Chip, EmptyState, timeAgo } from '@/components/ui';
+import { useCallback, useState } from "react";
+import { ApiError, api, type SessionRow } from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import { useReauth } from "@/components/reauth";
+import { MfaEnrolment } from "@/components/mfa-enrolment";
+import { PasswordField } from "@/components/password-field";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  PageHeader,
+  timeAgo,
+} from "@/components/ui";
 
 export default function AccountPage() {
   const { me, refresh } = useSession();
   const { guard, dialog } = useReauth();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +29,7 @@ export default function AccountPage() {
   const [busy, setBusy] = useState(false);
 
   const loadSessions = useCallback(async () => {
-    const result = await api<{ items: SessionRow[] }>('/auth/me/sessions');
+    const result = await api<{ items: SessionRow[] }>("/auth/me/sessions");
     setSessions(result.items);
   }, []);
 
@@ -37,7 +45,9 @@ export default function AccountPage() {
       await guard(action);
       if (message) setNotice(message);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Something went wrong.",
+      );
     } finally {
       setBusy(false);
     }
@@ -48,17 +58,17 @@ export default function AccountPage() {
     setPasswordMessage(null);
     await run(async () => {
       try {
-        await api('/auth/me/password', { method: 'PUT', body: { password } });
-        setPassword('');
+        await api("/auth/me/password", { method: "PUT", body: { password } });
+        setPassword("");
         await loadSessions();
       } catch (caught) {
-        if (caught instanceof ApiError && caught.code === 'password_rejected') {
+        if (caught instanceof ApiError && caught.code === "password_rejected") {
           setPasswordMessage(caught.message);
           return;
         }
         throw caught;
       }
-    }, 'Password changed. Your other devices have been signed out.');
+    }, "Password changed. Your other devices have been signed out.");
   }
 
   if (enrolling) {
@@ -77,12 +87,15 @@ export default function AccountPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-semibold">My account</h1>
-        <p className="text-sm text-muted">
-          {me.user.name} · {me.user.email}
-        </p>
-      </div>
+      <PageHeader
+        title="My account"
+        description="Your sign-in, the devices it is signed in on, and the second factor that protects it."
+        meta={
+          <span className="text-muted">
+            {me.user.name} · {me.user.email}
+          </span>
+        }
+      />
 
       {notice && <Alert tone="success">{notice}</Alert>}
       {error && <Alert>{error}</Alert>}
@@ -99,12 +112,13 @@ export default function AccountPage() {
               <li key={session.id} className="flex items-center gap-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
-                    {describeDevice(session.userAgent)}{' '}
+                    {describeDevice(session.userAgent)}{" "}
                     {session.current && <Chip tone="ACTIVE">this device</Chip>}
                   </p>
                   <p className="text-xs text-muted">
-                    {session.ip ?? 'unknown address'} · last used {timeAgo(session.lastSeenAt)} ·
-                    signed in {timeAgo(session.createdAt)}
+                    {session.ip ?? "unknown address"} · last used{" "}
+                    {timeAgo(session.lastSeenAt)} · signed in{" "}
+                    {timeAgo(session.createdAt)}
                   </p>
                 </div>
                 {!session.current && (
@@ -113,9 +127,11 @@ export default function AccountPage() {
                     size="sm"
                     onClick={() =>
                       void run(async () => {
-                        await api(`/auth/me/sessions/${session.id}`, { method: 'DELETE' });
+                        await api(`/auth/me/sessions/${session.id}`, {
+                          method: "DELETE",
+                        });
                         await loadSessions();
-                      }, 'That device has been signed out.')
+                      }, "That device has been signed out.")
                     }
                   >
                     Sign out
@@ -131,8 +147,8 @@ export default function AccountPage() {
         title="Two-step verification"
         description={
           me.mfa.required
-            ? 'Required for your role. It cannot be switched off.'
-            : 'A code from your phone, on top of your password.'
+            ? "Required for your role. It cannot be switched off."
+            : "A code from your phone, on top of your password."
         }
       >
         {me.mfa.enabled ? (
@@ -141,7 +157,7 @@ export default function AccountPage() {
               <Chip tone="ACTIVE">On</Chip>
               <p className="mt-1 text-sm text-muted">
                 {me.mfa.recoveryCodesRemaining} recovery code
-                {me.mfa.recoveryCodesRemaining === 1 ? '' : 's'} left.
+                {me.mfa.recoveryCodesRemaining === 1 ? "" : "s"} left.
               </p>
             </div>
             {!me.mfa.required && (
@@ -150,9 +166,9 @@ export default function AccountPage() {
                 loading={busy}
                 onClick={() =>
                   void run(async () => {
-                    await api('/auth/me/mfa', { method: 'DELETE' });
+                    await api("/auth/me/mfa", { method: "DELETE" });
                     await refresh();
-                  }, 'Two-step verification is off.')
+                  }, "Two-step verification is off.")
                 }
               >
                 Turn off
@@ -168,7 +184,10 @@ export default function AccountPage() {
       </Card>
 
       <Card title="Change password" description="Signs out every other device.">
-        <form onSubmit={changePassword} className="flex max-w-md flex-col gap-4">
+        <form
+          onSubmit={changePassword}
+          className="flex max-w-md flex-col gap-4"
+        >
           <PasswordField
             value={password}
             onChange={setPassword}
@@ -187,19 +206,26 @@ export default function AccountPage() {
 }
 
 function describeDevice(userAgent: string | null): string {
-  if (!userAgent) return 'Unknown device';
-  const browser =
-    /Edg\//.test(userAgent) ? 'Edge'
-    : /Chrome\//.test(userAgent) ? 'Chrome'
-    : /Safari\//.test(userAgent) ? 'Safari'
-    : /Firefox\//.test(userAgent) ? 'Firefox'
-    : 'Browser';
-  const platform =
-    /Windows/.test(userAgent) ? 'Windows'
-    : /Macintosh/.test(userAgent) ? 'Mac'
-    : /Android/.test(userAgent) ? 'Android'
-    : /iPhone|iPad/.test(userAgent) ? 'iOS'
-    : /Linux/.test(userAgent) ? 'Linux'
-    : 'device';
+  if (!userAgent) return "Unknown device";
+  const browser = /Edg\//.test(userAgent)
+    ? "Edge"
+    : /Chrome\//.test(userAgent)
+      ? "Chrome"
+      : /Safari\//.test(userAgent)
+        ? "Safari"
+        : /Firefox\//.test(userAgent)
+          ? "Firefox"
+          : "Browser";
+  const platform = /Windows/.test(userAgent)
+    ? "Windows"
+    : /Macintosh/.test(userAgent)
+      ? "Mac"
+      : /Android/.test(userAgent)
+        ? "Android"
+        : /iPhone|iPad/.test(userAgent)
+          ? "iOS"
+          : /Linux/.test(userAgent)
+            ? "Linux"
+            : "device";
   return `${browser} on ${platform}`;
 }

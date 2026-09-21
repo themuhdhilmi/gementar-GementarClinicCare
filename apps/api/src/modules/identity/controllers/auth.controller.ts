@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuditAction } from '../../audit/audit.actions.js';
-import { Audited, NotAudited } from '../../audit/audit.decorators.js';
+import { Audited } from '../../audit/audit.decorators.js';
 import {
   AllowDuringMfaEnrolment,
   AllowPreMfa,

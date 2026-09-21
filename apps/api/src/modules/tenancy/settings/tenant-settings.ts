@@ -85,6 +85,13 @@ const queue = z
       .boolean()
       .default(false)
       .describe('Patients pay first and collect medicine afterwards, rather than the other way round.'),
+    combinedCounter: z
+      .boolean()
+      .default(false)
+      .describe(
+        'One counter hands over medicine and takes the money. The board shows a single queue ' +
+          'instead of a pharmacy line and a cashier line, which is how most small clinics run.',
+      ),
     requireDispenseBeforeComplete: z
       .boolean()
       .default(true)

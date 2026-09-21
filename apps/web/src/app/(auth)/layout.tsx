@@ -1,5 +1,5 @@
-import { BrandPanel } from '@/components/brand-panel';
-import { Logo } from '@/components/logo';
+import { BrandPanel } from "@/components/brand-panel";
+import { Logo } from "@/components/logo";
 
 /**
  * Split sign-in layout: the form on the left, where the eye and the tab order
@@ -7,7 +7,11 @@ import { Logo } from '@/components/logo';
  * rendered at all, so a phone or a small reception monitor gets the form and
  * nothing competing with it.
  */
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+export default function AuthLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const environment = process.env.NEXT_PUBLIC_ENVIRONMENT;
 
   return (
@@ -32,7 +36,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <footer className="px-6 pb-8 sm:px-10">
           <div className="flex flex-col gap-1 border-t border-line pt-5 text-xs text-muted sm:flex-row sm:items-center sm:gap-6">
             <p>Trouble signing in? Ask your clinic administrator.</p>
-            <p className="sm:ml-auto">Accounts are personal and are never shared.</p>
+            <p className="sm:ml-auto">
+              Accounts are personal and are never shared.
+            </p>
           </div>
         </footer>
       </div>

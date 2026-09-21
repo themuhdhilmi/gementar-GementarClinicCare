@@ -1,14 +1,18 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { EmptyState } from "@/components/ui";
+import { DataTable } from "@/components/data-table";
 
 /**
  * Every report is a table, and they all look the same on purpose.
  *
  * A report page whose columns move around between reports is one the
- * owner has to re-learn each time. Sticky header, right-aligned numbers,
- * nothing clever.
+ * owner has to re-learn each time.
+ *
+ * This is a thin adapter over `DataTable` rather than a second table.
+ * Two tables in one application drift — one of them gets the sticky
+ * header, the other gets the tabular figures — and then the reports
+ * look like a different product from the rest of the screens.
  */
 export function ReportTable<T>({
   rows,
@@ -24,37 +28,20 @@ export function ReportTable<T>({
   }>;
   empty?: string;
 }) {
-  if (rows.length === 0) return <EmptyState title={empty} />;
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-surface">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 border-b border-line bg-surface text-left text-xs uppercase tracking-wide text-muted">
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                className={`px-4 py-2.5 font-medium ${column.numeric ? "text-right" : ""}`}
-              >
-                {column.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {columns.map((column) => (
-                <td
-                  key={column.key}
-                  className={`px-4 py-2.5 ${column.numeric ? "text-right tabular-nums" : ""}`}
-                >
-                  {column.render(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      rows={rows}
+      columns={columns.map((column) => ({
+        key: column.key,
+        header: column.label,
+        numeric: column.numeric,
+        cell: (row: T) => column.render(row),
+      }))}
+      // A report row is a sum, not a record: there is nothing to open,
+      // and the rows have no identity beyond their position.
+      rowKey={(_row, index) => String(index)}
+      empty={empty}
+      emptyHint="Nothing was stored for these dates at this branch."
+    />
   );
 }

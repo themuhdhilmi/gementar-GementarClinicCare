@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   ApiError,
   PROCEDURE_CATEGORY_LABEL,
@@ -10,10 +10,22 @@ import {
   type EncounterProcedure,
   type Laterality,
   type ProcedureQueueRow,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Card, EmptyState, Field, Input, Select, TextField, timeAgo } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  Select,
+  TextField,
+  timeAgo,
+} from "@/components/ui";
 
 /**
  * The nurse's board (PRC-F-12, PRC §11).
@@ -54,19 +66,22 @@ export default function ProceduresPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Procedures</h1>
-          <p className="text-sm text-muted">
+      <PageHeader
+        title="Procedures"
+        description="Everything a doctor has ordered and nobody has done yet. Recording one takes the consumables off the shelf at the same time."
+        meta={
+          <span className="text-muted">
             {waiting === 0
-              ? 'Nobody is waiting.'
-              : `${waiting} ${waiting === 1 ? 'procedure' : 'procedures'} waiting, for ${rows.length} ${rows.length === 1 ? 'patient' : 'patients'}.`}
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => void refresh()}>
-          Refresh
-        </Button>
-      </header>
+              ? "Nobody is waiting."
+              : `${waiting} ${waiting === 1 ? "procedure" : "procedures"} for ${rows.length} ${rows.length === 1 ? "patient" : "patients"}.`}
+          </span>
+        }
+        actions={
+          <Button variant="secondary" onClick={() => void refresh()}>
+            Refresh
+          </Button>
+        }
+      />
 
       {error && <Alert tone="danger">{error}</Alert>}
 
@@ -89,29 +104,44 @@ export default function ProceduresPage() {
           {rows.map((row) => (
             <li key={row.encounterId}>
               <Card
-                title={row.patient?.name ?? 'Patient'}
-                description={`${row.queueNo ?? ''} ${row.patient?.mrn ?? ''}`.trim()}
+                title={row.patient?.name ?? "Patient"}
+                description={`${row.queueNo ?? ""} ${row.patient?.mrn ?? ""}`.trim()}
                 actions={
                   <Link
                     href={`/encounters/${row.encounterId}`}
-                    className="text-sm text-primary underline"
+                    className="text-sm text-muted underline underline-offset-2 hover:text-foreground"
                   >
                     The visit
                   </Link>
                 }
               >
-                <ul className="flex flex-col gap-2">
+                <ul className="flex flex-col divide-y divide-line">
                   {row.items.map((item) => (
-                    <li key={item.id} className="flex items-center justify-between gap-3">
-                      <span className="text-sm">
+                    <li
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                    >
+                      <span className="min-w-0 text-sm">
                         <span className="font-medium">{item.name}</span>
-                        <span className="block text-xs text-muted">
-                          {PROCEDURE_CATEGORY_LABEL[item.category]} · ordered {timeAgo(item.orderedAt)}
-                          {item.requiresConsent && ' · consent needed'}
-                          {item.requiresDoctor && ' · doctor only'}
+                        <span className="mt-0.5 block text-xs text-muted">
+                          {PROCEDURE_CATEGORY_LABEL[item.category]} · ordered{" "}
+                          {timeAgo(item.orderedAt)}
                         </span>
+                        {(item.requiresConsent || item.requiresDoctor) && (
+                          <span className="mt-1 flex gap-1.5">
+                            {item.requiresConsent && (
+                              <Chip tone="warning">Consent needed</Chip>
+                            )}
+                            {item.requiresDoctor && (
+                              <Chip tone="info">Doctor only</Chip>
+                            )}
+                          </span>
+                        )}
                       </span>
-                      <Button size="sm" onClick={() => void openOne(row.encounterId, item.id)}>
+                      <Button
+                        size="sm"
+                        onClick={() => void openOne(row.encounterId, item.id)}
+                      >
                         Do it
                       </Button>
                     </li>
@@ -146,22 +176,26 @@ function PerformForm({
 }) {
   const [quantities, setQuantities] = useState<Record<string, number>>(
     Object.fromEntries(
-      item.planned.filter((line) => !line.optional).map((line) => [line.productId, line.quantity]),
+      item.planned
+        .filter((line) => !line.optional)
+        .map((line) => [line.productId, line.quantity]),
     ),
   );
-  const [site, setSite] = useState('');
-  const [laterality, setLaterality] = useState<Laterality>('NA');
+  const [site, setSite] = useState("");
+  const [laterality, setLaterality] = useState<Laterality>("NA");
   const [consentGiven, setConsentGiven] = useState(false);
-  const [consentBy, setConsentBy] = useState('');
-  const [notes, setNotes] = useState('');
-  const [complications, setComplications] = useState('');
-  const [doseNumber, setDoseNumber] = useState('');
+  const [consentBy, setConsentBy] = useState("");
+  const [notes, setNotes] = useState("");
+  const [complications, setComplications] = useState("");
+  const [doseNumber, setDoseNumber] = useState("");
   const [allowShortfall, setAllowShortfall] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const short = useMemo(
     () =>
-      item.planned.filter((line) => (quantities[line.productId] ?? 0) > line.onHand),
+      item.planned.filter(
+        (line) => (quantities[line.productId] ?? 0) > line.onHand,
+      ),
     [item.planned, quantities],
   );
 
@@ -186,20 +220,26 @@ function PerformForm({
         <section>
           <h3 className="text-sm font-semibold">What is used</h3>
           {item.planned.length === 0 ? (
-            <p className="mt-1 text-sm text-muted">Nothing is deducted for this one.</p>
+            <p className="mt-1 text-sm text-muted">
+              Nothing is deducted for this one.
+            </p>
           ) : (
             <ul className="mt-2 flex flex-col gap-2">
               {item.planned.map((line) => {
                 const value = quantities[line.productId] ?? 0;
                 const tooMany = value > line.onHand;
                 return (
-                  <li key={line.productId} className="flex items-center justify-between gap-3">
+                  <li
+                    key={line.productId}
+                    className="flex items-center justify-between gap-3"
+                  >
                     <span className="text-sm">
-                      {line.product?.name ?? 'Item'}
+                      {line.product?.name ?? "Item"}
                       <span className="block text-xs text-muted">
-                        {line.onHand} {line.product?.dispenseUnit ?? ''} on the shelf
-                        {line.optional && ' · optional'}
-                        {line.product?.isColdChain && ' · cold chain'}
+                        {line.onHand} {line.product?.dispenseUnit ?? ""} on the
+                        shelf
+                        {line.optional && " · optional"}
+                        {line.product?.isColdChain && " · cold chain"}
                       </span>
                     </span>
                     <input
@@ -207,11 +247,11 @@ function PerformForm({
                       min="0"
                       step="0.5"
                       value={value}
-                      aria-label={`Quantity of ${line.product?.name ?? 'item'}`}
+                      aria-label={`Quantity of ${line.product?.name ?? "item"}`}
                       className={
                         tooMany
-                          ? 'w-24 rounded-md border border-danger bg-surface px-2 py-1 text-right text-sm'
-                          : 'w-24 rounded-md border border-line bg-surface px-2 py-1 text-right text-sm'
+                          ? "w-24 rounded-md border border-danger bg-surface px-2 py-1 text-right text-sm"
+                          : "w-24 rounded-md border border-line bg-surface px-2 py-1 text-right text-sm"
                       }
                       onChange={(event) =>
                         setQuantities((current) => ({
@@ -230,10 +270,13 @@ function PerformForm({
             <div className="mt-2">
               <Alert tone="warning" title="Not enough on the shelf">
                 {short
-                  .map((line) => `${line.product?.name ?? 'item'} (${line.onHand} left)`)
-                  .join(', ')}
-                . If it was used from stock nobody had entered, say so and post an adjustment
-                afterwards.
+                  .map(
+                    (line) =>
+                      `${line.product?.name ?? "item"} (${line.onHand} left)`,
+                  )
+                  .join(", ")}
+                . If it was used from stock nobody had entered, say so and post
+                an adjustment afterwards.
               </Alert>
               <label className="mt-2 flex items-center gap-2 text-sm">
                 <input
@@ -259,7 +302,9 @@ function PerformForm({
             <Field label="Side">
               <Select
                 value={laterality}
-                onChange={(event) => setLaterality(event.target.value as Laterality)}
+                onChange={(event) =>
+                  setLaterality(event.target.value as Laterality)
+                }
               >
                 <option value="NA">Not applicable</option>
                 <option value="LEFT">Left</option>
@@ -270,7 +315,7 @@ function PerformForm({
           </div>
         )}
 
-        {item.category === 'VACCINATION' && (
+        {item.category === "VACCINATION" && (
           <Field label="Which dose (optional)">
             <Input
               type="number"
@@ -328,7 +373,7 @@ function PerformForm({
             onError(null);
             try {
               await api(`/encounter-procedures/${item.id}/perform`, {
-                method: 'POST',
+                method: "POST",
                 body: {
                   consumables: Object.entries(quantities)
                     .filter(([, quantity]) => quantity > 0)
@@ -338,14 +383,20 @@ function PerformForm({
                     ? { consentGiven, consentBy: consentBy.trim() || undefined }
                     : {}),
                   ...(notes.trim() ? { notes: notes.trim() } : {}),
-                  ...(complications.trim() ? { complications: complications.trim() } : {}),
+                  ...(complications.trim()
+                    ? { complications: complications.trim() }
+                    : {}),
                   ...(doseNumber ? { doseNumber: Number(doseNumber) } : {}),
                   ...(allowShortfall ? { allowShortfall: true } : {}),
                 },
               });
               await onDone();
             } catch (caught) {
-              onError(caught instanceof ApiError ? caught.message : 'Could not record it.');
+              onError(
+                caught instanceof ApiError
+                  ? caught.message
+                  : "Could not record it.",
+              );
             } finally {
               setBusy(false);
             }

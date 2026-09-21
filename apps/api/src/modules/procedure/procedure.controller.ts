@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { ProcedureCategory } from '../../generated/prisma/enums.js';
 import { BadRequestError } from '../../shared/errors/domain-errors.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';

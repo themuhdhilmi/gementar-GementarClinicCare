@@ -35,6 +35,8 @@ import {
   Input,
   Modal,
   Select,
+  Skeleton,
+  Tabs,
   TextField,
   timeAgo,
 } from "@/components/ui";
@@ -96,15 +98,39 @@ export default function PatientRecordPage() {
     [load],
   );
 
-  if (!patient) return <p className="text-sm text-muted">Loading…</p>;
+  if (!patient)
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-64" />
+      </div>
+    );
 
-  const tabs: Array<{ key: Tab; label: string; show: boolean }> = [
+  const tabs: Array<{
+    key: Tab;
+    label: string;
+    count?: number;
+    show: boolean;
+  }> = [
     { key: "summary", label: "Summary", show: true },
     { key: "visits", label: "Visits", show: true },
     // PAT-T-11: not rendered at all without the permission. The API refuses
     // it too, and nothing is recorded as viewed.
-    { key: "clinical", label: "Clinical", show: can("clinical.read") },
-    { key: "documents", label: "Documents", show: true },
+    {
+      key: "clinical",
+      label: "Clinical",
+      count: clinical
+        ? clinical.allergies.length +
+          clinical.conditions.filter((c) => c.status === "ACTIVE").length
+        : undefined,
+      show: can("clinical.read"),
+    },
+    {
+      key: "documents",
+      label: "Documents",
+      count: documents.length || undefined,
+      show: true,
+    },
   ];
 
   return (
@@ -119,7 +145,7 @@ export default function PatientRecordPage() {
           the clinic runs two hundred times a day is search, open, check in,
           so it does not get buried behind a form. */}
       {can("encounter.create") && patient.status === "ACTIVE" && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-sunken px-4 py-3">
           <Button
             onClick={async () => {
               setError(null);
@@ -142,7 +168,7 @@ export default function PatientRecordPage() {
           >
             Check in
           </Button>
-          <span className="text-sm text-muted">
+          <span className="text-[13px] text-muted">
             Joins today&rsquo;s queue at this branch.
           </span>
         </div>
@@ -163,27 +189,14 @@ export default function PatientRecordPage() {
       {error && <Alert title="Not done">{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
 
-      <nav
-        className="mb-4 flex gap-1 border-b border-line"
-        aria-label="Patient record"
-      >
-        {tabs
-          .filter((t) => t.show)
-          .map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              aria-current={tab === t.key ? "page" : undefined}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-                tab === t.key
-                  ? "border-primary font-medium text-foreground"
-                  : "border-transparent text-muted hover:text-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-      </nav>
+      <div className="mb-5">
+        <Tabs
+          label="Patient record"
+          value={tab}
+          onChange={setTab}
+          tabs={tabs.filter((t) => t.show)}
+        />
+      </div>
 
       {tab === "summary" && (
         <SummaryTab
@@ -196,8 +209,9 @@ export default function PatientRecordPage() {
         />
       )}
       {tab === "visits" && (
-        <EmptyState title="No visits yet">
-          Visits appear here once the encounter module is in use.
+        <EmptyState title="Visit history is not on this screen yet">
+          Today&rsquo;s visit is on the queue board. The history of past visits
+          for one patient still has to be built.
         </EmptyState>
       )}
       {tab === "clinical" && clinical && (

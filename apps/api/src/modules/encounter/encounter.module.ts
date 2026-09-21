@@ -3,7 +3,10 @@ import { BranchDeactivationRegistry } from '../tenancy/branch-deactivation.regis
 import { OPEN_STATUSES } from './transitions.js';
 import { EncountersController } from './encounters.controller.js';
 import { DisplayController } from './display.controller.js';
-import { EncounterService, EncounterCompletionRegistry } from './encounter.service.js';
+import {
+  EncounterService,
+  EncounterCompletionRegistry,
+} from './encounter.service.js';
 import { QueueService } from './queue.service.js';
 import { QueueNumberService } from './queue-number.service.js';
 import { QueueStreamService } from './queue-stream.service.js';
@@ -53,7 +56,13 @@ export class EncounterModule implements OnModuleInit {
       });
       return count === 0
         ? null
-        : { reason: count === 1 ? 'patient still in the queue' : 'patients still in the queue', count };
+        : {
+            reason:
+              count === 1
+                ? 'patient still in the queue'
+                : 'patients still in the queue',
+            count,
+          };
     });
   }
 }

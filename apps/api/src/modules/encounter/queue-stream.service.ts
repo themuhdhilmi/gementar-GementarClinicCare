@@ -49,9 +49,13 @@ export class QueueStreamService implements OnModuleDestroy {
    * screen that quietly stopped receiving events looks exactly like a clinic
    * with nobody in it.
    */
-  forBranch(branchId: string): Observable<{ data: QueueEvent | { heartbeat: string } }> {
+  forBranch(
+    branchId: string,
+  ): Observable<{ data: QueueEvent | { heartbeat: string } }> {
     this.subscribers += 1;
-    this.logger.debug(`queue stream opened for ${branchId} (${this.subscribers} open)`);
+    this.logger.debug(
+      `queue stream opened for ${branchId} (${this.subscribers} open)`,
+    );
 
     const changes = this.events.pipe(
       filter((event) => event.branchId === branchId),
@@ -61,14 +65,18 @@ export class QueueStreamService implements OnModuleDestroy {
       map(() => ({ data: { heartbeat: new Date().toISOString() } })),
     );
 
-    return new Observable<{ data: QueueEvent | { heartbeat: string } }>((subscriber) => {
-      const inner = merge(changes, heartbeat).subscribe(subscriber);
-      return () => {
-        inner.unsubscribe();
-        this.subscribers -= 1;
-        this.logger.debug(`queue stream closed for ${branchId} (${this.subscribers} open)`);
-      };
-    });
+    return new Observable<{ data: QueueEvent | { heartbeat: string } }>(
+      (subscriber) => {
+        const inner = merge(changes, heartbeat).subscribe(subscriber);
+        return () => {
+          inner.unsubscribe();
+          this.subscribers -= 1;
+          this.logger.debug(
+            `queue stream closed for ${branchId} (${this.subscribers} open)`,
+          );
+        };
+      },
+    );
   }
 
   get openConnections(): number {

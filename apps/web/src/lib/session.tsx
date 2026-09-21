@@ -1,9 +1,15 @@
-'use client';
+"use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ApiError, api, type Me } from './api';
-import { useAsyncEffect } from './use-async';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
+import { useRouter } from "next/navigation";
+import { ApiError, api, type Me } from "./api";
+import { useAsyncEffect } from "./use-async";
 
 type SessionState = {
   me: Me | null;
@@ -36,42 +42,42 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await api<Me>('/auth/me');
+      const next = await api<Me>("/auth/me");
       setMe(next);
       setError(null);
       setSuspended(null);
       if (next.mfa.required && !next.mfa.enabled) {
-        router.replace('/enrol-mfa');
+        router.replace("/enrol-mfa");
         return next;
       }
       if (next.mfa.enabled && !next.mfa.verified) {
-        router.replace('/mfa');
+        router.replace("/mfa");
         return next;
       }
       return next;
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.status === 401) {
-          router.replace('/login');
+          router.replace("/login");
           return null;
         }
-        if (caught.code === 'mfa_enrolment_required') {
-          router.replace('/enrol-mfa');
+        if (caught.code === "mfa_enrolment_required") {
+          router.replace("/enrol-mfa");
           return null;
         }
-        if (caught.code === 'mfa_required') {
-          router.replace('/mfa');
+        if (caught.code === "mfa_required") {
+          router.replace("/mfa");
           return null;
         }
         // TEN-F-03: a suspended clinic is not a broken session. Sending them
         // to the login page would have them try their password over and over.
-        if (caught.code === 'tenant_suspended') {
+        if (caught.code === "tenant_suspended") {
           setSuspended(caught.message);
           return null;
         }
         setError(caught.message);
       } else {
-        setError('Cannot reach the server.');
+        setError("Cannot reach the server.");
       }
       return null;
     } finally {
@@ -83,10 +89,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await api('/auth/logout', { method: 'POST' });
+      await api("/auth/logout", { method: "POST" });
     } finally {
       setMe(null);
-      router.replace('/login');
+      router.replace("/login");
     }
   }, [router]);
 
@@ -98,16 +104,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       suspended,
       refresh,
       logout,
-      can: (permission: string) => Boolean(me?.permissions.includes(permission)),
+      can: (permission: string) =>
+        Boolean(me?.permissions.includes(permission)),
     }),
     [me, loading, error, suspended, refresh, logout],
   );
 
-  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+  return (
+    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+  );
 }
 
 export function useSession(): SessionState {
   const context = useContext(SessionContext);
-  if (!context) throw new Error('useSession must be used inside SessionProvider');
+  if (!context)
+    throw new Error("useSession must be used inside SessionProvider");
   return context;
 }

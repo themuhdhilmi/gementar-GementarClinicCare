@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import type { Response } from 'express';
 import { DocumentType } from '../../generated/prisma/enums.js';
 import {

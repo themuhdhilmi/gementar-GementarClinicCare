@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useState } from "react";
 import {
   ApiError,
   FLAG_TONE,
@@ -14,12 +14,29 @@ import {
   type PatientRecord,
   type TriageForm,
   type VitalFieldKey,
-} from '@/lib/api';
-import { useAsyncEffect } from '@/lib/use-async';
-import { PatientHeader, loadClinicalSummary } from '@/components/patient-header';
-import { Alert, Button, Card, Field, Input, Modal, TextField } from '@/components/ui';
+} from "@/lib/api";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  PatientHeader,
+  loadClinicalSummary,
+} from "@/components/patient-header";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Skeleton,
+  TextField,
+} from "@/components/ui";
 
-type Draft = Partial<Record<VitalFieldKey, string>> & { complaint?: string; notes?: string };
+type Draft = Partial<Record<VitalFieldKey, string>> & {
+  complaint?: string;
+  notes?: string;
+};
 
 /**
  * The nurse station (TRI §11).
@@ -47,7 +64,7 @@ export default function TriagePage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [askingAllergies, setAskingAllergies] = useState(false);
-  const [allergy, setAllergy] = useState('');
+  const [allergy, setAllergy] = useState("");
 
   const load = useCallback(async () => {
     const [next, encounter] = await Promise.all([
@@ -66,28 +83,44 @@ export default function TriagePage() {
     // retyping it is a chance to get it wrong. Weight never is: it is the
     // thing being measured today.
     if (next.prefill.heightCm !== null) {
-      setDraft((current) => ({ ...current, heightCm: String(next.prefill.heightCm) }));
+      setDraft((current) => ({
+        ...current,
+        heightCm: String(next.prefill.heightCm),
+      }));
     }
     setAskingAllergies(next.allergyPromptNeeded);
   }, [encounterId]);
 
   useAsyncEffect(() => load(), [load]);
 
-  if (!form || !chart || !patient) return <p className="text-sm text-muted">Loading…</p>;
+  if (!form || !chart || !patient)
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-64" />
+      </div>
+    );
 
   const numeric = (key: VitalFieldKey): number | null => {
     const raw = draft[key];
-    if (raw === undefined || raw.trim() === '') return null;
+    if (raw === undefined || raw.trim() === "") return null;
     const value = Number(raw);
     return Number.isFinite(value) ? value : null;
   };
 
-  const worst = VITAL_FIELDS.reduce<'NONE' | 'ABNORMAL' | 'CRITICAL'>((level, field) => {
-    const own = levelFor(numeric(field.key), form.thresholds[field.stored], field.scale);
-    if (own === 'CRITICAL' || level === 'CRITICAL') return 'CRITICAL';
-    if (own === 'ABNORMAL' || level === 'ABNORMAL') return 'ABNORMAL';
-    return 'NONE';
-  }, 'NONE');
+  const worst = VITAL_FIELDS.reduce<"NONE" | "ABNORMAL" | "CRITICAL">(
+    (level, field) => {
+      const own = levelFor(
+        numeric(field.key),
+        form.thresholds[field.stored],
+        field.scale,
+      );
+      if (own === "CRITICAL" || level === "CRITICAL") return "CRITICAL";
+      if (own === "ABNORMAL" || level === "ABNORMAL") return "ABNORMAL";
+      return "NONE";
+    },
+    "NONE",
+  );
 
   const anything =
     VITAL_FIELDS.some((field) => numeric(field.key) !== null) ||
@@ -103,13 +136,13 @@ export default function TriagePage() {
         const value = numeric(field.key);
         if (value !== null) body[field.key] = value;
       }
-      if (draft.complaint?.trim()) body['complaint'] = draft.complaint.trim();
-      if (draft.notes?.trim()) body['notes'] = draft.notes.trim();
+      if (draft.complaint?.trim()) body["complaint"] = draft.complaint.trim();
+      if (draft.notes?.trim()) body["notes"] = draft.notes.trim();
 
-      await api(`/encounters/${encounterId}/triage`, { method: 'POST', body });
-      router.push(advance ? '/queue' : `/encounters/${encounterId}`);
+      await api(`/encounters/${encounterId}/triage`, { method: "POST", body });
+      router.push(advance ? "/queue" : `/encounters/${encounterId}`);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not save.');
+      setError(caught instanceof ApiError ? caught.message : "Could not save.");
     } finally {
       setBusy(false);
     }
@@ -121,25 +154,35 @@ export default function TriagePage() {
     <div>
       <PatientHeader patient={patient} clinical={clinical} compact />
 
-      <div className="mb-4 flex flex-wrap items-baseline gap-3">
-        <h1 className="text-xl font-semibold">Triage</h1>
-        <span className="font-mono text-lg">{chart.encounter.queueNo}</span>
-        {form.isChild && (
-          <span className="rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-medium text-primary-ink">
-            Child: readings judged against paediatric ranges
-          </span>
-        )}
-        {form.records.length > 0 && (
-          <span className="text-sm text-muted">
-            {form.records.length} set{form.records.length === 1 ? '' : 's'} already recorded
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title="Triage"
+        description="Blood pressure, temperature and the rest. Leave anything not measured empty rather than guessing it."
+        meta={
+          <>
+            <span className="font-mono text-base tabular">
+              {chart.encounter.queueNo}
+            </span>
+            {form.isChild && (
+              <Chip tone="info">
+                Child — readings judged against paediatric ranges
+              </Chip>
+            )}
+            {form.records.length > 0 && (
+              <span className="text-muted">
+                {form.records.length} set
+                {form.records.length === 1 ? "" : "s"} already recorded
+              </span>
+            )}
+          </>
+        }
+      />
 
       {/* TRI §11: full-width and red, because the point is that it is seen. */}
-      {worst === 'CRITICAL' && (
-        <div className="mb-4 rounded-lg border border-danger bg-danger-soft px-4 py-3">
-          <p className="font-semibold text-danger">A reading here is in the critical range.</p>
+      {worst === "CRITICAL" && (
+        <div className="mb-4 rounded-xl border-l-4 border-danger bg-danger-soft px-4 py-3 shadow-e1">
+          <p className="font-semibold text-danger">
+            A reading here is in the critical range.
+          </p>
           <p className="mt-1 text-sm text-danger">
             Saving will offer to move this patient to the front of every queue.
           </p>
@@ -149,41 +192,50 @@ export default function TriagePage() {
       {error && <Alert title="Not saved">{error}</Alert>}
 
       <div className="grid gap-5 lg:grid-cols-[28rem_1fr]">
-        <Card title="Readings" description="Tab through. Leave anything not measured empty.">
+        <Card
+          title="Readings"
+          description="Tab through. Leave anything not measured empty."
+        >
           <div className="flex flex-col gap-3">
             {VITAL_FIELDS.map((field) => {
               const value = numeric(field.key);
-              const level = levelFor(value, form.thresholds[field.stored], field.scale);
+              const level = levelFor(
+                value,
+                form.thresholds[field.stored],
+                field.scale,
+              );
               const previous = last ? (last[field.key] as number | null) : null;
               return (
                 <Field
                   key={field.key}
                   label={`${field.label} (${field.unit})`}
-                  hint={previous !== null ? `Last time: ${previous}` : undefined}
+                  hint={
+                    previous !== null ? `Last time: ${previous}` : undefined
+                  }
                 >
                   <Input
                     type="number"
                     step={field.step}
                     inputMode="decimal"
-                    value={draft[field.key] ?? ''}
+                    value={draft[field.key] ?? ""}
                     onChange={(event) =>
                       setDraft({ ...draft, [field.key]: event.target.value })
                     }
                     className={`max-w-40 ${FLAG_TONE[level]}`}
-                    aria-invalid={level !== 'NONE'}
+                    aria-invalid={level !== "NONE"}
                   />
                 </Field>
               );
             })}
           </div>
 
-          {numeric('weightKg') !== null && numeric('heightCm') !== null && (
+          {numeric("weightKg") !== null && numeric("heightCm") !== null && (
             <p className="mt-3 text-sm text-muted">
-              Body mass index{' '}
+              Body mass index{" "}
               <span className="font-medium text-foreground">
                 {(
-                  numeric('weightKg')! /
-                  ((numeric('heightCm')! / 100) * (numeric('heightCm')! / 100))
+                  numeric("weightKg")! /
+                  ((numeric("heightCm")! / 100) * (numeric("heightCm")! / 100))
                 ).toFixed(1)}
               </span>
               , worked out on save.
@@ -196,14 +248,18 @@ export default function TriagePage() {
             <div className="flex flex-col gap-3">
               <TextField
                 label="Presenting complaint"
-                value={draft.complaint ?? ''}
-                onChange={(event) => setDraft({ ...draft, complaint: event.target.value })}
+                value={draft.complaint ?? ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, complaint: event.target.value })
+                }
                 placeholder="Cough and fever for three days"
               />
               <TextField
                 label="Nurse notes"
-                value={draft.notes ?? ''}
-                onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+                value={draft.notes ?? ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, notes: event.target.value })
+                }
                 placeholder="Anything the doctor should know before they walk in"
               />
             </div>
@@ -213,30 +269,36 @@ export default function TriagePage() {
             <Card title="Already recorded this visit">
               <ul className="flex flex-col gap-2 text-sm">
                 {form.records.map((record) => (
-                  <li key={record.id} className="flex items-baseline justify-between gap-3">
+                  <li
+                    key={record.id}
+                    className="flex items-baseline justify-between gap-3"
+                  >
                     <span>
                       <span className="font-medium">Set {record.sequence}</span>
                       <span className="text-muted">
-                        {' '}
+                        {" "}
                         {[
-                          record.systolic && `${record.systolic}/${record.diastolic}`,
+                          record.systolic &&
+                            `${record.systolic}/${record.diastolic}`,
                           record.heartRate && `${record.heartRate} bpm`,
                           record.temperature && `${record.temperature} °C`,
                           record.spo2 && `${record.spo2}%`,
                         ]
                           .filter(Boolean)
-                          .join(' · ')}
+                          .join(" · ")}
                       </span>
                     </span>
-                    {record.maxFlagLevel !== 'NONE' && (
+                    {record.maxFlagLevel !== "NONE" && (
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          record.maxFlagLevel === 'CRITICAL'
-                            ? 'bg-danger-soft text-danger'
-                            : 'bg-warning-soft text-warning'
+                          record.maxFlagLevel === "CRITICAL"
+                            ? "bg-danger-soft text-danger"
+                            : "bg-warning-soft text-warning"
                         }`}
                       >
-                        {record.maxFlagLevel === 'CRITICAL' ? 'Critical' : 'Abnormal'}
+                        {record.maxFlagLevel === "CRITICAL"
+                          ? "Critical"
+                          : "Abnormal"}
                       </span>
                     )}
                   </li>
@@ -249,14 +311,22 @@ export default function TriagePage() {
             <Button
               loading={busy}
               disabled={!anything}
-              onClick={() => void save(true, worst === 'CRITICAL')}
+              onClick={() => void save(true, worst === "CRITICAL")}
             >
               Save and send to the doctor
             </Button>
-            <Button variant="secondary" loading={busy} disabled={!anything} onClick={() => void save(false)}>
+            <Button
+              variant="secondary"
+              loading={busy}
+              disabled={!anything}
+              onClick={() => void save(false)}
+            >
               Save, keep here
             </Button>
-            <Link href="/queue" className="text-sm text-muted underline hover:text-foreground">
+            <Link
+              href="/queue"
+              className="text-sm text-muted underline hover:text-foreground"
+            >
               Back to today
             </Link>
           </div>
@@ -275,8 +345,8 @@ export default function TriagePage() {
         onClose={() => setAskingAllergies(false)}
       >
         <p className="text-sm text-muted">
-          Nothing is recorded for this patient yet, which is not the same as their having none.
-          The doctor sees the difference.
+          Nothing is recorded for this patient yet, which is not the same as
+          their having none. The doctor sees the difference.
         </p>
         <div className="mt-4 flex flex-col gap-3">
           <Button
@@ -284,7 +354,10 @@ export default function TriagePage() {
             onClick={async () => {
               setBusy(true);
               try {
-                await api(`/patients/${patient.id}/nkda`, { method: 'PUT', body: { nkda: true } });
+                await api(`/patients/${patient.id}/nkda`, {
+                  method: "PUT",
+                  body: { nkda: true },
+                });
                 await load();
                 setAskingAllergies(false);
               } finally {
@@ -308,11 +381,15 @@ export default function TriagePage() {
                 setBusy(true);
                 try {
                   await api(`/patients/${patient.id}/allergies`, {
-                    method: 'POST',
-                    body: { type: 'DRUG', substance: allergy, severity: 'MODERATE' },
+                    method: "POST",
+                    body: {
+                      type: "DRUG",
+                      substance: allergy,
+                      severity: "MODERATE",
+                    },
                   });
                   await load();
-                  setAllergy('');
+                  setAllergy("");
                   setAskingAllergies(false);
                 } finally {
                   setBusy(false);

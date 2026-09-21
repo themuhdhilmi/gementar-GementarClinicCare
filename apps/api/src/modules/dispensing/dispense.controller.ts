@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { DispenseService } from './dispense.service.js';

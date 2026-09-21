@@ -4,7 +4,10 @@ import {
   EncounterStatus,
   Role,
 } from '../../generated/prisma/enums.js';
-import { BadRequestError, NotFoundError } from '../../shared/errors/domain-errors.js';
+import {
+  BadRequestError,
+  NotFoundError,
+} from '../../shared/errors/domain-errors.js';
 import { Clock } from '../../shared/time/clock.js';
 import { DbService, type Tx } from '../../shared/prisma/db.service.js';
 import { requireTenantId } from '../../shared/prisma/tenant-scope.js';
@@ -17,7 +20,11 @@ import { SettingsService } from '../tenancy/settings/settings.service.js';
 import { newId } from '../../shared/ids/uuid.js';
 import { EncounterService, readable } from './encounter.service.js';
 import { QueueStreamService } from './queue-stream.service.js';
-import { STATION_CALL_TARGET, STATION_STATUSES, type Station } from './transitions.js';
+import {
+  STATION_STATUSES,
+  callTargetFor,
+  type Station,
+} from './transitions.js';
 
 export type QueueRow = {
   id: string;
@@ -89,7 +96,10 @@ export class QueueService {
     if (!statuses) throw new NotFoundError('Queue');
 
     const tx = this.db.tx();
-    const { waitAmberMinutes, waitRedMinutes } = await this.settings.group(branchId, 'queue');
+    const { waitAmberMinutes, waitRedMinutes } = await this.settings.group(
+      branchId,
+      'queue',
+    );
 
     // One query with the patient and the doctor joined. A board refreshes
     // on every event in the clinic, so a row-per-query shape here would be
@@ -122,7 +132,9 @@ export class QueueService {
 
     const now = this.clock.now();
     return rows.map((row) => {
-      const waitingMinutes = Math.floor((now.getTime() - row.status_since.getTime()) / 60_000);
+      const waitingMinutes = Math.floor(
+        (now.getTime() - row.status_since.getTime()) / 60_000,
+      );
       return {
         id: row.id,
         queueNo: row.queue_no,
@@ -168,8 +180,7 @@ export class QueueService {
     station: Station,
     options: { doctorId?: string | null } = {},
   ) {
-    const target = STATION_CALL_TARGET[station];
-    if (!target) {
+    if (station === 'reception') {
       throw new BadRequestError(
         'There is no queue to call from at reception: it shows every patient rather than a line.',
         'station_has_no_queue',
@@ -179,9 +190,11 @@ export class QueueService {
     const tx = this.db.tx();
     const statuses = STATION_STATUSES[station];
 
-    const [head] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+    const [head] = await tx.$queryRawUnsafe<
+      Array<{ id: string; status: EncounterStatus }>
+    >(
       `
-      SELECT e.id
+      SELECT e.id, e.status
         FROM encounter e
        WHERE e.tenant_id = $1::uuid
          AND e.branch_id = $2::uuid
@@ -203,6 +216,12 @@ export class QueueService {
       throw new NotFoundError('Nobody is waiting at this station');
     }
 
+    // A combined counter serves two lines at once, and they do not move
+    // the same way — so where this call takes them depends on which
+    // line they were in, not only on which station called.
+    const target = callTargetFor(station, head.status);
+    if (!target) return this.callAgain(ctx, head.id);
+
     return this.call(ctx, head.id, target);
   }
 
@@ -216,12 +235,28 @@ export class QueueService {
       where: { id: encounterId },
       data: { calledAt: now, callCount: { increment: 1 } },
     });
-    await this.recordCall(tx, ctx, encounter.id, encounter.status, 'call', null);
+    await this.recordCall(
+      tx,
+      ctx,
+      encounter.id,
+      encounter.status,
+      'call',
+      null,
+    );
 
     const after = await this.encounters.getOrThrow(tx, encounterId);
-    this.announce(encounter.branchId, 'call', encounter.id, encounter.queueNo, now);
+    this.announce(
+      encounter.branchId,
+      'call',
+      encounter.id,
+      encounter.queueNo,
+      now,
+    );
 
-    const { noShowAfterCalls } = await this.settings.group(encounter.branchId, 'queue');
+    const { noShowAfterCalls } = await this.settings.group(
+      encounter.branchId,
+      'queue',
+    );
     return {
       encounter: this.encounters.present(after),
       // The screen asks about a no-show rather than deciding one: the
@@ -230,7 +265,11 @@ export class QueueService {
     };
   }
 
-  private async call(ctx: TenantContext, encounterId: string, to: EncounterStatus) {
+  private async call(
+    ctx: TenantContext,
+    encounterId: string,
+    to: EncounterStatus,
+  ) {
     const tx = this.db.tx();
     const now = this.clock.now();
     const before = await this.encounters.getOrThrow(tx, encounterId);
@@ -244,7 +283,9 @@ export class QueueService {
     // call, because the call and the move it causes are one thing that
     // happened. Writing a second here made every call appear twice on a
     // timeline that a person reads.
-    const moved = await this.encounters.transition(ctx, encounterId, to, { action: 'call' });
+    const moved = await this.encounters.transition(ctx, encounterId, to, {
+      action: 'call',
+    });
 
     this.announce(before.branchId, 'call', encounterId, before.queueNo, now);
     return { encounter: moved, calledQueueNo: before.queueNo };
@@ -266,7 +307,14 @@ export class QueueService {
       where: { id: encounterId },
       data: { statusSince: now, skipCount: { increment: 1 }, calledAt: null },
     });
-    await this.recordCall(tx, ctx, encounterId, encounter.status, 'skip', 'Not present when called');
+    await this.recordCall(
+      tx,
+      ctx,
+      encounterId,
+      encounter.status,
+      'skip',
+      'Not present when called',
+    );
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
       action: AuditAction.EncounterSkipped,
@@ -283,13 +331,23 @@ export class QueueService {
       occurredAt: now,
       payload: { encounterId, queueNo: encounter.queueNo },
     });
-    this.announce(encounter.branchId, 'skip', encounterId, encounter.queueNo, now);
+    this.announce(
+      encounter.branchId,
+      'skip',
+      encounterId,
+      encounter.queueNo,
+      now,
+    );
 
     const after = await this.encounters.getOrThrow(tx, encounterId);
-    const { noShowAfterCalls } = await this.settings.group(encounter.branchId, 'queue');
+    const { noShowAfterCalls } = await this.settings.group(
+      encounter.branchId,
+      'queue',
+    );
     return {
       encounter: this.encounters.present(after),
-      suggestNoShow: after.skipCount >= 2 || after.callCount >= noShowAfterCalls,
+      suggestNoShow:
+        after.skipCount >= 2 || after.callCount >= noShowAfterCalls,
     };
   }
 
@@ -313,7 +371,14 @@ export class QueueService {
       where: { id: encounterId },
       data: { priority, priorityReason: reason?.trim() || null },
     });
-    await this.recordCall(tx, ctx, encounterId, before.status, 'priority', reason ?? null);
+    await this.recordCall(
+      tx,
+      ctx,
+      encounterId,
+      before.status,
+      'priority',
+      reason ?? null,
+    );
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
       action: AuditAction.EncounterPriorityChanged,
@@ -332,27 +397,46 @@ export class QueueService {
       occurredAt: this.clock.now(),
       payload: { encounterId, from: before.priority, to: priority },
     });
-    this.announce(before.branchId, 'priority', encounterId, before.queueNo, this.clock.now());
+    this.announce(
+      before.branchId,
+      'priority',
+      encounterId,
+      before.queueNo,
+      this.clock.now(),
+    );
 
-    return this.encounters.present(await this.encounters.getOrThrow(tx, encounterId));
+    return this.encounters.present(
+      await this.encounters.getOrThrow(tx, encounterId),
+    );
   }
 
   /** ENC-F-06, ENC-F-07: who is seeing them, and where. */
   async assign(
     ctx: TenantContext,
     encounterId: string,
-    input: { attendingDoctorId?: string | null; roomId?: string | null; reason?: string },
+    input: {
+      attendingDoctorId?: string | null;
+      roomId?: string | null;
+      reason?: string;
+    },
   ) {
     const tx = this.db.tx();
     const before = await this.encounters.getOrThrow(tx, encounterId);
 
     if (input.attendingDoctorId) {
       const role = await tx.userBranchRole.findFirst({
-        where: { userId: input.attendingDoctorId, branchId: before.branchId, role: Role.DOCTOR },
+        where: {
+          userId: input.attendingDoctorId,
+          branchId: before.branchId,
+          role: Role.DOCTOR,
+        },
         select: { id: true },
       });
       if (!role) {
-        throw new BadRequestError('That person is not a doctor at this branch.', 'not_a_doctor_here');
+        throw new BadRequestError(
+          'That person is not a doctor at this branch.',
+          'not_a_doctor_here',
+        );
       }
     }
     if (input.roomId) {
@@ -385,7 +469,14 @@ export class QueueService {
         ...(input.roomId === undefined ? {} : { roomId: input.roomId }),
       },
     });
-    await this.recordCall(tx, ctx, encounterId, before.status, 'reassign', input.reason ?? null);
+    await this.recordCall(
+      tx,
+      ctx,
+      encounterId,
+      before.status,
+      'reassign',
+      input.reason ?? null,
+    );
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
       action: AuditAction.EncounterReassigned,
@@ -393,7 +484,10 @@ export class QueueService {
       entityId: encounterId,
       subjectPatientId: before.patientId,
       before: { doctor: before.attendingDoctorId, room: before.roomId },
-      after: { doctor: input.attendingDoctorId ?? before.attendingDoctorId, room: input.roomId ?? before.roomId },
+      after: {
+        doctor: input.attendingDoctorId ?? before.attendingDoctorId,
+        room: input.roomId ?? before.roomId,
+      },
       reason: input.reason ?? null,
     });
     this.events.publish({
@@ -404,9 +498,17 @@ export class QueueService {
       occurredAt: this.clock.now(),
       payload: { encounterId },
     });
-    this.announce(before.branchId, 'assignment', encounterId, before.queueNo, this.clock.now());
+    this.announce(
+      before.branchId,
+      'assignment',
+      encounterId,
+      before.queueNo,
+      this.clock.now(),
+    );
 
-    return this.encounters.present(await this.encounters.getOrThrow(tx, encounterId));
+    return this.encounters.present(
+      await this.encounters.getOrThrow(tx, encounterId),
+    );
   }
 
   /** ENC-F-21: the three numbers a board shows above itself. */
@@ -457,7 +559,124 @@ export class QueueService {
       averageVisitMinutes: Math.round(Number(row?.average_wait ?? 0)),
       noShows: Number(row?.no_shows ?? 0),
       at: now.toISOString(),
+      stations: await this.boardShape(branchId),
     };
+  }
+
+  /**
+   * Which tabs this branch's board should have (ENC-F-15).
+   *
+   * Decided here rather than in the browser, because it follows from the
+   * clinic's settings and the browser would otherwise need to read
+   * settings it has no permission for. A dispenser can see the board;
+   * they cannot see `admin.settings`.
+   *
+   * Two clinics, two shapes. A clinic with no triage should not have a
+   * triage tab that is always empty, and a clinic where one person hands
+   * over the medicine and takes the money should have **one** queue
+   * rather than two halves of the same person's work.
+   */
+  async boardShape(branchId: string): Promise<Station[]> {
+    const { triageRequired, combinedCounter } = await this.settings.group(
+      branchId,
+      'queue',
+    );
+
+    const stations: Station[] = ['reception'];
+    if (triageRequired !== 'NEVER') stations.push('triage');
+    stations.push('doctor');
+    stations.push(
+      ...((combinedCounter
+        ? ['counter']
+        : ['pharmacy', 'cashier']) as Station[]),
+    );
+    return stations;
+  }
+
+  /**
+   * Where this visit is in the journey, for the strip at the top of the
+   * chart (ENC-F-11).
+   *
+   * Computed here rather than in the browser for three reasons, and the
+   * third is the one that matters:
+   *
+   * - the **shape** follows from settings the browser may not read;
+   * - **what has happened** is the event log, which the browser has but
+   *   would have to interpret;
+   * - and **what applies to this visit** is neither. A procedure step
+   *   is real only if one was ordered; a pharmacy step only if
+   *   something was prescribed. A strip that always shows every step
+   *   teaches people to ignore it, and one that hides a step the
+   *   patient is standing in is worse.
+   */
+  async flow(tx: Tx, encounter: { id: string; branchId: string; status: EncounterStatus }) {
+    const S = EncounterStatus;
+    const { triageRequired, combinedCounter } = await this.settings.group(
+      encounter.branchId,
+      'queue',
+    );
+
+    const events = await tx.encounterEvent.findMany({
+      where: { encounterId: encounter.id },
+      select: { toStatus: true },
+    });
+    const visited = new Set<string>(events.map((event) => event.toStatus));
+    visited.add(encounter.status);
+
+    const been = (...statuses: EncounterStatus[]) => statuses.some((s) => visited.has(s));
+    const here = (...statuses: EncounterStatus[]) => statuses.includes(encounter.status);
+
+    type Step = {
+      key: string;
+      label: string;
+      state: 'done' | 'current' | 'upcoming' | 'skipped';
+    };
+    const steps: Step[] = [];
+
+    const add = (key: string, label: string, statuses: EncounterStatus[], show = true) => {
+      if (!show) {
+        steps.push({ key, label, state: 'skipped' });
+        return;
+      }
+      steps.push({
+        key,
+        label,
+        state: here(...statuses) ? 'current' : been(...statuses) ? 'done' : 'upcoming',
+      });
+    };
+
+    add('checkin', 'Checked in', [S.REGISTERED]);
+    add(
+      'triage',
+      'Triage',
+      [S.TRIAGE_WAITING, S.TRIAGE_IN_PROGRESS],
+      // Off for the clinic, or this particular visit went round it.
+      triageRequired !== 'NEVER',
+    );
+    add('doctor', 'Doctor', [S.DOCTOR_WAITING, S.IN_CONSULTATION]);
+
+    // Only real once one has been ordered. Before that it is noise.
+    if (been(S.PROCEDURE_WAITING, S.PROCEDURE_DONE)) {
+      add('procedure', 'Procedure', [S.PROCEDURE_WAITING, S.PROCEDURE_DONE]);
+    }
+
+    if (combinedCounter) {
+      add('counter', 'Counter', [S.PHARMACY_WAITING, S.DISPENSING, S.PAYMENT_WAITING]);
+    } else {
+      add('pharmacy', 'Pharmacy', [S.PHARMACY_WAITING, S.DISPENSING]);
+      add('payment', 'Pay', [S.PAYMENT_WAITING]);
+    }
+
+    // How it ended, or how it is going to.
+    if (encounter.status === S.CANCELLED) {
+      steps.push({ key: 'end', label: 'Cancelled', state: 'current' });
+    } else if (encounter.status === S.NO_SHOW) {
+      steps.push({ key: 'end', label: 'Did not attend', state: 'current' });
+    } else {
+      add('done', 'Done', [S.COMPLETED]);
+    }
+
+    return steps;
   }
 
   /** ENC-F-11: the timeline, which is the answer to "what happened here". */
@@ -499,7 +718,13 @@ export class QueueService {
     queueNo: string,
     at: Date,
   ) {
-    this.stream.publish({ branchId, kind, encounterId, queueNo, at: at.toISOString() });
+    this.stream.publish({
+      branchId,
+      kind,
+      encounterId,
+      queueNo,
+      at: at.toISOString(),
+    });
   }
 }
 

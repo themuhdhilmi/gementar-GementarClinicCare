@@ -16,7 +16,7 @@ import {
   RequireReauth,
 } from '../identity/decorators/auth.decorators.js';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { ringgitToSen } from '../billing/money.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { requireTenantId } from '../../shared/prisma/tenant-scope.js';
@@ -323,8 +323,3 @@ export class PaymentController {
     return this.methods(ctx, branchId);
   }
 }
-
-// `NotAudited` is imported for the lint rule's benefit even when every
-// route here is audited; removing it would make adding an exempt route
-// a two-file change.
-void NotAudited;

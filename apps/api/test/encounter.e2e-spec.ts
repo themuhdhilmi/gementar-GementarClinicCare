@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { Harness, totpFor, type Fixture, type SeededUser, DEFAULT_PASSWORD } from './support/harness.js';
+import {
+  Harness,
+  totpFor,
+  type Fixture,
+  type SeededUser,
+  DEFAULT_PASSWORD,
+} from './support/harness.js';
 import { Role } from '../src/generated/prisma/enums.js';
 import { EncounterCompletionRegistry } from '../src/modules/encounter/encounter.service.js';
 
@@ -53,7 +59,9 @@ describe('ENC — encounters and the queue', () => {
         gender: 'MALE',
         // Distinct per patient. Sharing a birthday with a similar name is
         // exactly what the duplicate check is for, and it is right to fire.
-        dateOfBirth: new Date(Date.UTC(1960 + (seq % 50), seq % 12, (seq % 27) + 1))
+        dateOfBirth: new Date(
+          Date.UTC(1960 + (seq % 50), seq % 12, (seq % 27) + 1),
+        )
           .toISOString()
           .slice(0, 10),
         notes: 'Test patient for the queue',
@@ -70,6 +78,31 @@ describe('ENC — encounters and the queue', () => {
       .post(`${API}/branches/${branch}/encounters`)
       .set('Cookie', cookie)
       .send(body);
+  }
+
+  /**
+   * A visit walked forward to a given status, through the states it
+   * would really pass through.
+   */
+  async function reach(target: string): Promise<string> {
+    const created = await checkIn({ patientId: await newPatient() }).expect(
+      201,
+    );
+    const id = created.body.encounter.id as string;
+    const route = [
+      'TRIAGE_IN_PROGRESS',
+      'DOCTOR_WAITING',
+      'IN_CONSULTATION',
+      target,
+    ];
+    for (const to of route) {
+      if (to === created.body.encounter.status) continue;
+      await move(id, to, to === 'IN_CONSULTATION' ? doctor : reception).expect(
+        200,
+      );
+      if (to === target) break;
+    }
+    return id;
   }
 
   function move(id: string, to: string, cookie = reception, note?: string) {
@@ -146,7 +179,9 @@ describe('ENC — encounters and the queue', () => {
       const patients = await Promise.all(
         Array.from({ length: 50 }, (_, i) => newPatient(`Rush ${i}`)),
       );
-      const results = await Promise.all(patients.map((patientId) => checkIn({ patientId })));
+      const results = await Promise.all(
+        patients.map((patientId) => checkIn({ patientId })),
+      );
 
       const numbers = results
         .filter((r) => r.status === 201)
@@ -155,7 +190,9 @@ describe('ENC — encounters and the queue', () => {
       expect(new Set(numbers).size, 'every queue number is different').toBe(50);
 
       // And sequential, with no gaps: they came from one counter.
-      const values = numbers.map((n) => Number(n.split('-')[1])).sort((a, b) => a - b);
+      const values = numbers
+        .map((n) => Number(n.split('-')[1]))
+        .sort((a, b) => a - b);
       expect(values.at(-1)! - values[0]!).toBe(49);
     }, 60_000);
 
@@ -172,7 +209,9 @@ describe('ENC — encounters and the queue', () => {
 
     it('will not move a patient up the queue without a reason', async () => {
       const patientId = await newPatient('No Reason');
-      const refused = await checkIn({ patientId, priority: 'URGENT' }).expect(400);
+      const refused = await checkIn({ patientId, priority: 'URGENT' }).expect(
+        400,
+      );
       expect(refused.body.code).toBe('priority_reason_required');
     });
   });
@@ -228,7 +267,10 @@ describe('ENC — encounters and the queue', () => {
     });
 
     it('two people calling at once get different patients', async () => {
-      const ids = await Promise.all([newPatient('Race A'), newPatient('Race B')]);
+      const ids = await Promise.all([
+        newPatient('Race A'),
+        newPatient('Race B'),
+      ]);
       for (const patientId of ids) await checkIn({ patientId }).expect(201);
 
       const [first, second] = await Promise.all([
@@ -242,7 +284,9 @@ describe('ENC — encounters and the queue', () => {
 
       const called = [first, second].filter((r) => r.status === 200);
       if (called.length === 2) {
-        expect(called[0]!.body.encounter.id).not.toBe(called[1]!.body.encounter.id);
+        expect(called[0]!.body.encounter.id).not.toBe(
+          called[1]!.body.encounter.id,
+        );
       }
     });
 
@@ -314,7 +358,9 @@ describe('ENC — encounters and the queue', () => {
     it('ENC-T-02: refuses an impossible move and says what is possible', async () => {
       const patientId = await newPatient('Impossible');
       const created = await checkIn({ patientId }).expect(201);
-      const refused = await move(created.body.encounter.id, 'COMPLETED').expect(422);
+      const refused = await move(created.body.encounter.id, 'COMPLETED').expect(
+        422,
+      );
 
       expect(refused.body.code).toBe('invalid_transition');
       expect(refused.body.detail).toContain('triage waiting');
@@ -359,6 +405,91 @@ describe('ENC — encounters and the queue', () => {
         new Date(back.body.statusSince).getTime() -
         new Date(before.body.encounter.statusSince).getTime();
       expect(drift).toBeLessThan(1000);
+    });
+
+    it('ENC-T-11: the pharmacy can send a patient back to the doctor', async () => {
+      // The complaint this answers: a pharmacist reading a dose that
+      // cannot be right, with nothing on the screen but "send to pay"
+      // and "finish".
+      const id = await reach('PHARMACY_WAITING');
+
+      const chart = await request(harness.server)
+        .get(`${API}/encounters/${id}`)
+        .set('Cookie', doctor)
+        .expect(200);
+      const back = chart.body.encounter.allowedNext.find(
+        (option: { to: string }) => option.to === 'DOCTOR_WAITING',
+      );
+      expect(back, 'the pharmacy has no way back to the doctor').toBeTruthy();
+      expect(back.back).toBe(true);
+      expect(back.requiresReason).toBe(true);
+
+      const moved = await move(
+        id,
+        'DOCTOR_WAITING',
+        doctor,
+        'Amoxicillin 500mg three times a day for a 9kg child — please confirm',
+      ).expect(200);
+      expect(moved.body.status).toBe('DOCTOR_WAITING');
+
+      // The reason is on the timeline, because this is the move somebody
+      // asks about afterwards.
+      const timeline = await request(harness.server)
+        .get(`${API}/encounters/${id}/events`)
+        .set('Cookie', doctor)
+        .expect(200);
+      expect(
+        timeline.body.items.at(-1).note,
+        'the reason was not kept',
+      ).toContain('please confirm');
+    });
+
+    it('ENC-T-12: refuses to send a patient back without saying why', async () => {
+      const id = await reach('PHARMACY_WAITING');
+
+      const refused = await move(id, 'DOCTOR_WAITING', doctor).expect(422);
+      expect(refused.body.code).toBe('reason_required');
+
+      // Still where it was. A refused move must not half-happen.
+      const after = await request(harness.server)
+        .get(`${API}/encounters/${id}`)
+        .set('Cookie', doctor)
+        .expect(200);
+      expect(after.body.encounter.status).toBe('PHARMACY_WAITING');
+    });
+
+    it('ENC-T-13: sending somebody back gives them their place in the queue', async () => {
+      const id = await reach('DOCTOR_WAITING');
+      const waiting = await request(harness.server)
+        .get(`${API}/encounters/${id}`)
+        .set('Cookie', doctor)
+        .expect(200);
+      const joinedTheQueue = waiting.body.encounter.statusSince;
+
+      // All the way to the pharmacy, then back again.
+      await move(id, 'IN_CONSULTATION', doctor).expect(200);
+      await move(id, 'PHARMACY_WAITING', doctor).expect(200);
+      await move(id, 'DOCTOR_WAITING', doctor, 'Dose query').expect(200);
+
+      const back = await request(harness.server)
+        .get(`${API}/encounters/${id}`)
+        .set('Cookie', doctor)
+        .expect(200);
+
+      // Not "waiting since now" — they have been waiting since they first
+      // joined this line, and the board has to order them accordingly or
+      // they go behind everyone who arrived while they were at the counter.
+      expect(back.body.encounter.statusSince).toBe(joinedTheQueue);
+    });
+
+    it('a correction inside one station needs no explanation', async () => {
+      // Calling the wrong name is a slip, not a claim that somebody
+      // else's work was wrong. Demanding a paragraph for it would mean
+      // nobody uses the button.
+      const id = await reach('PHARMACY_WAITING');
+      await move(id, 'DISPENSING', doctor).expect(200);
+      const moved = await move(id, 'PHARMACY_WAITING', doctor).expect(200);
+      expect(moved.body.status).toBe('PHARMACY_WAITING');
     });
 
     it('ENC-T-09: a patient marked absent can come back the same day', async () => {
@@ -495,7 +626,10 @@ describe('ENC — encounters and the queue', () => {
       const registry = harness.app.get(EncounterCompletionRegistry);
       registry.add('consultation', async (_tx, encounterId) =>
         encounterId === id
-          ? { reason: 'unsigned', detail: 'the consultation has not been signed' }
+          ? {
+              reason: 'unsigned',
+              detail: 'the consultation has not been signed',
+            }
           : null,
       );
 
@@ -539,7 +673,9 @@ describe('ENC — encounters and the queue', () => {
         await request(harness.server)
           .patch(`${API}/branches/${branch}/settings`)
           .set('Cookie', admin)
-          .send({ settings: { queue: { requirePaymentBeforeComplete: false } } })
+          .send({
+            settings: { queue: { requirePaymentBeforeComplete: false } },
+          })
           .expect(200);
 
         await move(id, 'COMPLETED', reception).expect(200);
@@ -551,6 +687,298 @@ describe('ENC — encounters and the queue', () => {
           .send({ settings: { queue: { requirePaymentBeforeComplete: null } } })
           .expect(200);
       }
+    });
+  });
+
+  // ------------------------------------------------- the clinic's own flow
+
+  /**
+   * ENC-F-05. A small clinic sends people from the counter straight to
+   * the doctor, and this is the setting that says so. It was
+   * implemented and never tested, which is the state a setting is in
+   * just before somebody changes it and nothing happens.
+   */
+  describe('Whether triage happens at all (ENC-F-05)', () => {
+    async function setTriage(value: string | null) {
+      await request(harness.server)
+        .patch(`${API}/branches/${branch}/settings`)
+        .set('Cookie', admin)
+        .send({ settings: { queue: { triageRequired: value } } })
+        .expect(200);
+    }
+
+    it('NEVER sends a patient straight to the doctor at check-in', async () => {
+      const patientId = await newPatient();
+      await setTriage('NEVER');
+      try {
+        const created = await checkIn({ patientId }).expect(201);
+        expect(created.body.encounter.status).toBe('DOCTOR_WAITING');
+
+        // And the visit runs from there without anybody having to step
+        // back through a station the clinic does not have.
+        await move(created.body.encounter.id, 'IN_CONSULTATION', doctor).expect(
+          200,
+        );
+      } finally {
+        await setTriage(null);
+      }
+    });
+
+    it('ALWAYS and OPTIONAL both start at triage', async () => {
+      for (const setting of ['ALWAYS', 'OPTIONAL']) {
+        const patientId = await newPatient();
+        await setTriage(setting);
+        try {
+          const created = await checkIn({ patientId }).expect(201);
+          expect(created.body.encounter.status).toBe('TRIAGE_WAITING');
+        } finally {
+          await setTriage(null);
+        }
+      }
+    });
+
+    it('is a branch decision, not a clinic-wide one', async () => {
+      // Branch A skips triage; branch B keeps it. Both are the same
+      // clinic, which is the case a growing practice actually hits.
+      await setTriage('NEVER');
+      try {
+        const a = await checkIn({ patientId: await newPatient() }).expect(201);
+        expect(a.body.encounter.status).toBe('DOCTOR_WAITING');
+
+        const b = await request(harness.server)
+          .post(`${API}/branches/${fx.branchBId}/encounters`)
+          .set('Cookie', reception)
+          .send({ patientId: await newPatient() });
+        // Reception may not be rostered at branch B; either it is
+        // refused for that reason, or it starts at triage. What must
+        // not happen is branch B inheriting branch A's override.
+        if (b.status === 201)
+          expect(b.body.encounter.status).toBe('TRIAGE_WAITING');
+        else expect([403, 400]).toContain(b.status);
+      } finally {
+        await setTriage(null);
+      }
+    });
+  });
+
+  /**
+   * ENC-F-15. Most small clinics in Malaysia send the patient from the
+   * doctor's room to **one** window for medicine and the bill together.
+   * The statuses underneath do not change — what changes is that the
+   * board stops pretending it is two people.
+   */
+  describe('One counter for medicine and money (ENC-F-15)', () => {
+    async function setCounter(value: boolean | null) {
+      await request(harness.server)
+        .patch(`${API}/branches/${branch}/settings`)
+        .set('Cookie', admin)
+        .send({ settings: { queue: { combinedCounter: value } } })
+        .expect(200);
+    }
+
+    it('the board is one queue rather than two halves of one job', async () => {
+      const before = await request(harness.server)
+        .get(`${API}/branches/${branch}/queues-stats`)
+        .set('Cookie', reception)
+        .expect(200);
+      expect(before.body.stations).toContain('pharmacy');
+      expect(before.body.stations).toContain('cashier');
+      expect(before.body.stations).not.toContain('counter');
+
+      await setCounter(true);
+      try {
+        const after = await request(harness.server)
+          .get(`${API}/branches/${branch}/queues-stats`)
+          .set('Cookie', reception)
+          .expect(200);
+        expect(after.body.stations).toContain('counter');
+        expect(after.body.stations).not.toContain('pharmacy');
+        expect(after.body.stations).not.toContain('cashier');
+      } finally {
+        await setCounter(null);
+      }
+    });
+
+    it('the one queue holds both lines', async () => {
+      // Somebody waiting for medicine, and somebody waiting to pay.
+      const waitingForMedicine = await reach('PHARMACY_WAITING');
+      const waitingToPay = await reach('PAYMENT_WAITING');
+
+      const counter = await request(harness.server)
+        .get(`${API}/branches/${branch}/queues/counter`)
+        .set('Cookie', reception)
+        .expect(200);
+      const ids = counter.body.items.map((row: { id: string }) => row.id);
+      expect(ids).toContain(waitingForMedicine);
+      expect(ids).toContain(waitingToPay);
+    });
+
+    it('calling next moves each of them the right way', async () => {
+      // Both lines have somebody in them. Which one the counter calls
+      // next is the queue's business — what matters is that whoever it
+      // calls is moved correctly for the line they were in.
+      await reach('PHARMACY_WAITING');
+      await reach('PAYMENT_WAITING');
+
+      const queue = await request(harness.server)
+        .get(`${API}/branches/${branch}/queues/counter`)
+        .set('Cookie', reception)
+        .expect(200);
+      const head = queue.body.items[0] as { id: string; status: string };
+      expect(head).toBeTruthy();
+
+      const called = await request(harness.server)
+        .post(`${API}/branches/${branch}/queues/counter/call-next`)
+        .set('Cookie', reception)
+        .expect(200);
+
+      expect(called.body.encounter.id).toBe(head.id);
+      if (head.status === 'PHARMACY_WAITING') {
+        // Waiting for medicine: called *into* dispensing.
+        expect(called.body.encounter.status).toBe('DISPENSING');
+      } else {
+        // Only waiting to pay: there is no "being paid" state, and
+        // inventing one would put a step in the record that did not
+        // happen. So they are announced and nothing else moves.
+        expect(called.body.encounter.status).toBe(head.status);
+        expect(called.body.encounter.callCount).toBeGreaterThan(0);
+      }
+    });
+
+    it('somebody who is only waiting to pay is called, not moved', async () => {
+      // The half of the rule the queue order might never exercise above.
+      const id = await reach('PAYMENT_WAITING');
+      const before = await request(harness.server)
+        .get(`${API}/encounters/${id}`)
+        .set('Cookie', reception)
+        .expect(200);
+
+      const called = await request(harness.server)
+        .post(`${API}/encounters/${id}/call`)
+        .set('Cookie', reception)
+        .expect(200);
+
+      expect(called.body.encounter.status).toBe('PAYMENT_WAITING');
+      expect(called.body.encounter.callCount).toBe(
+        before.body.encounter.callCount + 1,
+      );
+    });
+
+    it('a visit still runs from the counter to the door', async () => {
+      // The point of the whole thing: one person, one window, and the
+      // patient goes straight out. `DISPENSING → COMPLETED` was always a
+      // legal move; nothing new had to be invented for it.
+      const id = await reach('PHARMACY_WAITING');
+      await move(id, 'DISPENSING', reception).expect(200);
+      await move(id, 'COMPLETED', reception).expect(200);
+    });
+  });
+
+  /**
+   * ENC-F-11. The strip at the top of a chart: where this visit has got
+   * to, which is the first question anybody opening it has.
+   */
+  describe('Where this visit has got to', () => {
+    async function flowOf(id: string) {
+      const chart = await request(harness.server)
+        .get(`${API}/encounters/${id}`)
+        .set('Cookie', reception)
+        .expect(200);
+      return chart.body.flow as Array<{ key: string; label: string; state: string }>;
+    }
+
+    it('marks what is done, where they are, and what is still to come', async () => {
+      const created = await checkIn({ patientId: await newPatient() }).expect(201);
+      const id = created.body.encounter.id as string;
+
+      const atStart = await flowOf(id);
+      expect(atStart.find((s) => s.key === 'triage')?.state).toBe('current');
+      expect(atStart.find((s) => s.key === 'doctor')?.state).toBe('upcoming');
+      expect(atStart.find((s) => s.key === 'done')?.state).toBe('upcoming');
+
+      await move(id, 'TRIAGE_IN_PROGRESS').expect(200);
+      await move(id, 'DOCTOR_WAITING').expect(200);
+
+      const atDoctor = await flowOf(id);
+      // Triage is behind them now, and stays behind them.
+      expect(atDoctor.find((s) => s.key === 'triage')?.state).toBe('done');
+      expect(atDoctor.find((s) => s.key === 'doctor')?.state).toBe('current');
+    });
+
+    it('does not show a step this clinic does not have', async () => {
+      await request(harness.server)
+        .patch(`${API}/branches/${branch}/settings`)
+        .set('Cookie', admin)
+        .send({ settings: { queue: { triageRequired: 'NEVER' } } })
+        .expect(200);
+      try {
+        const created = await checkIn({ patientId: await newPatient() }).expect(201);
+        const flow = await flowOf(created.body.encounter.id);
+        expect(flow.find((s) => s.key === 'triage')?.state).toBe('skipped');
+        expect(flow.find((s) => s.key === 'doctor')?.state).toBe('current');
+      } finally {
+        await request(harness.server)
+          .patch(`${API}/branches/${branch}/settings`)
+          .set('Cookie', admin)
+          .send({ settings: { queue: { triageRequired: null } } })
+          .expect(200);
+      }
+    });
+
+    it('shows one counter or two, as the clinic is set up', async () => {
+      const id = await reach('PHARMACY_WAITING');
+
+      const split = await flowOf(id);
+      expect(split.map((s) => s.key)).toContain('pharmacy');
+      expect(split.map((s) => s.key)).toContain('payment');
+      expect(split.map((s) => s.key)).not.toContain('counter');
+
+      await request(harness.server)
+        .patch(`${API}/branches/${branch}/settings`)
+        .set('Cookie', admin)
+        .send({ settings: { queue: { combinedCounter: true } } })
+        .expect(200);
+      try {
+        const joined = await flowOf(id);
+        expect(joined.map((s) => s.key)).toContain('counter');
+        expect(joined.map((s) => s.key)).not.toContain('pharmacy');
+        expect(joined.find((s) => s.key === 'counter')?.state).toBe('current');
+      } finally {
+        await request(harness.server)
+          .patch(`${API}/branches/${branch}/settings`)
+          .set('Cookie', admin)
+          .send({ settings: { queue: { combinedCounter: null } } })
+          .expect(200);
+      }
+    });
+
+    it('only mentions a procedure once one has been ordered', async () => {
+      const plain = await reach('PAYMENT_WAITING');
+      expect((await flowOf(plain)).map((s) => s.key)).not.toContain('procedure');
+
+      const created = await checkIn({ patientId: await newPatient() }).expect(201);
+      const id = created.body.encounter.id as string;
+      for (const to of ['TRIAGE_IN_PROGRESS', 'DOCTOR_WAITING', 'IN_CONSULTATION']) {
+        await move(id, to, to === 'IN_CONSULTATION' ? doctor : reception).expect(200);
+      }
+      await move(id, 'PROCEDURE_WAITING', doctor).expect(200);
+      expect((await flowOf(id)).find((s) => s.key === 'procedure')?.state).toBe('current');
+    });
+
+    it('says how it ended when it did not end well', async () => {
+      const created = await checkIn({ patientId: await newPatient() }).expect(201);
+      const id = created.body.encounter.id as string;
+      await request(harness.server)
+        .post(`${API}/encounters/${id}/cancel`)
+        .set('Cookie', reception)
+        .send({ reason: 'Patient left before being seen' })
+        .expect(200);
+
+      const flow = await flowOf(id);
+      const end = flow[flow.length - 1]!;
+      expect(end.label).toBe('Cancelled');
+      expect(end.state).toBe('current');
+      expect(flow.map((s) => s.key)).not.toContain('done');
     });
   });
 
@@ -645,7 +1073,11 @@ describe('ENC — encounters and the queue', () => {
             .get(`${API}/encounters/${id}/events`)
             .set('Cookie', reception)
             .expect(200)
-        ).body.items as Array<{ action: string; fromStatus: string; toStatus: string }>;
+        ).body.items as Array<{
+          action: string;
+          fromStatus: string;
+          toStatus: string;
+        }>;
 
       // Arrived, joined the queue.
       expect(await events()).toHaveLength(2);
@@ -668,7 +1100,11 @@ describe('ENC — encounters and the queue', () => {
           .get(`${API}/encounters/${calledId}/events`)
           .set('Cookie', reception)
           .expect(200)
-      ).body.items as Array<{ action: string; fromStatus: string; toStatus: string }>;
+      ).body.items as Array<{
+        action: string;
+        fromStatus: string;
+        toStatus: string;
+      }>;
 
       const calls = calledEvents.filter((event) => event.action === 'call');
       // One event per call, however many times this patient has been called.
@@ -756,7 +1192,9 @@ describe('ENC — encounters and the queue', () => {
 
     it('needs no sign-in, and refuses a token that is not one', async () => {
       await request(harness.server).get(`${API}/display/${token}`).expect(200);
-      await request(harness.server).get(`${API}/display/not-a-real-token`).expect(404);
+      await request(harness.server)
+        .get(`${API}/display/not-a-real-token`)
+        .expect(404);
     });
 
     it('stops working the moment it is revoked', async () => {
@@ -766,12 +1204,16 @@ describe('ENC — encounters and the queue', () => {
         .send({ label: 'Screen to be replaced' })
         .expect(201);
 
-      await request(harness.server).get(`${API}/display/${issued.body.token}`).expect(200);
+      await request(harness.server)
+        .get(`${API}/display/${issued.body.token}`)
+        .expect(200);
       await request(harness.server)
         .delete(`${API}/display-tokens/${issued.body.id}`)
         .set('Cookie', admin)
         .expect(200);
-      await request(harness.server).get(`${API}/display/${issued.body.token}`).expect(404);
+      await request(harness.server)
+        .get(`${API}/display/${issued.body.token}`)
+        .expect(404);
     });
 
     it('shows only the numbers when the clinic prefers that', async () => {
@@ -781,7 +1223,9 @@ describe('ENC — encounters and the queue', () => {
         .send({ settings: { queue: { displayShowFirstName: false } } })
         .expect(200);
 
-      const view = await request(harness.server).get(`${API}/display/${token}`).expect(200);
+      const view = await request(harness.server)
+        .get(`${API}/display/${token}`)
+        .expect(200);
       for (const row of [...view.body.waiting, ...view.body.nowServing]) {
         expect(row.label).toBeNull();
       }

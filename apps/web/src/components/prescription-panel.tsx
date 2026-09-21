@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -16,9 +16,9 @@ import {
   type RxOptions,
   type RxWarning,
   expiryTone,
-} from '@/lib/api';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Field, Input, Select } from './ui';
+} from "@/lib/api";
+import { useAsyncEffect } from "@/lib/use-async";
+import { Alert, Button, Field, Input, Select } from "./ui";
 
 /**
  * The prescribing panel, inside the consultation workspace (RX §11).
@@ -41,37 +41,45 @@ type Props = {
 
 const BLANK: PrescriptionItemInput = {
   doseValue: 1,
-  doseUnit: 'tab',
-  route: 'PO',
-  frequencyCode: 'TDS',
+  doseUnit: "tab",
+  route: "PO",
+  frequencyCode: "TDS",
   durationDays: 5,
 };
 
 /** RX-Q-05 is open; these are the phrases the pilot clinic uses today. */
 const INSTRUCTION_CHIPS = [
-  'selepas makan',
-  'sebelum makan',
-  'habiskan ubat ini',
-  'boleh menyebabkan mengantuk',
-  'banyakkan minum air',
+  "selepas makan",
+  "sebelum makan",
+  "habiskan ubat ini",
+  "boleh menyebabkan mengantuk",
+  "banyakkan minum air",
 ];
 
-export function PrescriptionPanel({ consultationId, editable, onChange }: Props) {
+export function PrescriptionPanel({
+  consultationId,
+  editable,
+  onChange,
+}: Props) {
   const [view, setView] = useState<PrescriptionView | null>(null);
   const [options, setOptions] = useState<RxOptions | null>(null);
   const [favourites, setFavourites] = useState<RxFavourite[]>([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Product[]>([]);
   /** Null until a search has run; false when stock is not tracked at all. */
   const [stockKnown, setStockKnown] = useState<boolean | null>(null);
-  const [draft, setDraft] = useState<(PrescriptionItemInput & { label: string }) | null>(null);
+  const [draft, setDraft] = useState<
+    (PrescriptionItemInput & { label: string }) | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const searchBox = useRef<HTMLInputElement>(null);
 
   const refresh = useMemo(
     () => async () => {
-      const next = await api<PrescriptionView>(`/consultations/${consultationId}/prescription`);
+      const next = await api<PrescriptionView>(
+        `/consultations/${consultationId}/prescription`,
+      );
       setView(next);
       onChange?.(next);
     },
@@ -81,8 +89,10 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
   useAsyncEffect(async () => {
     await Promise.all([
       refresh(),
-      api<RxOptions>('/prescriptions/options').then(setOptions),
-      api<{ items: RxFavourite[] }>('/me/rx-favourites').then((r) => setFavourites(r.items)),
+      api<RxOptions>("/prescriptions/options").then(setOptions),
+      api<{ items: RxFavourite[] }>("/me/rx-favourites").then((r) =>
+        setFavourites(r.items),
+      ),
     ]);
   }, [refresh]);
 
@@ -105,15 +115,16 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
   );
 
   function startFrom(product: Product) {
-    setQuery('');
+    setQuery("");
     setHits([]);
     setDraft({
       label: product.label,
       productId: product.id,
       doseValue: product.defaultDose ?? product.strengthValue ?? 1,
-      doseUnit: product.defaultDoseUnit ?? product.strengthUnit ?? product.dispenseUnit,
-      route: product.defaultRoute ?? 'PO',
-      frequencyCode: product.defaultFrequency ?? 'TDS',
+      doseUnit:
+        product.defaultDoseUnit ?? product.strengthUnit ?? product.dispenseUnit,
+      route: product.defaultRoute ?? "PO",
+      frequencyCode: product.defaultFrequency ?? "TDS",
       durationDays: 5,
     });
   }
@@ -123,14 +134,16 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
     setError(null);
     try {
       await api(`/consultations/${consultationId}/prescription/items`, {
-        method: 'POST',
+        method: "POST",
         body: input,
       });
       setDraft(null);
       await refresh();
       searchBox.current?.focus();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not add that.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Could not add that.",
+      );
     } finally {
       setBusy(false);
     }
@@ -145,8 +158,8 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
           about any one drug, and because it is the cheapest thing to fix. */}
       {unknownAllergies && (
         <Alert tone="warning" title="Allergies not recorded">
-          Nobody has asked this patient about allergies. Record them, or record &ldquo;no known
-          drug allergies&rdquo;, in the patient&rsquo;s file.
+          Nobody has asked this patient about allergies. Record them, or record
+          &ldquo;no known drug allergies&rdquo;, in the patient&rsquo;s file.
         </Alert>
       )}
 
@@ -161,7 +174,7 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
           <ItemRow
             key={item.id}
             item={item}
-            editable={editable && item.status === 'DRAFT'}
+            editable={editable && item.status === "DRAFT"}
             options={options}
             onChanged={refresh}
           />
@@ -189,12 +202,12 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
                 if (event.target.value.trim().length < 2) setHits([]);
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && hits[0]) {
+                if (event.key === "Enter" && hits[0]) {
                   event.preventDefault();
                   startFrom(hits[0]);
                 }
-                if (event.key === 'Escape') {
-                  setQuery('');
+                if (event.key === "Escape") {
+                  setQuery("");
                   setHits([]);
                 }
               }}
@@ -213,21 +226,29 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
                     <span>
                       <span className="font-medium">{product.label}</span>
                       {product.genericName && (
-                        <span className="block text-xs text-muted">{product.genericName}</span>
+                        <span className="block text-xs text-muted">
+                          {product.genericName}
+                        </span>
                       )}
                     </span>
                     <span className="shrink-0 text-right text-xs">
                       {product.isControlled && (
-                        <span className="block font-medium text-danger">Controlled</span>
+                        <span className="block font-medium text-danger">
+                          Controlled
+                        </span>
                       )}
                       {/* RX-F-04. "Not known" and "none" are different
                           answers, and a prescriber told "0 on hand" who
                           then finds a full box learns not to believe the
                           number. */}
                       {stockKnown === false ? (
-                        <span className="block text-muted">stock not known</span>
+                        <span className="block text-muted">
+                          stock not known
+                        </span>
                       ) : product.onHand === 0 ? (
-                        <span className="block font-medium text-warning">none in stock</span>
+                        <span className="block font-medium text-warning">
+                          none in stock
+                        </span>
                       ) : (
                         <span className="block text-muted">
                           {product.onHand} {product.dispenseUnit} on hand
@@ -236,9 +257,9 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
                       {product.nearestExpiry && (
                         <span
                           className={
-                            expiryTone(product.nearestExpiry) === 'warning'
-                              ? 'block text-warning'
-                              : 'block text-muted'
+                            expiryTone(product.nearestExpiry) === "warning"
+                              ? "block text-warning"
+                              : "block text-muted"
                           }
                         >
                           exp {product.nearestExpiry.slice(0, 7)}
@@ -260,9 +281,12 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
                 className="rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-muted"
                 onClick={() =>
                   setDraft({
-                    label: [favourite.product.name, favourite.product.strengthText]
+                    label: [
+                      favourite.product.name,
+                      favourite.product.strengthText,
+                    ]
                       .filter(Boolean)
-                      .join(' '),
+                      .join(" "),
                     productId: favourite.productId,
                     ...BLANK,
                     ...(favourite.defaults ?? {}),
@@ -282,13 +306,18 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
                 setBusy(true);
                 setError(null);
                 try {
-                  await api(`/consultations/${consultationId}/prescription/repeat-last`, {
-                    method: 'POST',
-                  });
+                  await api(
+                    `/consultations/${consultationId}/prescription/repeat-last`,
+                    {
+                      method: "POST",
+                    },
+                  );
                   await refresh();
                 } catch (caught) {
                   setError(
-                    caught instanceof ApiError ? caught.message : 'Could not repeat the last one.',
+                    caught instanceof ApiError
+                      ? caught.message
+                      : "Could not repeat the last one.",
                   );
                 } finally {
                   setBusy(false);
@@ -300,7 +329,13 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setDraft({ label: 'Written by hand', ...BLANK, externalName: '' })}
+              onClick={() =>
+                setDraft({
+                  label: "Written by hand",
+                  ...BLANK,
+                  externalName: "",
+                })
+              }
             >
               Write one by hand
             </Button>
@@ -350,7 +385,10 @@ function ItemRow({
           onCancel={() => setEditing(false)}
           onSave={async (input) => {
             setBusy(true);
-            await api(`/prescription-items/${item.id}`, { method: 'PUT', body: input });
+            await api(`/prescription-items/${item.id}`, {
+              method: "PUT",
+              body: input,
+            });
             await onChanged();
             setBusy(false);
             setEditing(false);
@@ -367,17 +405,26 @@ function ItemRow({
           <p className="text-sm font-medium">
             {item.displayName}
             {item.isControlled && (
-              <span className="ml-2 align-middle text-xs font-medium text-danger">Controlled</span>
+              <span className="ml-2 align-middle text-xs font-medium text-danger">
+                Controlled
+              </span>
             )}
             {item.version > 1 && (
-              <span className="ml-2 align-middle text-xs text-muted">v{item.version}</span>
+              <span className="ml-2 align-middle text-xs text-muted">
+                v{item.version}
+              </span>
             )}
           </p>
           <p className="text-xs text-muted">
-            {item.doseValue} {item.doseUnit} · {item.route} · {item.frequencyCode}
-            {item.untilFinished ? ' · until finished' : ` · ${item.durationDays} d`} ·{' '}
-            {item.quantity} {item.quantityUnit}
-            {item.quantityAuto && <span className="ml-1 text-primary">auto</span>}
+            {item.doseValue} {item.doseUnit} · {item.route} ·{" "}
+            {item.frequencyCode}
+            {item.untilFinished
+              ? " · until finished"
+              : ` · ${item.durationDays} d`}{" "}
+            · {item.quantity} {item.quantityUnit}
+            {item.quantityAuto && (
+              <span className="ml-1 text-primary">auto</span>
+            )}
           </p>
           <p className="mt-1 text-xs italic text-muted">{item.labelText}</p>
         </div>
@@ -390,7 +437,9 @@ function ItemRow({
               variant="ghost"
               size="sm"
               onClick={async () => {
-                await api(`/prescription-items/${item.id}`, { method: 'DELETE' });
+                await api(`/prescription-items/${item.id}`, {
+                  method: "DELETE",
+                });
                 await onChanged();
               }}
             >
@@ -421,7 +470,8 @@ function ItemRow({
 
       {item.cancelledReason && (
         <p className="mt-2 text-xs text-muted">
-          {item.status === 'DECLINED' ? 'Declined' : 'Cancelled'}: {item.cancelledReason}
+          {item.status === "DECLINED" ? "Declined" : "Cancelled"}:{" "}
+          {item.cancelledReason}
         </p>
       )}
     </li>
@@ -429,19 +479,25 @@ function ItemRow({
 }
 
 /** RX-F-15. Five characters is not much to ask for a decision like this. */
-function OverrideForm({ item, onDone }: { item: PrescriptionItem; onDone: () => Promise<void> }) {
-  const [reason, setReason] = useState('');
+function OverrideForm({
+  item,
+  onDone,
+}: {
+  item: PrescriptionItem;
+  onDone: () => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
   const [refute, setRefute] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const allergy = item.warnings.find(
-    (w): w is Extract<RxWarning, { type: 'ALLERGY' }> => w.type === 'ALLERGY',
+    (w): w is Extract<RxWarning, { type: "ALLERGY" }> => w.type === "ALLERGY",
   );
 
   return (
     <div className="mt-2 flex flex-col gap-2 rounded-md bg-surface-muted p-2">
       <div className="flex flex-wrap gap-1.5">
-        {['Tolerated previously', 'Benefit outweighs risk'].map((preset) => (
+        {["Tolerated previously", "Benefit outweighs risk"].map((preset) => (
           <button
             key={preset}
             type="button"
@@ -451,7 +507,7 @@ function OverrideForm({ item, onDone }: { item: PrescriptionItem; onDone: () => 
             {preset}
           </button>
         ))}
-        {allergy && allergy.level !== 'UNLINKED' && (
+        {allergy && allergy.level !== "UNLINKED" && (
           <button
             type="button"
             className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs"
@@ -476,8 +532,11 @@ function OverrideForm({ item, onDone }: { item: PrescriptionItem; onDone: () => 
         onClick={async () => {
           setBusy(true);
           await api(`/prescription-items/${item.id}/override`, {
-            method: 'POST',
-            body: { reason: reason.trim(), ...(refute ? { refuteAllergyId: refute } : {}) },
+            method: "POST",
+            body: {
+              reason: reason.trim(),
+              ...(refute ? { refuteAllergyId: refute } : {}),
+            },
           });
           await onDone();
           setBusy(false);
@@ -506,7 +565,10 @@ function ItemEditor({
 }) {
   const [form, setForm] = useState<PrescriptionItemInput>(value);
 
-  function set<K extends keyof PrescriptionItemInput>(key: K, next: PrescriptionItemInput[K]) {
+  function set<K extends keyof PrescriptionItemInput>(
+    key: K,
+    next: PrescriptionItemInput[K],
+  ) {
     setForm((current) => ({ ...current, [key]: next }));
   }
 
@@ -519,8 +581,8 @@ function ItemEditor({
       {isExternal && (
         <Field label="Name it for the pharmacy">
           <Input
-            value={form.externalName ?? ''}
-            onChange={(event) => set('externalName', event.target.value)}
+            value={form.externalName ?? ""}
+            onChange={(event) => set("externalName", event.target.value)}
           />
         </Field>
       )}
@@ -532,11 +594,14 @@ function ItemEditor({
             step="0.25"
             min="0"
             value={form.doseValue}
-            onChange={(event) => set('doseValue', Number(event.target.value))}
+            onChange={(event) => set("doseValue", Number(event.target.value))}
           />
         </Field>
         <Field label="Unit">
-          <Select value={form.doseUnit} onChange={(event) => set('doseUnit', event.target.value)}>
+          <Select
+            value={form.doseUnit}
+            onChange={(event) => set("doseUnit", event.target.value)}
+          >
             {(options?.doseUnits ?? [form.doseUnit]).map((unit) => (
               <option key={unit} value={unit}>
                 {unit}
@@ -545,7 +610,10 @@ function ItemEditor({
           </Select>
         </Field>
         <Field label="Route">
-          <Select value={form.route} onChange={(event) => set('route', event.target.value)}>
+          <Select
+            value={form.route}
+            onChange={(event) => set("route", event.target.value)}
+          >
             {(options?.routes ?? [form.route]).map((route) => (
               <option key={route} value={route}>
                 {route}
@@ -558,31 +626,35 @@ function ItemEditor({
             value={form.frequencyCode}
             onChange={(event) => {
               const code = event.target.value;
-              set('frequencyCode', code);
+              set("frequencyCode", code);
               // PRN has no rate, so it cannot have a calculated quantity
               // and it must say what it is for.
-              if (code === 'PRN') set('isPrn', true);
+              if (code === "PRN") set("isPrn", true);
             }}
           >
-            {(options?.frequencies ?? [{ code: form.frequencyCode, ms: '', en: '', perDay: null }]).map(
-              (frequency) => (
-                <option key={frequency.code} value={frequency.code}>
-                  {frequency.code}
-                  {frequency.en ? ` — ${frequency.en}` : ''}
-                </option>
-              ),
-            )}
+            {(
+              options?.frequencies ?? [
+                { code: form.frequencyCode, ms: "", en: "", perDay: null },
+              ]
+            ).map((frequency) => (
+              <option key={frequency.code} value={frequency.code}>
+                {frequency.code}
+                {frequency.en ? ` — ${frequency.en}` : ""}
+              </option>
+            ))}
             <option value="CUSTOM">CUSTOM</option>
           </Select>
         </Field>
 
-        {form.frequencyCode === 'CUSTOM' && (
+        {form.frequencyCode === "CUSTOM" && (
           <Field label="Times a day">
             <Input
               type="number"
               min="1"
-              value={form.frequencyPerDay ?? ''}
-              onChange={(event) => set('frequencyPerDay', Number(event.target.value))}
+              value={form.frequencyPerDay ?? ""}
+              onChange={(event) =>
+                set("frequencyPerDay", Number(event.target.value))
+              }
             />
           </Field>
         )}
@@ -593,8 +665,10 @@ function ItemEditor({
               type="number"
               min="1"
               max="365"
-              value={form.durationDays ?? ''}
-              onChange={(event) => set('durationDays', Number(event.target.value))}
+              value={form.durationDays ?? ""}
+              onChange={(event) =>
+                set("durationDays", Number(event.target.value))
+              }
             />
           </Field>
         )}
@@ -605,9 +679,14 @@ function ItemEditor({
             step="0.5"
             min="0"
             placeholder="worked out"
-            value={form.quantity ?? ''}
+            value={form.quantity ?? ""}
             onChange={(event) =>
-              set('quantity', event.target.value === '' ? undefined : Number(event.target.value))
+              set(
+                "quantity",
+                event.target.value === ""
+                  ? undefined
+                  : Number(event.target.value),
+              )
             }
           />
         </Field>
@@ -618,27 +697,27 @@ function ItemEditor({
           type="checkbox"
           checked={form.untilFinished ?? false}
           onChange={(event) => {
-            set('untilFinished', event.target.checked);
-            if (event.target.checked) set('durationDays', undefined);
+            set("untilFinished", event.target.checked);
+            if (event.target.checked) set("durationDays", undefined);
           }}
         />
         Until finished
       </label>
 
-      {(form.isPrn || form.frequencyCode === 'PRN') && (
+      {(form.isPrn || form.frequencyCode === "PRN") && (
         <Field label="When required for">
           <Input
-            value={form.prnIndication ?? ''}
+            value={form.prnIndication ?? ""}
             placeholder="demam, sakit kepala…"
-            onChange={(event) => set('prnIndication', event.target.value)}
+            onChange={(event) => set("prnIndication", event.target.value)}
           />
         </Field>
       )}
 
       <Field label="Instructions on the label">
         <Input
-          value={form.instructions ?? ''}
-          onChange={(event) => set('instructions', event.target.value)}
+          value={form.instructions ?? ""}
+          onChange={(event) => set("instructions", event.target.value)}
         />
       </Field>
       <div className="flex flex-wrap gap-1.5">
@@ -648,7 +727,10 @@ function ItemEditor({
             type="button"
             className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs"
             onClick={() =>
-              set('instructions', form.instructions ? `${form.instructions}, ${chip}` : chip)
+              set(
+                "instructions",
+                form.instructions ? `${form.instructions}, ${chip}` : chip,
+              )
             }
           >
             {chip}
@@ -665,7 +747,7 @@ function ItemEditor({
           loading={busy}
           onClick={() => {
             const clean: PrescriptionItemInput = { ...form };
-            if (clean.externalName === '') delete clean.externalName;
+            if (clean.externalName === "") delete clean.externalName;
             if (!clean.isPrn) delete clean.prnIndication;
             void onSave(clean);
           }}
@@ -695,7 +777,9 @@ export function PrescriptionSignSummary({
   confirmed: string[];
   onConfirmedChange: (next: string[]) => void;
 }) {
-  const current = items.filter((item) => item.isCurrent && item.status === 'DRAFT');
+  const current = items.filter(
+    (item) => item.isCurrent && item.status === "DRAFT",
+  );
   if (!prescription || current.length === 0) return null;
 
   return (
@@ -731,8 +815,8 @@ export function PrescriptionSignSummary({
                       )
                     }
                   />
-                  I confirm this patient has a severe allergy to this substance and I am
-                  prescribing it anyway.
+                  I confirm this patient has a severe allergy to this substance
+                  and I am prescribing it anyway.
                 </label>
               )}
             </li>

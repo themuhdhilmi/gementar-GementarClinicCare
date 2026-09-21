@@ -48,7 +48,13 @@ Start the app yourself:
 npm run dev
 ```
 
-Sign in at **http://localhost:3000/login**. Six accounts, all with the
+Sign in at **http://localhost:3000/login**.
+
+The menu is a **left rail**, grouped the way a clinic thinks about its
+day — the floor, care, money, stock, insight, setup — and it only shows
+what your role can reach. Signing in as the doctor and as the cashier
+gives two different menus, which is the quickest way to see what a role
+actually is. Six accounts, all with the
 password `ujian-klinik-2026-selamat` — the table is in
 [`TEST-ACCOUNTS.md`](../../../../TEST-ACCOUNTS.md). Start as **Dr Farid**
 (`doctor@klinikpilot.test`) unless a file says otherwise.
@@ -59,6 +65,8 @@ password `ujian-klinik-2026-selamat` — the table is in
 
 Do this once before anything else. It is the sentence the whole of V0
 exists to make true, and it takes about four minutes.
+
+ujian-klinik-2026-selamat
 
 **As Puan Zana** (`frontdesk@klinikpilot.test`):
 

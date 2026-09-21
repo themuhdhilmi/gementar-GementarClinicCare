@@ -37,10 +37,12 @@ import {
   Alert,
   Button,
   Card,
+  Chip,
   EmptyState,
   Field,
   Input,
   Modal,
+  Skeleton,
   TextField,
   timeAgo,
 } from "@/components/ui";
@@ -236,7 +238,12 @@ export default function ConsultationPage() {
   }, []);
 
   if (!view || !patient || !chart)
-    return <p className="text-sm text-muted">Loading…</p>;
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-64" />
+      </div>
+    );
   const { consultation } = view;
 
   async function saveDiagnoses(next: Diagnosis[]) {
@@ -276,13 +283,16 @@ export default function ConsultationPage() {
     <div>
       <PatientHeader patient={patient} clinical={clinical} compact />
 
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Consultation</h1>
-        <span className="font-mono text-sm">{chart.encounter.queueNo}</span>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-lg font-semibold tracking-tight">Consultation</h1>
+        <span className="font-mono text-sm tabular">
+          {chart.encounter.queueNo}
+        </span>
         {/* CON-F-23: always visible, because "did that save?" is the
             question a doctor should never have to ask. */}
         <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+          aria-live="polite"
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
             saving === "failed"
               ? "bg-danger-soft text-danger"
               : saving === "saved"
@@ -290,6 +300,7 @@ export default function ConsultationPage() {
                 : "bg-warning-soft text-warning"
           }`}
         >
+          <span aria-hidden className="size-1.5 rounded-full bg-current" />
           {saving === "failed"
             ? "Not saved — still trying"
             : saving === "saved"
@@ -299,9 +310,7 @@ export default function ConsultationPage() {
               : "Saving…"}
         </span>
         {consultation.copiedFromId && (
-          <span className="rounded-full bg-primary-soft px-2.5 py-0.5 text-xs text-primary-ink">
-            History copied from an earlier visit
-          </span>
+          <Chip tone="info">History copied from an earlier visit</Chip>
         )}
       </div>
 

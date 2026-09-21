@@ -571,7 +571,14 @@ export type EncounterStatus =
 
 export type EncounterPriority = "NORMAL" | "URGENT" | "EMERGENCY";
 export type Station =
-  "reception" | "triage" | "doctor" | "pharmacy" | "cashier" | "procedure";
+  | "reception"
+  | "triage"
+  | "doctor"
+  | "pharmacy"
+  | "cashier"
+  | "procedure"
+  /** One counter doing dispensing and payment together. A view, not a state. */
+  | "counter";
 
 export type QueueRow = {
   id: string;
@@ -615,6 +622,10 @@ export type Encounter = {
     to: EncounterStatus;
     label: string;
     note: string | null;
+    /** A move backwards, to a step this visit has already been through. */
+    back: boolean;
+    /** The server refuses this one without a written reason. */
+    requiresReason: boolean;
   }>;
   followUpDue: string | null;
   followUpNote: string | null;
@@ -630,10 +641,18 @@ export type EncounterEvent = {
   occurredAt: string;
 };
 
+/** One step of the journey, as the server works it out for this visit. */
+export type VisitStep = {
+  key: string;
+  label: string;
+  state: "done" | "current" | "upcoming" | "skipped";
+};
+
 export type EncounterChart = {
   encounter: Encounter;
   timeline: EncounterEvent[];
   completionBlockers: Array<{ reason: string; detail: string }>;
+  flow: VisitStep[];
 };
 
 export type QueueStats = {
@@ -642,6 +661,12 @@ export type QueueStats = {
   seenToday: number;
   averageVisitMinutes: number;
   noShows: number;
+  /**
+   * Which tabs this branch's board has, decided by the server from the
+   * clinic's settings — a board user can see the queue but not the
+   * settings that shape it.
+   */
+  stations: Station[];
 };
 
 export type BranchRoom = {
@@ -690,6 +715,7 @@ export const STATION_LABEL: Record<Station, string> = {
   procedure: "Procedures",
   pharmacy: "Pharmacy",
   cashier: "Payment",
+  counter: "Counter",
 };
 
 export const PRIORITY_TONE: Record<EncounterPriority, string> = {

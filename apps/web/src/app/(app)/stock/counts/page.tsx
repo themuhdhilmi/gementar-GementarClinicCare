@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState } from "react";
 import {
   ALERT_LABEL,
   ApiError,
@@ -12,10 +12,21 @@ import {
   type StockCountRow,
   type StockCountType,
   type StockCountView,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Card, EmptyState, Field, Modal, Select } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  Modal,
+  PageHeader,
+  Select,
+  Stat,
+} from "@/components/ui";
 
 /**
  * Counting the shelves, and the two lists that tell you to (INV §11).
@@ -55,7 +66,9 @@ export default function CountsPage() {
     return (
       <CountSheet
         view={open}
-        onReload={async () => setOpen(await api<StockCountView>(`/counts/${open.count.id}`))}
+        onReload={async () =>
+          setOpen(await api<StockCountView>(`/counts/${open.count.id}`))
+        }
         onClose={async () => {
           setOpen(null);
           await refresh();
@@ -66,21 +79,31 @@ export default function CountsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Counts and alerts</h1>
-          <p className="text-sm text-muted">
-            What the shelves say, and what the system would like you to look at.
-          </p>
-        </div>
-        {can('stock.count') && <Button onClick={() => setStarting(true)}>Start a count</Button>}
-      </header>
+      <PageHeader
+        title="Counts and alerts"
+        description="What the shelves say, and what the system would like you to look at. A count corrects the record; it never quietly rewrites it."
+        meta={
+          alerts.length > 0 && (
+            <Chip tone="warning">{alerts.length} needing attention</Chip>
+          )
+        }
+        actions={
+          can("stock.count") && (
+            <Button onClick={() => setStarting(true)}>Start a count</Button>
+          )
+        }
+      />
 
       {error && <Alert tone="danger">{error}</Alert>}
 
-      <Card title="Needs attention" description="Each one appears once, when it starts being true.">
+      <Card
+        title="Needs attention"
+        description="Each one appears once, when it starts being true."
+      >
         {alerts.length === 0 ? (
-          <p className="text-sm text-muted">Nothing. Every shelf is above its level and in date.</p>
+          <p className="text-sm text-muted">
+            Nothing. Every shelf is above its level and in date.
+          </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {alerts.map((row) => (
@@ -89,19 +112,21 @@ export default function CountsPage() {
                 className="flex items-center justify-between gap-3"
               >
                 <span className="text-sm">
-                  <span className="font-medium">{row.product?.name ?? 'Product'}</span>
+                  <span className="font-medium">
+                    {row.product?.name ?? "Product"}
+                  </span>
                   <span
                     className={
-                      alertTone(row.kind) === 'danger'
-                        ? 'block text-xs text-danger'
-                        : 'block text-xs text-warning'
+                      alertTone(row.kind) === "danger"
+                        ? "block text-xs text-danger"
+                        : "block text-xs text-warning"
                     }
                   >
                     {ALERT_LABEL[row.kind]}
                     {row.observed !== null &&
-                      (row.kind === 'LOW' || row.kind === 'CRITICAL'
-                        ? ` · ${row.observed} ${row.product?.dispenseUnit ?? ''} left`
-                        : ` · ${row.observed} ${row.observed === 1 ? 'batch' : 'batches'}`)}
+                      (row.kind === "LOW" || row.kind === "CRITICAL"
+                        ? ` · ${row.observed} ${row.product?.dispenseUnit ?? ""} left`
+                        : ` · ${row.observed} ${row.observed === 1 ? "batch" : "batches"}`)}
                   </span>
                 </span>
                 <Button
@@ -109,7 +134,7 @@ export default function CountsPage() {
                   size="sm"
                   onClick={async () => {
                     await api(`/branches/${branchId}/alerts/acknowledge`, {
-                      method: 'POST',
+                      method: "POST",
                       body: { productId: row.productId, kind: row.kind },
                     });
                     await refresh();
@@ -131,32 +156,38 @@ export default function CountsPage() {
           <p className="text-sm text-muted">Nothing is running short.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted">
-              <tr>
-                <th className="py-1 font-medium">Product</th>
-                <th className="py-1 text-right font-medium">On hand</th>
-                <th className="py-1 text-right font-medium">Used / day</th>
-                <th className="py-1 text-right font-medium">Days left</th>
-                <th className="py-1 text-right font-medium">Suggested</th>
+            <thead className="text-left text-[11px] uppercase tracking-[0.06em] text-muted">
+              <tr className="border-b border-line">
+                <th className="py-1.5 font-semibold">Product</th>
+                <th className="py-1.5 text-right font-semibold">On hand</th>
+                <th className="py-1.5 text-right font-semibold">Used / day</th>
+                <th className="py-1.5 text-right font-semibold">Days left</th>
+                <th className="py-1.5 text-right font-semibold">Suggested</th>
               </tr>
             </thead>
             <tbody>
               {reorder.map((row) => (
                 <tr key={row.product.id} className="border-t border-line">
                   <td className="py-1.5">{row.product.name}</td>
-                  <td className="py-1.5 text-right tabular-nums">{row.onHand}</td>
-                  <td className="py-1.5 text-right tabular-nums">{row.perDay || '—'}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {row.onHand}
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {row.perDay || "—"}
+                  </td>
                   <td
                     className={
                       row.daysOfCover !== null && row.daysOfCover <= 14
-                        ? 'py-1.5 text-right font-medium tabular-nums text-danger'
-                        : 'py-1.5 text-right tabular-nums'
+                        ? "py-1.5 text-right font-medium tabular-nums text-danger"
+                        : "py-1.5 text-right tabular-nums"
                     }
                   >
                     {/* "Nothing has moved" is not "it will last forever". */}
-                    {row.daysOfCover ?? 'not used'}
+                    {row.daysOfCover ?? "not used"}
                   </td>
-                  <td className="py-1.5 text-right tabular-nums">{row.suggestedQty ?? '—'}</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {row.suggestedQty ?? "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -167,24 +198,31 @@ export default function CountsPage() {
       <Card title="Counts">
         {counts.length === 0 ? (
           <EmptyState title="No counts yet">
-            The first one should be an opening count, on a day the clinic is closed.
+            The first one should be an opening count, on a day the clinic is
+            closed.
           </EmptyState>
         ) : (
           <ul className="flex flex-col divide-y divide-line text-sm">
             {counts.map((row) => (
-              <li key={row.id} className="flex items-center justify-between gap-3 py-2">
+              <li
+                key={row.id}
+                className="flex items-center justify-between gap-3 py-2"
+              >
                 <span>
                   <button
                     type="button"
                     className="font-medium text-primary underline"
-                    onClick={async () => setOpen(await api<StockCountView>(`/counts/${row.id}`))}
+                    onClick={async () =>
+                      setOpen(await api<StockCountView>(`/counts/${row.id}`))
+                    }
                   >
                     {row.type.toLowerCase()} count
                   </button>
                   <span className="block text-xs text-muted">
                     {row.status.toLowerCase()}
-                    {row.blind && ' · blind'}
-                    {row.frozenAt && ` · frozen ${new Date(row.frozenAt).toLocaleString()}`}
+                    {row.blind && " · blind"}
+                    {row.frozenAt &&
+                      ` · frozen ${new Date(row.frozenAt).toLocaleString()}`}
                   </span>
                 </span>
               </li>
@@ -220,7 +258,7 @@ function StartCountModal({
   onOpened: (view: StockCountView) => Promise<void>;
   onError: (message: string | null) => void;
 }) {
-  const [type, setType] = useState<StockCountType>('CYCLE');
+  const [type, setType] = useState<StockCountType>("CYCLE");
   const [blind, setBlind] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -229,7 +267,10 @@ function StartCountModal({
     <Modal open title="Start a count" onClose={onClose}>
       <div className="flex flex-col gap-2">
         <Field label="What kind">
-          <Select value={type} onChange={(event) => setType(event.target.value as StockCountType)}>
+          <Select
+            value={type}
+            onChange={(event) => setType(event.target.value as StockCountType)}
+          >
             <option value="OPENING">Opening — the very first count</option>
             <option value="FULL">Full — every shelf</option>
             <option value="CYCLE">Cycle — a regular partial count</option>
@@ -246,13 +287,13 @@ function StartCountModal({
           <span>
             Blind
             <span className="block text-xs text-muted">
-              The counter does not see what the system expects. A number on the sheet is a number
-              people count towards.
+              The counter does not see what the system expects. A number on the
+              sheet is a number people count towards.
             </span>
           </span>
         </label>
 
-        {type === 'OPENING' && (
+        {type === "OPENING" && (
           <div className="rounded-md border border-line bg-surface-muted p-2">
             <Field
               label="Or import a spreadsheet"
@@ -284,7 +325,7 @@ function StartCountModal({
             try {
               if (file) {
                 const form = new FormData();
-                form.append('file', file);
+                form.append("file", file);
                 await onOpened(
                   await postForm<StockCountView>(
                     `/branches/${branchId}/counts/import?dryRun=false`,
@@ -295,18 +336,22 @@ function StartCountModal({
               }
               await onOpened(
                 await api<StockCountView>(`/branches/${branchId}/counts`, {
-                  method: 'POST',
+                  method: "POST",
                   body: { type, blind },
                 }),
               );
             } catch (caught) {
-              onError(caught instanceof ApiError ? caught.message : 'Could not start it.');
+              onError(
+                caught instanceof ApiError
+                  ? caught.message
+                  : "Could not start it.",
+              );
             } finally {
               setBusy(false);
             }
           }}
         >
-          {file ? 'Import' : 'Start'}
+          {file ? "Import" : "Start"}
         </Button>
       </div>
     </Modal>
@@ -327,7 +372,7 @@ function CountSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const open = view.count.status === 'OPEN';
+  const open = view.count.status === "OPEN";
   const counted = view.lines.filter((line) => line.counted !== null).length;
 
   async function act(run: () => Promise<unknown>) {
@@ -337,7 +382,9 @@ function CountSheet({
       await run();
       await onReload();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'That did not work.');
+      setError(
+        caught instanceof ApiError ? caught.message : "That did not work.",
+      );
     } finally {
       setBusy(false);
     }
@@ -345,83 +392,93 @@ function CountSheet({
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">
-            {view.count.type.toLowerCase()} count
-            {view.count.blind && <span className="ml-2 text-sm text-muted">blind</span>}
-          </h1>
-          <p className="text-sm text-muted">
-            {view.count.status.toLowerCase()} · {counted} of {view.lines.length} counted
-          </p>
-        </div>
-        <Button variant="secondary" onClick={() => void onClose()}>
-          Back
-        </Button>
-      </header>
+      <PageHeader
+        title={`${view.count.type.charAt(0)}${view.count.type.slice(1).toLowerCase()} count`}
+        meta={
+          <>
+            <Chip tone={view.count.status}>{view.count.status}</Chip>
+            {view.count.blind && (
+              <Chip tone="info" dot>
+                blind — the expected figure is hidden
+              </Chip>
+            )}
+            <span className="text-muted tabular-nums">
+              {counted} of {view.lines.length} counted
+            </span>
+          </>
+        }
+        actions={
+          <Button variant="secondary" onClick={() => void onClose()}>
+            Back
+          </Button>
+        }
+      />
 
       {error && <Alert tone="danger">{error}</Alert>}
 
       {view.summary && (
-        <Card title="Variance">
-          <div className="flex flex-wrap gap-6 text-sm">
-            <span>
-              <span className="block text-xs text-muted">Agreed</span>
-              <span className="text-lg tabular-nums">{view.summary.agreed}</span>
-            </span>
-            <span>
-              <span className="block text-xs text-muted">More than expected</span>
-              <span className="text-lg tabular-nums text-success">{view.summary.over}</span>
-            </span>
-            <span>
-              <span className="block text-xs text-muted">Less than expected</span>
-              <span className="text-lg tabular-nums text-danger">{view.summary.under}</span>
-            </span>
-            <span>
-              <span className="block text-xs text-muted">Net units</span>
-              <span className="text-lg tabular-nums">{view.summary.netUnits}</span>
-            </span>
-          </div>
-        </Card>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Agreed" value={view.summary.agreed} />
+          <Stat
+            label="More than expected"
+            value={view.summary.over}
+            tone={view.summary.over > 0 ? "success" : undefined}
+          />
+          <Stat
+            label="Less than expected"
+            value={view.summary.under}
+            tone={view.summary.under > 0 ? "danger" : undefined}
+          />
+          <Stat label="Net units" value={view.summary.netUnits} />
+        </div>
       )}
 
       <Card title="The sheet">
         {view.lines.length === 0 ? (
           <p className="text-sm text-muted">
-            Nothing on the sheet yet. An opening count starts empty — add what is on the shelf.
+            Nothing on the sheet yet. An opening count starts empty — add what
+            is on the shelf.
           </p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted">
-              <tr>
-                <th className="py-1 font-medium">Product</th>
-                <th className="py-1 font-medium">Batch</th>
-                {!view.count.blind && <th className="py-1 text-right font-medium">Expected</th>}
-                <th className="py-1 text-right font-medium">Counted</th>
-                <th className="py-1 text-right font-medium">Difference</th>
+            <thead className="text-left text-[11px] uppercase tracking-[0.06em] text-muted">
+              <tr className="border-b border-line">
+                <th className="py-1.5 font-semibold">Product</th>
+                <th className="py-1.5 font-semibold">Batch</th>
+                {!view.count.blind && (
+                  <th className="py-1.5 text-right font-semibold">Expected</th>
+                )}
+                <th className="py-1.5 text-right font-semibold">Counted</th>
+                <th className="py-1.5 text-right font-semibold">Difference</th>
               </tr>
             </thead>
             <tbody>
               {view.lines.map((line) => {
                 const typed = entries[line.id];
-                const value = typed ?? (line.counted === null ? '' : String(line.counted));
+                const value =
+                  typed ?? (line.counted === null ? "" : String(line.counted));
                 const difference =
-                  line.expected !== null && value !== ''
+                  line.expected !== null && value !== ""
                     ? Number(value) - line.expected
                     : line.variance;
                 return (
                   <tr key={line.id} className="border-t border-line">
                     <td className="py-1.5">
-                      {line.product?.name ?? '—'}
+                      {line.product?.name ?? "—"}
                       {line.product?.strengthText && (
-                        <span className="text-muted"> {line.product.strengthText}</span>
+                        <span className="text-muted">
+                          {" "}
+                          {line.product.strengthText}
+                        </span>
                       )}
                     </td>
                     <td className="py-1.5 text-muted">
-                      {line.batch?.batchNo ?? line.newBatchNo ?? '—'}
+                      {line.batch?.batchNo ?? line.newBatchNo ?? "—"}
                     </td>
                     {!view.count.blind && (
-                      <td className="py-1.5 text-right tabular-nums">{line.expected ?? '—'}</td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {line.expected ?? "—"}
+                      </td>
                     )}
                     <td className="py-1.5 text-right">
                       {open ? (
@@ -430,29 +487,34 @@ function CountSheet({
                           min="0"
                           step="0.5"
                           value={value}
-                          aria-label={`Counted, ${line.product?.name ?? 'product'}`}
+                          aria-label={`Counted, ${line.product?.name ?? "product"}`}
                           className="w-24 rounded-md border border-line bg-surface px-2 py-1 text-right text-sm"
                           onChange={(event) =>
-                            setEntries((current) => ({ ...current, [line.id]: event.target.value }))
+                            setEntries((current) => ({
+                              ...current,
+                              [line.id]: event.target.value,
+                            }))
                           }
                         />
                       ) : (
-                        <span className="tabular-nums">{line.counted ?? '—'}</span>
+                        <span className="tabular-nums">
+                          {line.counted ?? "—"}
+                        </span>
                       )}
                     </td>
                     <td
                       className={
                         difference === null || difference === 0
-                          ? 'py-1.5 text-right tabular-nums text-muted'
+                          ? "py-1.5 text-right tabular-nums text-muted"
                           : difference > 0
-                            ? 'py-1.5 text-right font-medium tabular-nums text-success'
-                            : 'py-1.5 text-right font-medium tabular-nums text-danger'
+                            ? "py-1.5 text-right font-medium tabular-nums text-success"
+                            : "py-1.5 text-right font-medium tabular-nums text-danger"
                       }
                     >
                       {view.count.blind && open
-                        ? '—'
+                        ? "—"
                         : difference === null
-                          ? '—'
+                          ? "—"
                           : difference > 0
                             ? `+${difference}`
                             : difference}
@@ -475,10 +537,10 @@ function CountSheet({
               onClick={() =>
                 void act(async () => {
                   await api(`/counts/${view.count.id}/lines`, {
-                    method: 'PUT',
+                    method: "PUT",
                     body: {
                       lines: Object.entries(entries)
-                        .filter(([, v]) => v !== '')
+                        .filter(([, v]) => v !== "")
                         .map(([id, v]) => ({
                           batchId: view.lines.find((l) => l.id === id)?.batchId,
                           counted: Number(v),
@@ -494,7 +556,9 @@ function CountSheet({
             <Button
               loading={busy}
               onClick={() =>
-                void act(() => api(`/counts/${view.count.id}/submit`, { method: 'POST' }))
+                void act(() =>
+                  api(`/counts/${view.count.id}/submit`, { method: "POST" }),
+                )
               }
             >
               Done counting
@@ -502,18 +566,20 @@ function CountSheet({
           </>
         )}
 
-        {view.count.status === 'SUBMITTED' && can('stock.adjust') && (
+        {view.count.status === "SUBMITTED" && can("stock.adjust") && (
           <Button
             loading={busy}
             onClick={() =>
-              void act(() => api(`/counts/${view.count.id}/approve`, { method: 'POST' }))
+              void act(() =>
+                api(`/counts/${view.count.id}/approve`, { method: "POST" }),
+              )
             }
           >
             Approve and adjust the stock
           </Button>
         )}
 
-        {view.count.status === 'APPROVED' && (
+        {view.count.status === "APPROVED" && (
           <p className="self-center text-sm text-muted">
             Approved. The adjustments are in the ledger.
           </p>

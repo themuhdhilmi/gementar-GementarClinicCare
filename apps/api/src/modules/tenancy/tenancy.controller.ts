@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import type { TenantContext } from './tenant-context.js';

@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import type { Response } from 'express';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';

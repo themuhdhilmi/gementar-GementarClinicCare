@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useCallback, useState } from "react";
 import {
   ApiError,
   PRIORITY_TONE,
@@ -11,12 +11,26 @@ import {
   type ClinicalSummary,
   type EncounterChart,
   type PatientRecord,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { useQueueStream } from '@/lib/use-queue-stream';
-import { PatientHeader, loadClinicalSummary } from '@/components/patient-header';
-import { Alert, Button, Card, Field, Modal, Select, TextField, timeAgo } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import { useQueueStream } from "@/lib/use-queue-stream";
+import { VisitFlow } from "@/components/visit-flow";
+import {
+  PatientHeader,
+  loadClinicalSummary,
+} from "@/components/patient-header";
+import {
+  Alert,
+  Button,
+  Card,
+  Field,
+  Modal,
+  Select,
+  Skeleton,
+  TextField,
+  timeAgo,
+} from "@/components/ui";
 
 /**
  * One visit, from the door to the door (ENC-F-11).
@@ -38,8 +52,13 @@ export default function EncounterPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [reason, setReason] = useState('');
-  const [priority, setPriority] = useState<string>('URGENT');
+  /** The backward move waiting on a reason (ENC-F-24). */
+  const [sendingBack, setSendingBack] = useState<
+    EncounterChart["encounter"]["allowedNext"][number] | null
+  >(null);
+  const [sendBackReason, setSendBackReason] = useState("");
+  const [reason, setReason] = useState("");
+  const [priority, setPriority] = useState<string>("URGENT");
   const [changingPriority, setChangingPriority] = useState(false);
 
   const load = useCallback(async () => {
@@ -70,7 +89,9 @@ export default function EncounterPage() {
         setNotice(what);
         return true;
       } catch (caught) {
-        setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+        setError(
+          caught instanceof ApiError ? caught.message : "Something went wrong.",
+        );
         return false;
       } finally {
         setBusy(false);
@@ -79,27 +100,62 @@ export default function EncounterPage() {
     [load],
   );
 
-  if (!chart || !patient || !me) return <p className="text-sm text-muted">Loading…</p>;
-  const { encounter, timeline, completionBlockers } = chart;
+  if (!chart || !patient || !me)
+    return (
+      <div className="flex flex-col gap-4">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-12" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  const { encounter, timeline, completionBlockers, flow } = chart;
+
+  const onwards = encounter.allowedNext.filter((option) => !option.back);
+  const backwards = encounter.allowedNext.filter((option) => option.back);
+
+  /**
+   * Make a move, asking why first where the server will insist on it.
+   *
+   * The question is asked here rather than only refused by the server so
+   * that somebody sending a patient back writes the reason once, in the
+   * moment, instead of reading an error and typing it again.
+   */
+  async function moveTo(option: (typeof encounter.allowedNext)[number]) {
+    if (option.requiresReason) {
+      setSendingBack(option);
+      return;
+    }
+    await act(`Moved to ${STATUS_LABEL[option.to].toLowerCase()}.`, () =>
+      api(`/encounters/${id}/transition`, {
+        method: "POST",
+        body: { to: option.to },
+      }),
+    );
+  }
 
   return (
     <div>
       <PatientHeader patient={patient} clinical={clinical} compact />
 
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="font-mono text-2xl font-semibold">{encounter.queueNo}</span>
+      {/* ENC-F-11: where they are, before anything else on the page. */}
+      <VisitFlow steps={flow} />
+
+      <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-surface px-4 py-3 shadow-e1">
+        <span className="font-mono text-2xl font-semibold tabular">
+          {encounter.queueNo}
+        </span>
         <span className="rounded-full bg-primary-soft px-3 py-1 text-sm font-medium text-primary-ink">
           {STATUS_LABEL[encounter.status]}
         </span>
-        {encounter.priority !== 'NORMAL' && (
+        {encounter.priority !== "NORMAL" && (
           <span
             className={`rounded-full px-3 py-1 text-sm font-medium ${PRIORITY_TONE[encounter.priority]}`}
           >
-            {encounter.priority === 'EMERGENCY' ? 'Emergency' : 'Urgent'}
+            {encounter.priority === "EMERGENCY" ? "Emergency" : "Urgent"}
             {encounter.priorityReason && `: ${encounter.priorityReason}`}
           </span>
         )}
-        <span className="text-sm text-muted">
+        <span className="ml-auto text-[13px] text-muted">
           {encounter.encounterNo} · arrived {timeAgo(encounter.registeredAt)}
           {encounter.open && ` · ${encounter.waitingMinutes} min at this step`}
         </span>
@@ -120,7 +176,7 @@ export default function EncounterPage() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="flex flex-col gap-5">
-          {can('clinical.write') && encounter.status === 'IN_CONSULTATION' && (
+          {can("clinical.write") && encounter.status === "IN_CONSULTATION" && (
             <Card title="Consultation">
               <p className="mb-3 text-sm text-muted">
                 What the patient said, what you found, and what happens next.
@@ -131,10 +187,11 @@ export default function EncounterPage() {
             </Card>
           )}
 
-          {can('triage.write') && encounter.open && (
+          {can("triage.write") && encounter.open && (
             <Card title="Vitals">
               <p className="mb-3 text-sm text-muted">
-                Blood pressure, temperature and the rest, taken at the nurse station.
+                Blood pressure, temperature and the rest, taken at the nurse
+                station.
               </p>
               <Link href={`/encounters/${id}/triage`}>
                 <Button variant="secondary">Record vitals</Button>
@@ -142,63 +199,97 @@ export default function EncounterPage() {
             </Card>
           )}
 
-          {encounter.open && can('encounter.transition') && (
+          {encounter.open && can("encounter.transition") && (
             <Card title="What happens next">
+              {encounter.allowedNext.length === 0 && (
+                <p className="text-sm text-muted">
+                  Nothing further from here. An administrator can reopen the
+                  visit if it was closed in error.
+                </p>
+              )}
+
               <div className="flex flex-wrap gap-2">
-                {encounter.allowedNext.length === 0 && (
-                  <p className="text-sm text-muted">
-                    Nothing further from here. An administrator can reopen the visit if it was
-                    closed in error.
-                  </p>
-                )}
-                {encounter.allowedNext.map((option) => (
+                {onwards.map((option) => (
                   <Button
                     key={option.to}
-                    variant={option.to === 'COMPLETED' ? 'primary' : 'secondary'}
+                    variant={option.to === "COMPLETED" ? "primary" : "secondary"}
                     loading={busy}
                     title={option.note ?? undefined}
-                    onClick={() =>
-                      void act(`Moved to ${STATUS_LABEL[option.to].toLowerCase()}.`, () =>
-                        api(`/encounters/${id}/transition`, {
-                          method: 'POST',
-                          body: { to: option.to },
-                        }),
-                      )
-                    }
+                    onClick={() => void moveTo(option)}
                   >
                     {option.label}
                   </Button>
                 ))}
               </div>
+
+              {/* ENC-F-24: the way back, kept apart from the way on.
+                  A pharmacist who cannot read a dose needs this, and
+                  mixing it in with "finish" is how it gets pressed by
+                  accident — or never found at all. */}
+              {backwards.length > 0 && (
+                <div className="mt-4 border-t border-line pt-3">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    Send back
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {backwards.map((option) => (
+                      <Button
+                        key={option.to}
+                        variant="quiet"
+                        size="sm"
+                        loading={busy}
+                        title={option.note ?? undefined}
+                        onClick={() => void moveTo(option)}
+                      >
+                        ← {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-muted">
+                    They keep the place in the queue they had before, so
+                    nobody waits twice for the same step.
+                  </p>
+                </div>
+              )}
             </Card>
           )}
 
           <Card title="What has happened">
-            <ol className="flex flex-col gap-3">
+            {/* A rail down the left, because this is a sequence: the
+                order is the information, and a plain list of times
+                does not say so. */}
+            <ol className="relative flex flex-col gap-4 border-l border-line pl-5">
               {timeline.map((event) => (
-                <li key={event.id} className="flex gap-3 text-sm">
-                  <span className="w-20 shrink-0 text-muted">
+                <li key={event.id} className="relative text-sm">
+                  <span
+                    aria-hidden
+                    className="absolute -left-[1.4rem] top-1.5 size-2 rounded-full bg-line-strong ring-4 ring-surface"
+                  />
+                  <span className="block text-xs text-muted tabular-nums">
                     {new Date(event.occurredAt).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
+                      hour: "2-digit",
+                      minute: "2-digit",
                     })}
                   </span>
-                  <span>
-                    <span className="font-medium">
-                      {event.action === 'call'
-                        ? 'Called'
-                        : event.action === 'skip'
-                          ? 'Skipped'
-                          : event.action === 'check_in'
-                            ? 'Arrived'
-                            : event.action === 'force'
-                              ? 'Forced by an administrator'
-                              : STATUS_LABEL[event.toStatus as keyof typeof STATUS_LABEL] ??
-                                event.toStatus}
-                    </span>
-                    <span className="text-muted"> by {event.actorName}</span>
-                    {event.note && <span className="block text-muted">{event.note}</span>}
+                  <span className="font-medium">
+                    {event.action === "call"
+                      ? "Called"
+                      : event.action === "skip"
+                        ? "Skipped"
+                        : event.action === "check_in"
+                          ? "Arrived"
+                          : event.action === "force"
+                            ? "Forced by an administrator"
+                            : (STATUS_LABEL[
+                                event.toStatus as keyof typeof STATUS_LABEL
+                              ] ?? event.toStatus)}
                   </span>
+                  <span className="text-muted"> by {event.actorName}</span>
+                  {event.note && (
+                    <span className="mt-0.5 block text-muted">
+                      {event.note}
+                    </span>
+                  )}
                 </li>
               ))}
             </ol>
@@ -210,13 +301,17 @@ export default function EncounterPage() {
             <dl className="flex flex-col gap-2 text-sm">
               <div>
                 <dt className="text-muted">Doctor</dt>
-                <dd>{encounter.attendingDoctorId ? 'Assigned' : 'Any available'}</dd>
+                <dd>
+                  {encounter.attendingDoctorId ? "Assigned" : "Any available"}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted">Called</dt>
                 <dd>
-                  {encounter.callCount} time{encounter.callCount === 1 ? '' : 's'}
-                  {encounter.skipCount > 0 && `, skipped ${encounter.skipCount}`}
+                  {encounter.callCount} time
+                  {encounter.callCount === 1 ? "" : "s"}
+                  {encounter.skipCount > 0 &&
+                    `, skipped ${encounter.skipCount}`}
                 </dd>
               </div>
             </dl>
@@ -225,13 +320,21 @@ export default function EncounterPage() {
           {encounter.open && (
             <Card title="Change something">
               <div className="flex flex-col gap-2">
-                {can('encounter.priority') && (
-                  <Button variant="secondary" size="sm" onClick={() => setChangingPriority(true)}>
+                {can("encounter.priority") && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setChangingPriority(true)}
+                  >
                     Change priority
                   </Button>
                 )}
-                {can('encounter.cancel') && (
-                  <Button variant="ghost" size="sm" onClick={() => setCancelling(true)}>
+                {can("encounter.cancel") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCancelling(true)}
+                  >
                     Cancel this visit
                   </Button>
                 )}
@@ -239,7 +342,7 @@ export default function EncounterPage() {
             </Card>
           )}
 
-          {encounter.status === 'NO_SHOW' && can('encounter.cancel') && (
+          {encounter.status === "NO_SHOW" && can("encounter.cancel") && (
             <Card title="They came back">
               <p className="mb-3 text-sm text-muted">
                 Puts them back in the queue for the doctor. Same day only.
@@ -247,8 +350,8 @@ export default function EncounterPage() {
               <Button
                 loading={busy}
                 onClick={() =>
-                  void act('Back in the queue.', () =>
-                    api(`/encounters/${id}/revert-no-show`, { method: 'POST' }),
+                  void act("Back in the queue.", () =>
+                    api(`/encounters/${id}/revert-no-show`, { method: "POST" }),
                   )
                 }
               >
@@ -259,10 +362,62 @@ export default function EncounterPage() {
         </div>
       </div>
 
-      <Modal open={cancelling} title="Cancel this visit?" onClose={() => setCancelling(false)}>
+      <Modal
+        open={sendingBack !== null}
+        title={sendingBack ? sendingBack.label : ""}
+        description={sendingBack?.note ?? undefined}
+        onClose={() => setSendingBack(null)}
+      >
         <p className="text-sm text-muted">
-          The visit comes off the board. Everything recorded so far stays on the patient&rsquo;s
-          record.
+          Whoever receives this patient sees what you write here, and so does
+          the audit trail. Say what needs to be put right.
+        </p>
+        <div className="mt-3">
+          <TextField
+            label="Why are they going back?"
+            value={sendBackReason}
+            autoFocus
+            onChange={(event) => setSendBackReason(event.target.value)}
+            placeholder="Amoxicillin 500mg for a 9kg child — please confirm the dose"
+          />
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setSendingBack(null)}>
+            Keep them here
+          </Button>
+          <Button
+            loading={busy}
+            disabled={sendBackReason.trim().length < 3}
+            onClick={async () => {
+              const target = sendingBack;
+              if (!target) return;
+              const ok = await act(
+                `Sent back to ${STATUS_LABEL[target.to].toLowerCase()}.`,
+                () =>
+                  api(`/encounters/${id}/transition`, {
+                    method: "POST",
+                    body: { to: target.to, note: sendBackReason.trim() },
+                  }),
+              );
+              if (ok) {
+                setSendingBack(null);
+                setSendBackReason("");
+              }
+            }}
+          >
+            Send back
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={cancelling}
+        title="Cancel this visit?"
+        onClose={() => setCancelling(false)}
+      >
+        <p className="text-sm text-muted">
+          The visit comes off the board. Everything recorded so far stays on the
+          patient&rsquo;s record.
         </p>
         <div className="mt-3">
           <TextField
@@ -279,12 +434,15 @@ export default function EncounterPage() {
             variant="danger"
             disabled={reason.trim().length < 3}
             onClick={async () => {
-              const ok = await act('Cancelled.', () =>
-                api(`/encounters/${id}/cancel`, { method: 'POST', body: { reason } }),
+              const ok = await act("Cancelled.", () =>
+                api(`/encounters/${id}/cancel`, {
+                  method: "POST",
+                  body: { reason },
+                }),
               );
               if (ok) {
                 setCancelling(false);
-                setReason('');
+                setReason("");
               }
             }}
           >
@@ -299,11 +457,15 @@ export default function EncounterPage() {
         onClose={() => setChangingPriority(false)}
       >
         <p className="text-sm text-muted">
-          Everyone moved down the queue is entitled to a reason having been recorded.
+          Everyone moved down the queue is entitled to a reason having been
+          recorded.
         </p>
         <div className="mt-3 flex flex-col gap-3">
           <Field label="Priority">
-            <Select value={priority} onChange={(event) => setPriority(event.target.value)}>
+            <Select
+              value={priority}
+              onChange={(event) => setPriority(event.target.value)}
+            >
               <option value="NORMAL">Normal</option>
               <option value="URGENT">Urgent</option>
               <option value="EMERGENCY">Emergency</option>
@@ -317,21 +479,24 @@ export default function EncounterPage() {
           />
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setChangingPriority(false)}>
+          <Button
+            variant="secondary"
+            onClick={() => setChangingPriority(false)}
+          >
             Cancel
           </Button>
           <Button
-            disabled={priority !== 'NORMAL' && reason.trim().length < 3}
+            disabled={priority !== "NORMAL" && reason.trim().length < 3}
             onClick={async () => {
-              const ok = await act('Priority changed.', () =>
+              const ok = await act("Priority changed.", () =>
                 api(`/encounters/${id}/priority`, {
-                  method: 'PATCH',
+                  method: "PATCH",
                   body: { priority, reason },
                 }),
               );
               if (ok) {
                 setChangingPriority(false);
-                setReason('');
+                setReason("");
               }
             }}
           >
@@ -341,7 +506,10 @@ export default function EncounterPage() {
       </Modal>
 
       <p className="mt-6 text-sm">
-        <Link href="/queue" className="text-muted underline hover:text-foreground">
+        <Link
+          href="/queue"
+          className="text-muted underline hover:text-foreground"
+        >
           Back to today
         </Link>
       </p>

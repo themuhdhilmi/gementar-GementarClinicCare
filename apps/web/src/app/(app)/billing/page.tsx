@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useState } from "react";
+import Link from "next/link";
 import {
   ApiError,
   LINE_TYPE_LABEL,
@@ -12,11 +12,24 @@ import {
   type InvoiceLine,
   type InvoiceSummary,
   type InvoiceView,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { PaymentPanel } from '@/components/payment-panel';
-import { Alert, Button, Card, EmptyState, Field, Input, Modal, Select } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import { PaymentPanel } from "@/components/payment-panel";
+import { Column, DataTable } from "@/components/data-table";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+  Stat,
+} from "@/components/ui";
 
 /**
  * The cashier's counter (BIL §11).
@@ -54,9 +67,17 @@ export default function BillingPage() {
   async function openFor(encounterId: string) {
     setError(null);
     try {
-      setOpen(await api<InvoiceView>(`/encounters/${encounterId}/invoice`, { method: 'POST' }));
+      setOpen(
+        await api<InvoiceView>(`/encounters/${encounterId}/invoice`, {
+          method: "POST",
+        }),
+      );
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not open the bill.');
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not open the bill.",
+      );
     }
   }
 
@@ -69,7 +90,9 @@ export default function BillingPage() {
     return (
       <InvoiceScreen
         view={open}
-        onReload={async () => setOpen(await api<InvoiceView>(`/invoices/${open.invoice!.id}`))}
+        onReload={async () =>
+          setOpen(await api<InvoiceView>(`/invoices/${open.invoice!.id}`))
+        }
         onClose={async () => {
           setOpen(null);
           await refresh();
@@ -78,85 +101,118 @@ export default function BillingPage() {
     );
   }
 
+  const outstanding = recent.filter(
+    (row) => row.status !== "PAID" && row.status !== "VOID",
+  ).length;
+
+  const invoiceColumns: Array<Column<InvoiceSummary>> = [
+    {
+      key: "no",
+      header: "Invoice",
+      cell: (row) => (
+        <span className="font-mono font-medium tabular">
+          {row.invoiceNo ?? "Draft"}
+        </span>
+      ),
+    },
+    {
+      key: "who",
+      header: "Patient",
+      cell: (row) => row.patient?.name ?? row.walkupName ?? "—",
+    },
+    {
+      key: "status",
+      header: "Status",
+      hideBelow: "sm",
+      cell: (row) => (
+        <Chip tone={invoiceTone(row.status)}>{row.status.toLowerCase()}</Chip>
+      ),
+    },
+    {
+      key: "total",
+      header: "Total",
+      numeric: true,
+      cell: (row) => <span className="font-medium">RM {row.grandTotal}</span>,
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-4">
-      <header className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Billing</h1>
-          <p className="text-sm text-muted">
-            {waiting.length === 0
-              ? 'Nobody is waiting to pay.'
-              : `${waiting.length} ${waiting.length === 1 ? 'patient' : 'patients'} waiting.`}
-          </p>
-        </div>
-        {can('invoice.issue') && <NewSaleButton branchId={branchId} onOpened={setOpen} />}
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Billing"
+        description="Patients reaching the payment counter, and every invoice this branch has raised today."
+        actions={
+          can("invoice.issue") && (
+            <NewSaleButton branchId={branchId} onOpened={setOpen} />
+          )
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Stat label="Waiting to pay" value={waiting.length} hint="patients" />
+        <Stat label="Invoices today" value={recent.length} />
+        <Stat
+          label="Not settled"
+          value={outstanding}
+          tone={outstanding > 0 ? "warning" : undefined}
+        />
+      </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
 
-      {waiting.length === 0 ? (
-        <EmptyState title="Nobody waiting">
-          Patients appear here when they reach the payment counter.
-        </EmptyState>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {waiting.map((row) => (
-            <li key={row.id}>
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-line bg-surface px-4 py-3">
-                <div>
-                  <p className="font-medium">
-                    {row.queueNo && <span className="mr-2 font-mono text-muted">{row.queueNo}</span>}
-                    {row.patient?.name ?? 'Patient'}
-                  </p>
-                  <p className="text-xs text-muted">
-                    {[row.patient?.age, row.patient?.gender].filter(Boolean).join(' · ')}
-                  </p>
-                </div>
-                <Button onClick={() => void openFor(row.id)}>Open the bill</Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <Card title="Recent invoices">
-        {recent.length === 0 ? (
-          <p className="text-sm text-muted">None yet today.</p>
+      <section className="flex flex-col gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+          At the counter
+        </h2>
+        {waiting.length === 0 ? (
+          <EmptyState title="Nobody waiting">
+            Patients appear here when they reach the payment counter.
+          </EmptyState>
         ) : (
-          <ul className="flex flex-col divide-y divide-line text-sm">
-            {recent.map((row) => (
-              <li key={row.id} className="flex items-center justify-between gap-3 py-2">
-                <span>
-                  <button
-                    type="button"
-                    className="font-medium text-primary underline"
-                    onClick={() => void openInvoice(row.id)}
-                  >
-                    {row.invoiceNo ?? 'Draft'}
-                  </button>
-                  <span className="block text-xs text-muted">
-                    {row.patient?.name ?? row.walkupName ?? '—'}
-                  </span>
-                </span>
-                <span className="text-right">
-                  <span className="font-medium">RM {row.grandTotal}</span>
-                  <span
-                    className={
-                      invoiceTone(row.status) === 'danger'
-                        ? 'block text-xs text-danger'
-                        : invoiceTone(row.status) === 'success'
-                          ? 'block text-xs text-success'
-                          : 'block text-xs text-muted'
-                    }
-                  >
-                    {row.status.toLowerCase()}
-                  </span>
-                </span>
+          <ul className="flex flex-col gap-2">
+            {waiting.map((row) => (
+              <li key={row.id}>
+                <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-surface px-4 py-3 shadow-e1 transition-shadow hover:shadow-e2">
+                  <div>
+                    <p className="font-medium">
+                      {row.queueNo && (
+                        <span className="mr-2 font-mono text-muted tabular">
+                          {row.queueNo}
+                        </span>
+                      )}
+                      {row.patient?.name ?? "Patient"}
+                    </p>
+                    <p className="mt-0.5 text-[13px] text-muted">
+                      {[row.patient?.age, row.patient?.gender]
+                        .filter(Boolean)
+                        .join(" · ") || "Walk-up"}
+                    </p>
+                  </div>
+                  <Button onClick={() => void openFor(row.id)}>
+                    Open the bill
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         )}
-      </Card>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+          Recent invoices
+        </h2>
+        <DataTable
+          rows={recent}
+          columns={invoiceColumns}
+          rowKey={(row) => row.id}
+          onRowClick={(row) => void openInvoice(row.id)}
+          rowTone={(row) => (row.status === "VOID" ? "muted" : undefined)}
+          caption="Recent invoices"
+          empty="Nothing raised yet today"
+          emptyHint="An invoice appears here as soon as a bill is opened."
+        />
+      </section>
     </div>
   );
 }
@@ -169,7 +225,7 @@ function NewSaleButton({
   onOpened: (view: InvoiceView) => void;
 }) {
   const [asking, setAsking] = useState(false);
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
   return (
@@ -177,13 +233,21 @@ function NewSaleButton({
       <Button variant="secondary" onClick={() => setAsking(true)}>
         Counter sale
       </Button>
-      <Modal open={asking} title="Sell something at the counter" onClose={() => setAsking(false)}>
+      <Modal
+        open={asking}
+        title="Sell something at the counter"
+        onClose={() => setAsking(false)}
+      >
         <p className="text-sm text-muted">
-          For somebody with no visit — a box of plasters, a thermometer. A name is enough.
+          For somebody with no visit — a box of plasters, a thermometer. A name
+          is enough.
         </p>
         <div className="mt-3">
           <Field label="Who is buying">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </Field>
         </div>
         <div className="mt-4 flex justify-end gap-2">
@@ -197,13 +261,16 @@ function NewSaleButton({
               setBusy(true);
               try {
                 onOpened(
-                  await api<InvoiceView>(`/branches/${branchId}/invoices/standalone`, {
-                    method: 'POST',
-                    body: { walkupName: name.trim() },
-                  }),
+                  await api<InvoiceView>(
+                    `/branches/${branchId}/invoices/standalone`,
+                    {
+                      method: "POST",
+                      body: { walkupName: name.trim() },
+                    },
+                  ),
                 );
                 setAsking(false);
-                setName('');
+                setName("");
               } finally {
                 setBusy(false);
               }
@@ -228,7 +295,7 @@ function InvoiceScreen({
 }) {
   const { can } = useSession();
   const invoice = view.invoice!;
-  const draft = invoice.status === 'DRAFT';
+  const draft = invoice.status === "DRAFT";
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -242,7 +309,9 @@ function InvoiceScreen({
       await run();
       await onReload();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'That did not work.');
+      setError(
+        caught instanceof ApiError ? caught.message : "That did not work.",
+      );
     } finally {
       setBusy(false);
     }
@@ -253,14 +322,17 @@ function InvoiceScreen({
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">
-            {invoice.invoiceNo ?? 'Draft invoice'}
+            {invoice.invoiceNo ?? "Draft invoice"}
           </h1>
           <p className="text-sm text-muted">
-            {invoice.patientNameSnapshot ?? invoice.walkupName ?? '—'}
+            {invoice.patientNameSnapshot ?? invoice.walkupName ?? "—"}
             {invoice.encounterId && (
               <>
-                {' · '}
-                <Link href={`/encounters/${invoice.encounterId}`} className="text-primary underline">
+                {" · "}
+                <Link
+                  href={`/encounters/${invoice.encounterId}`}
+                  className="text-primary underline"
+                >
                   the visit
                 </Link>
               </>
@@ -273,7 +345,7 @@ function InvoiceScreen({
       </header>
 
       {error && <Alert tone="danger">{error}</Alert>}
-      {invoice.status === 'VOID' && (
+      {invoice.status === "VOID" && (
         <Alert tone="danger" title="Void">
           {invoice.voidReason}
         </Alert>
@@ -313,13 +385,21 @@ function InvoiceScreen({
             </tbody>
           </table>
 
-          {draft && can('invoice.issue') && (
+          {draft && can("invoice.issue") && (
             <div className="mt-3 flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setAdding(true)}
+              >
                 Add an item
               </Button>
-              {can('invoice.discount') && (
-                <Button variant="secondary" size="sm" onClick={() => setDiscounting(true)}>
+              {can("invoice.discount") && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setDiscounting(true)}
+                >
                   Discount the bill
                 </Button>
               )}
@@ -331,23 +411,33 @@ function InvoiceScreen({
         <Card title="Total">
           <dl className="flex flex-col gap-1 text-sm">
             <Row label="Subtotal" value={invoice.subtotal} />
-            {invoice.discountTotal !== '0.00' && (
-              <Row label="Discount" value={`−${invoice.discountTotal}`} tone="success" />
+            {invoice.discountTotal !== "0.00" && (
+              <Row
+                label="Discount"
+                value={`−${invoice.discountTotal}`}
+                tone="success"
+              />
             )}
-            {invoice.taxTotal !== '0.00' && <Row label="Tax" value={invoice.taxTotal} />}
-            {invoice.roundingAdjustment !== '0.00' && (
+            {invoice.taxTotal !== "0.00" && (
+              <Row label="Tax" value={invoice.taxTotal} />
+            )}
+            {invoice.roundingAdjustment !== "0.00" && (
               <Row label="Rounding" value={invoice.roundingAdjustment} />
             )}
           </dl>
           <div className="mt-3 border-t border-line pt-3">
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-muted">To pay</span>
-              <span className="text-2xl font-semibold tabular-nums">RM {invoice.grandTotal}</span>
+              <span className="text-2xl font-semibold tabular-nums">
+                RM {invoice.grandTotal}
+              </span>
             </div>
-            {invoice.amountPaid !== '0.00' && (
+            {invoice.amountPaid !== "0.00" && (
               <div className="mt-1 flex items-baseline justify-between text-sm">
                 <span className="text-muted">Balance</span>
-                <span className="font-medium tabular-nums">RM {invoice.balance}</span>
+                <span className="font-medium tabular-nums">
+                  RM {invoice.balance}
+                </span>
               </div>
             )}
           </div>
@@ -359,14 +449,14 @@ function InvoiceScreen({
           )}
 
           <div className="mt-4 flex flex-col gap-2">
-            {draft && can('invoice.issue') && (
+            {draft && can("invoice.issue") && (
               <Button
                 loading={busy}
                 disabled={view.lines.length === 0}
                 onClick={() =>
                   void act(() =>
                     api(`/invoices/${invoice.id}/issue`, {
-                      method: 'POST',
+                      method: "POST",
                       body: { idempotencyKey: `issue-${invoice.id}` },
                     }),
                   )
@@ -375,16 +465,16 @@ function InvoiceScreen({
                 Issue the invoice
               </Button>
             )}
-            {invoice.status === 'ISSUED' && can('invoice.void') && (
+            {invoice.status === "ISSUED" && can("invoice.void") && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  const why = window.prompt('Why is this being voided?');
+                  const why = window.prompt("Why is this being voided?");
                   if (!why || why.trim().length < 10) return;
                   void act(() =>
                     api(`/invoices/${invoice.id}/void`, {
-                      method: 'POST',
+                      method: "POST",
                       body: { reason: why.trim() },
                     }),
                   );
@@ -393,20 +483,28 @@ function InvoiceScreen({
                 Void
               </Button>
             )}
-            {invoice.status === 'VOID' && !invoice.reissuedAsId && can('invoice.issue') && (
-              <Button
-                variant="secondary"
-                onClick={() => void act(() => api(`/invoices/${invoice.id}/reissue`, { method: 'POST' }))}
-              >
-                Reissue
-              </Button>
-            )}
+            {invoice.status === "VOID" &&
+              !invoice.reissuedAsId &&
+              can("invoice.issue") && (
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    void act(() =>
+                      api(`/invoices/${invoice.id}/reissue`, {
+                        method: "POST",
+                      }),
+                    )
+                  }
+                >
+                  Reissue
+                </Button>
+              )}
           </div>
 
           {/* PAY-F-07: the payment panel appears the moment there is a
               bill to pay, and stays until the balance is nothing. */}
-          {(invoice.status === 'ISSUED' || invoice.status === 'PARTIAL') &&
-            can('payment.take') && (
+          {(invoice.status === "ISSUED" || invoice.status === "PARTIAL") &&
+            can("payment.take") && (
               <div className="mt-4 border-t border-line pt-4">
                 <PaymentPanel
                   invoiceId={invoice.id}
@@ -443,11 +541,25 @@ function InvoiceScreen({
   );
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone?: 'success' }) {
+function Row({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "success";
+}) {
   return (
     <div className="flex items-baseline justify-between">
       <dt className="text-muted">{label}</dt>
-      <dd className={tone === 'success' ? 'tabular-nums text-success' : 'tabular-nums'}>{value}</dd>
+      <dd
+        className={
+          tone === "success" ? "tabular-nums text-success" : "tabular-nums"
+        }
+      >
+        {value}
+      </dd>
     </div>
   );
 }
@@ -471,19 +583,21 @@ function LineRow({
         {line.description}
         <span className="block text-xs text-muted">
           {LINE_TYPE_LABEL[line.lineType]}
-          {line.isAuto && ' · from what was done'}
+          {line.isAuto && " · from what was done"}
           {line.discountReason && ` · ${line.discountReason}`}
         </span>
       </td>
       <td className="py-2 text-right tabular-nums">
         {line.quantity}
-        {line.quantityUnit ? ` ${line.quantityUnit}` : ''}
+        {line.quantityUnit ? ` ${line.quantityUnit}` : ""}
       </td>
       <td className="py-2 text-right tabular-nums">{line.unitPrice}</td>
       <td className="py-2 text-right tabular-nums">
-        {line.discountAmount === '0.00' ? '—' : `−${line.discountAmount}`}
+        {line.discountAmount === "0.00" ? "—" : `−${line.discountAmount}`}
       </td>
-      <td className="py-2 text-right font-medium tabular-nums">{line.lineTotal}</td>
+      <td className="py-2 text-right font-medium tabular-nums">
+        {line.lineTotal}
+      </td>
       <td className="py-2 text-right">
         {editable && !line.isAuto && (
           <Button
@@ -492,7 +606,9 @@ function LineRow({
             disabled={busy}
             onClick={() =>
               void onAct(() =>
-                api(`/invoices/${invoiceId}/lines/${line.id}`, { method: 'DELETE' }),
+                api(`/invoices/${invoiceId}/lines/${line.id}`, {
+                  method: "DELETE",
+                }),
               )
             }
           >
@@ -514,15 +630,17 @@ function AddLineModal({
   onDone: () => Promise<void>;
 }) {
   const [items, setItems] = useState<BillableItemRow[]>([]);
-  const [chosen, setChosen] = useState('');
-  const [description, setDescription] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [price, setPrice] = useState('');
+  const [chosen, setChosen] = useState("");
+  const [description, setDescription] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [price, setPrice] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useAsyncEffect(async () => {
-    setItems((await api<{ items: BillableItemRow[] }>('/billable-items')).items);
+    setItems(
+      (await api<{ items: BillableItemRow[] }>("/billable-items")).items,
+    );
   }, []);
 
   return (
@@ -550,7 +668,10 @@ function AddLineModal({
           </Select>
         </Field>
         <Field label="What">
-          <Input value={description} onChange={(event) => setDescription(event.target.value)} />
+          <Input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="How many">
@@ -579,13 +700,17 @@ function AddLineModal({
         </Button>
         <Button
           loading={busy}
-          disabled={description.trim().length < 2 || !(Number(quantity) > 0) || price === ''}
+          disabled={
+            description.trim().length < 2 ||
+            !(Number(quantity) > 0) ||
+            price === ""
+          }
           onClick={async () => {
             setBusy(true);
             setError(null);
             try {
               await api(`/invoices/${invoiceId}/lines`, {
-                method: 'POST',
+                method: "POST",
                 body: {
                   ...(chosen ? { billableItemId: chosen } : {}),
                   description: description.trim(),
@@ -595,7 +720,11 @@ function AddLineModal({
               });
               await onDone();
             } catch (caught) {
-              setError(caught instanceof ApiError ? caught.message : 'Could not add it.');
+              setError(
+                caught instanceof ApiError
+                  ? caught.message
+                  : "Could not add it.",
+              );
             } finally {
               setBusy(false);
             }
@@ -622,16 +751,18 @@ function DiscountModal({
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
-  const [pct, setPct] = useState('');
-  const [source, setSource] = useState('GOODWILL');
-  const [reason, setReason] = useState('');
+  const [pct, setPct] = useState("");
+  const [source, setSource] = useState("GOODWILL");
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
 
   return (
     <Modal open title="Discount the bill" onClose={onClose}>
-      {error && <Alert tone={needsApproval ? 'warning' : 'danger'}>{error}</Alert>}
+      {error && (
+        <Alert tone={needsApproval ? "warning" : "danger"}>{error}</Alert>
+      )}
       <div className="flex flex-col gap-2">
         <Field label="How much off (%)">
           <Input
@@ -644,15 +775,24 @@ function DiscountModal({
           />
         </Field>
         <Field label="Why">
-          <Select value={source} onChange={(event) => setSource(event.target.value)}>
+          <Select
+            value={source}
+            onChange={(event) => setSource(event.target.value)}
+          >
             <option value="GOODWILL">Goodwill</option>
             <option value="SENIOR">Senior citizen</option>
             <option value="STAFF">Staff</option>
             <option value="MANUAL">Other</option>
           </Select>
         </Field>
-        <Field label="Note" hint="Required once the discount is worth explaining">
-          <Input value={reason} onChange={(event) => setReason(event.target.value)} />
+        <Field
+          label="Note"
+          hint="Required once the discount is worth explaining"
+        >
+          <Input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
         </Field>
       </div>
       <div className="mt-4 flex justify-end gap-2">
@@ -668,16 +808,25 @@ function DiscountModal({
             setNeedsApproval(false);
             try {
               await api(`/invoices/${invoiceId}/discount`, {
-                method: 'PUT',
-                body: { pct: Number(pct), source, reason: reason.trim() || undefined },
+                method: "PUT",
+                body: {
+                  pct: Number(pct),
+                  source,
+                  reason: reason.trim() || undefined,
+                },
               });
               await onDone();
             } catch (caught) {
               const problem = caught instanceof ApiError ? caught : null;
               setNeedsApproval(
-                Boolean((problem?.problem?.errors as { elevationRequired?: boolean } | undefined)?.elevationRequired),
+                Boolean(
+                  (
+                    problem?.problem?.errors as
+                      { elevationRequired?: boolean } | undefined
+                  )?.elevationRequired,
+                ),
               );
-              setError(problem?.message ?? 'Could not apply it.');
+              setError(problem?.message ?? "Could not apply it.");
             } finally {
               setBusy(false);
             }

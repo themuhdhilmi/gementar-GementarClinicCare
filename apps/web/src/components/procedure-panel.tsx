@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   ApiError,
   PROCEDURE_CATEGORY_LABEL,
@@ -8,9 +8,9 @@ import {
   type EncounterProcedure,
   type ProcedureCatalogItem,
   type ProcedureCategory,
-} from '@/lib/api';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Field, Input } from './ui';
+} from "@/lib/api";
+import { useAsyncEffect } from "@/lib/use-async";
+import { Alert, Button, Field, Input } from "./ui";
 
 /**
  * Ordering procedures from the plan (PRC-F-05, PRC §11).
@@ -32,7 +32,7 @@ export function ProcedurePanel({
 }) {
   const [items, setItems] = useState<EncounterProcedure[]>([]);
   const [catalogue, setCatalogue] = useState<ProcedureCatalogItem[]>([]);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ProcedureCategory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +51,7 @@ export function ProcedurePanel({
   useAsyncEffect(async () => {
     await Promise.all([
       refresh(),
-      api<{ items: ProcedureCatalogItem[] }>('/procedure-catalog').then((r) =>
+      api<{ items: ProcedureCatalogItem[] }>("/procedure-catalog").then((r) =>
         setCatalogue(r.items),
       ),
     ]);
@@ -64,20 +64,27 @@ export function ProcedurePanel({
     .slice(0, 12);
 
   const categories = [...new Set(catalogue.map((row) => row.category))];
-  const live = items.filter((item) => item.status !== 'CANCELLED' && item.status !== 'VOIDED');
+  const live = items.filter(
+    (item) => item.status !== "CANCELLED" && item.status !== "VOIDED",
+  );
 
   async function add(procedure: ProcedureCatalogItem) {
     setBusy(true);
     setError(null);
     try {
       await api(`/encounters/${encounterId}/procedures`, {
-        method: 'POST',
-        body: { procedureId: procedure.id, ...(consultationId ? { consultationId } : {}) },
+        method: "POST",
+        body: {
+          procedureId: procedure.id,
+          ...(consultationId ? { consultationId } : {}),
+        },
       });
-      setQuery('');
+      setQuery("");
       await refresh();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not order that.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Could not order that.",
+      );
     } finally {
       setBusy(false);
     }
@@ -87,7 +94,9 @@ export function ProcedurePanel({
     <div className="flex flex-col gap-3">
       {error && <Alert tone="danger">{error}</Alert>}
 
-      {live.length === 0 && <p className="text-sm text-muted">Nothing ordered.</p>}
+      {live.length === 0 && (
+        <p className="text-sm text-muted">Nothing ordered.</p>
+      )}
 
       <ul className="flex flex-col gap-2">
         {live.map((item) => (
@@ -96,30 +105,34 @@ export function ProcedurePanel({
               <div>
                 <p className="text-sm font-medium">{item.name}</p>
                 <p className="text-xs text-muted">
-                  {PROCEDURE_CATEGORY_LABEL[item.category]} · RM {item.price} ·{' '}
-                  {item.status === 'ORDERED' ? 'waiting' : 'done'}
-                  {item.requiresConsent && ' · consent needed'}
-                  {item.requiresDoctor && ' · doctor only'}
+                  {PROCEDURE_CATEGORY_LABEL[item.category]} · RM {item.price} ·{" "}
+                  {item.status === "ORDERED" ? "waiting" : "done"}
+                  {item.requiresConsent && " · consent needed"}
+                  {item.requiresDoctor && " · doctor only"}
                 </p>
                 {item.site && (
                   <p className="text-xs text-muted">
                     {item.site}
-                    {item.laterality && item.laterality !== 'NA' && ` (${item.laterality.toLowerCase()})`}
+                    {item.laterality &&
+                      item.laterality !== "NA" &&
+                      ` (${item.laterality.toLowerCase()})`}
                   </p>
                 )}
                 {item.complications && (
-                  <p className="mt-1 text-xs text-danger">{item.complications}</p>
+                  <p className="mt-1 text-xs text-danger">
+                    {item.complications}
+                  </p>
                 )}
               </div>
-              {editable && item.status === 'ORDERED' && (
+              {editable && item.status === "ORDERED" && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={async () => {
-                    const reason = window.prompt('Why is this not being done?');
+                    const reason = window.prompt("Why is this not being done?");
                     if (!reason || reason.trim().length < 3) return;
                     await api(`/encounter-procedures/${item.id}/cancel`, {
-                      method: 'POST',
+                      method: "POST",
                       body: { reason: reason.trim() },
                     });
                     await refresh();
@@ -141,7 +154,7 @@ export function ProcedurePanel({
               placeholder="nebuliser, dressing, vaccination…"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && matches[0]) {
+                if (event.key === "Enter" && matches[0]) {
                   event.preventDefault();
                   void add(matches[0]);
                 }
@@ -157,8 +170,8 @@ export function ProcedurePanel({
                 aria-pressed={category === value}
                 className={
                   category === value
-                    ? 'rounded-full border border-primary bg-primary-soft px-2.5 py-1 text-xs text-primary-ink'
-                    : 'rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-muted'
+                    ? "rounded-full border border-primary bg-primary-soft px-2.5 py-1 text-xs text-primary-ink"
+                    : "rounded-full border border-line px-2.5 py-1 text-xs hover:bg-surface-muted"
                 }
                 onClick={() => setCategory(category === value ? null : value)}
               >
@@ -170,7 +183,9 @@ export function ProcedurePanel({
           {(text.length > 0 || category !== null) && (
             <ul className="rounded-md border border-line">
               {matches.length === 0 && (
-                <li className="px-3 py-2 text-sm text-muted">Nothing matches.</li>
+                <li className="px-3 py-2 text-sm text-muted">
+                  Nothing matches.
+                </li>
               )}
               {matches.map((row) => (
                 <li key={row.id}>
@@ -184,11 +199,13 @@ export function ProcedurePanel({
                       <span className="font-medium">{row.name}</span>
                       <span className="block text-xs text-muted">
                         {PROCEDURE_CATEGORY_LABEL[row.category]}
-                        {row.requiresConsent && ' · consent'}
-                        {row.requiresDoctor && ' · doctor only'}
+                        {row.requiresConsent && " · consent"}
+                        {row.requiresDoctor && " · doctor only"}
                       </span>
                     </span>
-                    <span className="shrink-0 text-xs text-muted">RM {row.price}</span>
+                    <span className="shrink-0 text-xs text-muted">
+                      RM {row.price}
+                    </span>
                   </button>
                 </li>
               ))}

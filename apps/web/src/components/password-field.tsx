@@ -1,10 +1,16 @@
-'use client';
+"use client";
 
-import { useId } from 'react';
-import { assessPassword } from '@/lib/password';
-import { Field, Input } from './ui';
+import { useId } from "react";
+import { assessPassword } from "@/lib/password";
+import { Field, Input } from "./ui";
 
-const BAR_TONE = ['bg-danger', 'bg-danger', 'bg-warning', 'bg-primary', 'bg-success'];
+const BAR_TONE = [
+  "bg-danger",
+  "bg-danger",
+  "bg-warning",
+  "bg-primary",
+  "bg-success",
+];
 
 /**
  * Live feedback while typing, and enough room underneath for the server to
@@ -14,7 +20,7 @@ const BAR_TONE = ['bg-danger', 'bg-danger', 'bg-warning', 'bg-primary', 'bg-succ
 export function PasswordField({
   value,
   onChange,
-  label = 'New password',
+  label = "New password",
   context,
   serverMessage,
 }: {
@@ -48,12 +54,16 @@ export function PasswordField({
             <span
               key={index}
               className={`flex-1 rounded-full ${
-                value.length > 0 && index < strength.score ? BAR_TONE[strength.score] : 'bg-line'
+                value.length > 0 && index < strength.score
+                  ? BAR_TONE[strength.score]
+                  : "bg-line"
               }`}
             />
           ))}
         </div>
-        <span className="w-24 text-right text-xs font-medium text-muted">{strength.label}</span>
+        <span className="w-24 text-right text-xs font-medium text-muted">
+          {strength.label}
+        </span>
       </div>
 
       <p className="text-xs text-muted" aria-live="polite">

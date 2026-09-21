@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ApiError, api } from '@/lib/api';
-import { Alert, Button, Card, Field, Input } from '@/components/ui';
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ApiError, api } from "@/lib/api";
+import { Alert, Button, Card, Field, Input } from "@/components/ui";
 
 export default function MfaPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<'totp' | 'recovery'>('totp');
-  const [code, setCode] = useState('');
+  const [mode, setMode] = useState<"totp" | "recovery">("totp");
+  const [code, setCode] = useState("");
   const [trustDevice, setTrustDevice] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -23,14 +23,22 @@ export default function MfaPage() {
     setBusy(true);
     setError(null);
     try {
-      await api('/auth/mfa/verify', {
-        method: 'POST',
-        body: { code: value, trustDevice, deviceLabel: navigator.userAgent.slice(0, 120) },
+      await api("/auth/mfa/verify", {
+        method: "POST",
+        body: {
+          code: value,
+          trustDevice,
+          deviceLabel: navigator.userAgent.slice(0, 120),
+        },
       });
-      router.replace('/workspace');
+      router.replace("/workspace");
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not verify that code.');
-      setCode('');
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not verify that code.",
+      );
+      setCode("");
       inputRef.current?.focus();
     } finally {
       setBusy(false);
@@ -41,9 +49,9 @@ export default function MfaPage() {
     <Card
       title="Two-step verification"
       description={
-        mode === 'totp'
-          ? 'Enter the 6-digit code from your authenticator app.'
-          : 'Enter one of the recovery codes you saved.'
+        mode === "totp"
+          ? "Enter the 6-digit code from your authenticator app."
+          : "Enter one of the recovery codes you saved."
       }
     >
       <form
@@ -55,7 +63,7 @@ export default function MfaPage() {
       >
         {error && <Alert>{error}</Alert>}
 
-        {mode === 'totp' ? (
+        {mode === "totp" ? (
           <Field label="Verification code">
             <Input
               ref={inputRef}
@@ -67,7 +75,9 @@ export default function MfaPage() {
               aria-label="Six digit verification code"
               className="text-center font-mono text-2xl tracking-[0.5em]"
               onChange={(event) => {
-                const digits = event.target.value.replace(/\D/g, '').slice(0, 6);
+                const digits = event.target.value
+                  .replace(/\D/g, "")
+                  .slice(0, 6);
                 setCode(digits);
                 // Auto-submit on the sixth digit: nobody should have to reach
                 // for the mouse to finish signing in.
@@ -110,12 +120,14 @@ export default function MfaPage() {
         type="button"
         className="mt-4 text-sm text-muted underline underline-offset-4"
         onClick={() => {
-          setMode(mode === 'totp' ? 'recovery' : 'totp');
-          setCode('');
+          setMode(mode === "totp" ? "recovery" : "totp");
+          setCode("");
           setError(null);
         }}
       >
-        {mode === 'totp' ? 'Use a recovery code instead' : 'Use my authenticator app'}
+        {mode === "totp"
+          ? "Use a recovery code instead"
+          : "Use my authenticator app"}
       </button>
     </Card>
   );

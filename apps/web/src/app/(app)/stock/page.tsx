@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState } from "react";
 import {
   ApiError,
   api,
@@ -9,10 +9,22 @@ import {
   type StockMovementRow,
   type StockOptions,
   type StockRow,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Card, EmptyState, Field, Input, Modal, Select } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Segmented,
+  Select,
+  Toolbar,
+} from "@/components/ui";
 
 /**
  * What is on the shelf (INV-F-18), and the two things people do to it:
@@ -28,19 +40,25 @@ export default function StockPage() {
 
   const [rows, setRows] = useState<StockRow[]>([]);
   const [options, setOptions] = useState<StockOptions | null>(null);
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'low' | 'expiring'>('all');
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "low" | "expiring">("all");
   const [error, setError] = useState<string | null>(null);
   const [receiving, setReceiving] = useState(false);
-  const [adjusting, setAdjusting] = useState<{ row: StockRow; batchId: string } | null>(null);
-  const [history, setHistory] = useState<{ row: StockRow; items: StockMovementRow[] } | null>(null);
+  const [adjusting, setAdjusting] = useState<{
+    row: StockRow;
+    batchId: string;
+  } | null>(null);
+  const [history, setHistory] = useState<{
+    row: StockRow;
+    items: StockMovementRow[];
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!branchId) return;
     const params = new URLSearchParams();
-    if (query.trim().length >= 2) params.set('q', query.trim());
-    if (filter === 'low') params.set('belowMin', 'true');
-    if (filter === 'expiring') params.set('expiringDays', '90');
+    if (query.trim().length >= 2) params.set("q", query.trim());
+    if (filter === "low") params.set("belowMin", "true");
+    if (filter === "expiring") params.set("expiringDays", "90");
     const next = await api<{ items: StockRow[] }>(
       `/branches/${branchId}/stock?${params.toString()}`,
     );
@@ -49,7 +67,7 @@ export default function StockPage() {
 
   useAsyncEffect(refresh, [refresh], { debounceMs: 200 });
   useAsyncEffect(async () => {
-    setOptions(await api<StockOptions>('/stock/options'));
+    setOptions(await api<StockOptions>("/stock/options"));
   }, []);
 
   async function openHistory(row: StockRow) {
@@ -61,17 +79,27 @@ export default function StockPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Stock</h1>
-          <p className="text-sm text-muted">{rows.length} products with batches at this branch.</p>
-        </div>
-        {can('stock.receive') && <Button onClick={() => setReceiving(true)}>Record a delivery</Button>}
-      </header>
+      <PageHeader
+        title="Stock"
+        description="What is on the shelf at this branch, batch by batch. A batch is the unit that expires, so it is the unit that is counted."
+        meta={
+          <span className="text-muted">
+            {rows.length} product{rows.length === 1 ? "" : "s"} with batches
+            here
+          </span>
+        }
+        actions={
+          can("stock.receive") && (
+            <Button onClick={() => setReceiving(true)}>
+              Record a delivery
+            </Button>
+          )
+        }
+      />
 
       {error && <Alert tone="danger">{error}</Alert>}
 
-      <div className="flex flex-wrap items-end gap-3">
+      <Toolbar>
         <div className="min-w-64 flex-1">
           <Field label="Find">
             <Input
@@ -81,68 +109,63 @@ export default function StockPage() {
             />
           </Field>
         </div>
-        <div className="flex gap-1.5">
-          {(
-            [
-              ['all', 'Everything'],
-              ['low', 'Running low'],
-              ['expiring', 'Expiring within 90 days'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={filter === value}
-              className={
-                filter === value
-                  ? 'rounded-full border border-primary bg-primary-soft px-3 py-1.5 text-sm text-primary-ink'
-                  : 'rounded-full border border-line px-3 py-1.5 text-sm hover:bg-surface-muted'
-              }
-              onClick={() => setFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+        <Segmented
+          label="Show"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            ["all", "Everything"],
+            ["low", "Running low"],
+            ["expiring", "Expiring within 90 days"],
+          ]}
+        />
+      </Toolbar>
 
       {rows.length === 0 ? (
         <EmptyState title="Nothing here">
-          {filter === 'all'
-            ? 'No stock has been recorded at this branch yet.'
-            : 'Nothing matches that filter, which is the good outcome.'}
+          {filter === "all"
+            ? "No stock has been recorded at this branch yet."
+            : "Nothing matches that filter, which is the good outcome."}
         </EmptyState>
       ) : (
         <ul className="flex flex-col gap-3">
           {rows.map((row) => (
             <li key={row.product.id}>
               <Card
-                title={`${row.product.name}${row.product.strengthText ? ` ${row.product.strengthText}` : ''}`}
+                title={`${row.product.name}${row.product.strengthText ? ` ${row.product.strengthText}` : ""}`}
                 description={`${row.onHand} ${row.product.dispenseUnit} on hand · ${row.product.sku}`}
                 actions={
-                  <Button variant="ghost" size="sm" onClick={() => void openHistory(row)}>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    onClick={() => void openHistory(row)}
+                  >
                     History
                   </Button>
                 }
               >
                 {row.belowMin && (
                   <Alert tone="danger">
-                    At or below the minimum of {row.minStock} {row.product.dispenseUnit}.
+                    At or below the minimum of {row.minStock}{" "}
+                    {row.product.dispenseUnit}.
                   </Alert>
                 )}
                 {!row.belowMin && row.belowReorder && (
                   <Alert tone="warning">
-                    At or below the reorder level of {row.reorderLevel} {row.product.dispenseUnit}.
+                    At or below the reorder level of {row.reorderLevel}{" "}
+                    {row.product.dispenseUnit}.
                   </Alert>
                 )}
 
-                <table className="mt-2 w-full text-sm">
-                  <thead className="text-left text-xs text-muted">
-                    <tr>
-                      <th className="py-1 font-medium">Batch</th>
-                      <th className="py-1 font-medium">Expires</th>
-                      <th className="py-1 text-right font-medium">On hand</th>
-                      <th className="py-1" />
+                <table className="mt-3 w-full text-sm">
+                  <thead className="text-left text-[11px] uppercase tracking-[0.06em] text-muted">
+                    <tr className="border-b border-line">
+                      <th className="py-1.5 font-semibold">Batch</th>
+                      <th className="py-1.5 font-semibold">Expires</th>
+                      <th className="py-1.5 text-right font-semibold">
+                        On hand
+                      </th>
+                      <th className="py-1.5" />
                     </tr>
                   </thead>
                   <tbody>
@@ -150,34 +173,41 @@ export default function StockPage() {
                       const tone = expiryTone(batch.expiryDate, batch.status);
                       return (
                         <tr key={batch.id} className="border-t border-line">
-                          <td className="py-1.5">
+                          <td className="py-2 font-mono text-xs">
                             {batch.batchNo}
-                            {batch.status === 'BLOCKED' && (
-                              <span className="ml-2 text-xs font-medium text-danger">Blocked</span>
+                            {batch.status === "BLOCKED" && (
+                              <span className="ml-2 text-xs font-medium text-danger">
+                                Blocked
+                              </span>
                             )}
                           </td>
                           <td
                             className={
-                              tone === 'danger'
-                                ? 'py-1.5 font-medium text-danger'
-                                : tone === 'warning'
-                                  ? 'py-1.5 font-medium text-warning'
-                                  : 'py-1.5'
+                              tone === "danger"
+                                ? "py-2 font-medium text-danger tabular-nums"
+                                : tone === "warning"
+                                  ? "py-2 font-medium text-warning tabular-nums"
+                                  : "py-2 tabular-nums"
                             }
                           >
-                            {batch.expiryDate?.slice(0, 10) ?? '—'}
+                            {batch.expiryDate?.slice(0, 10) ?? "—"}
                           </td>
-                          <td className="py-1.5 text-right">{batch.quantityOnHand}</td>
-                          <td className="py-1.5 text-right">
-                            {can('stock.adjust') && batch.status !== 'DEPLETED' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setAdjusting({ row, batchId: batch.id })}
-                              >
-                                Correct
-                              </Button>
-                            )}
+                          <td className="py-2 text-right font-medium tabular-nums">
+                            {batch.quantityOnHand}
+                          </td>
+                          <td className="py-2 text-right">
+                            {can("stock.adjust") &&
+                              batch.status !== "DEPLETED" && (
+                                <Button
+                                  variant="quiet"
+                                  size="sm"
+                                  onClick={() =>
+                                    setAdjusting({ row, batchId: batch.id })
+                                  }
+                                >
+                                  Correct
+                                </Button>
+                              )}
                           </td>
                         </tr>
                       );
@@ -219,7 +249,7 @@ export default function StockPage() {
 
       <Modal
         open={history !== null}
-        title={`${history?.row.product.name ?? ''} — movements`}
+        title={`${history?.row.product.name ?? ""} — movements`}
         onClose={() => setHistory(null)}
       >
         {history?.items.length === 0 ? (
@@ -227,23 +257,31 @@ export default function StockPage() {
         ) : (
           <ul className="max-h-96 overflow-y-auto text-sm">
             {history?.items.map((movement) => (
-              <li key={movement.id} className="border-b border-line py-2 last:border-0">
+              <li
+                key={movement.id}
+                className="border-b border-line py-2 last:border-0"
+              >
                 <div className="flex justify-between gap-3">
                   <span>{movement.label}</span>
-                  <span className={movement.quantity < 0 ? 'text-danger' : 'text-success'}>
-                    {movement.quantity > 0 ? '+' : ''}
+                  <span
+                    className={
+                      movement.quantity < 0 ? "text-danger" : "text-success"
+                    }
+                  >
+                    {movement.quantity > 0 ? "+" : ""}
                     {movement.quantity}
                   </span>
                 </div>
                 <p className="text-xs text-muted">
-                  {new Date(movement.occurredAt).toLocaleString()} · batch{' '}
-                  {movement.batch?.batchNo ?? '—'} · left {movement.balanceAfter}
+                  {new Date(movement.occurredAt).toLocaleString()} · batch{" "}
+                  {movement.batch?.batchNo ?? "—"} · left{" "}
+                  {movement.balanceAfter}
                   {movement.performedByName && ` · ${movement.performedByName}`}
                 </p>
                 {(movement.reasonText || movement.reasonCode) && (
                   <p className="text-xs text-muted">
                     {movement.reasonCode}
-                    {movement.reasonText ? `: ${movement.reasonText}` : ''}
+                    {movement.reasonText ? `: ${movement.reasonText}` : ""}
                   </p>
                 )}
               </li>
@@ -272,19 +310,27 @@ function ReceiveModal({
   onDone: () => Promise<void>;
   onError: (message: string | null) => void;
 }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Product[]>([]);
   const [lines, setLines] = useState<
-    Array<{ product: Product; batchNo: string; expiry: string; quantity: string; costPrice: string }>
+    Array<{
+      product: Product;
+      batchNo: string;
+      expiry: string;
+      quantity: string;
+      costPrice: string;
+    }>
   >([]);
-  const [supplierNote, setSupplierNote] = useState('');
+  const [supplierNote, setSupplierNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   useAsyncEffect(
     async () => {
       const text = query.trim();
       if (text.length < 2) return;
-      const found = await api<{ items: Product[] }>(`/products?q=${encodeURIComponent(text)}`);
+      const found = await api<{ items: Product[] }>(
+        `/products?q=${encodeURIComponent(text)}`,
+      );
       setHits(found.items);
     },
     [query],
@@ -314,9 +360,15 @@ function ReceiveModal({
                 onClick={() => {
                   setLines((current) => [
                     ...current,
-                    { product, batchNo: '', expiry: '', quantity: '', costPrice: '' },
+                    {
+                      product,
+                      batchNo: "",
+                      expiry: "",
+                      quantity: "",
+                      costPrice: "",
+                    },
                   ]);
-                  setQuery('');
+                  setQuery("");
                   setHits([]);
                 }}
               >
@@ -329,13 +381,18 @@ function ReceiveModal({
 
       <ul className="mt-3 flex flex-col gap-3">
         {lines.map((line, index) => (
-          <li key={`${line.product.id}-${index}`} className="rounded-md border border-line p-2">
+          <li
+            key={`${line.product.id}-${index}`}
+            className="rounded-md border border-line p-2"
+          >
             <div className="flex items-baseline justify-between">
               <p className="text-sm font-medium">{line.product.label}</p>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
+                onClick={() =>
+                  setLines((current) => current.filter((_, i) => i !== index))
+                }
               >
                 ×
               </Button>
@@ -348,7 +405,11 @@ function ReceiveModal({
                   value={line.quantity}
                   onChange={(event) =>
                     setLines((current) =>
-                      current.map((l, i) => (i === index ? { ...l, quantity: event.target.value } : l)),
+                      current.map((l, i) =>
+                        i === index
+                          ? { ...l, quantity: event.target.value }
+                          : l,
+                      ),
                     )
                   }
                 />
@@ -361,7 +422,11 @@ function ReceiveModal({
                   value={line.costPrice}
                   onChange={(event) =>
                     setLines((current) =>
-                      current.map((l, i) => (i === index ? { ...l, costPrice: event.target.value } : l)),
+                      current.map((l, i) =>
+                        i === index
+                          ? { ...l, costPrice: event.target.value }
+                          : l,
+                      ),
                     )
                   }
                 />
@@ -372,7 +437,9 @@ function ReceiveModal({
                   placeholder="Leave empty if it has none"
                   onChange={(event) =>
                     setLines((current) =>
-                      current.map((l, i) => (i === index ? { ...l, batchNo: event.target.value } : l)),
+                      current.map((l, i) =>
+                        i === index ? { ...l, batchNo: event.target.value } : l,
+                      ),
                     )
                   }
                 />
@@ -383,7 +450,9 @@ function ReceiveModal({
                   placeholder="2027-03"
                   onChange={(event) =>
                     setLines((current) =>
-                      current.map((l, i) => (i === index ? { ...l, expiry: event.target.value } : l)),
+                      current.map((l, i) =>
+                        i === index ? { ...l, expiry: event.target.value } : l,
+                      ),
                     )
                   }
                 />
@@ -395,7 +464,10 @@ function ReceiveModal({
 
       <div className="mt-3">
         <Field label="Delivery note or invoice number">
-          <Input value={supplierNote} onChange={(event) => setSupplierNote(event.target.value)} />
+          <Input
+            value={supplierNote}
+            onChange={(event) => setSupplierNote(event.target.value)}
+          />
         </Field>
       </div>
 
@@ -405,27 +477,39 @@ function ReceiveModal({
         </Button>
         <Button
           loading={busy}
-          disabled={lines.length === 0 || lines.some((l) => !(Number(l.quantity) > 0))}
+          disabled={
+            lines.length === 0 || lines.some((l) => !(Number(l.quantity) > 0))
+          }
           onClick={async () => {
             setBusy(true);
             onError(null);
             try {
               await api(`/branches/${branchId}/stock-in`, {
-                method: 'POST',
+                method: "POST",
                 body: {
                   supplierNote: supplierNote.trim() || undefined,
                   lines: lines.map((line) => ({
                     productId: line.product.id,
                     quantity: Number(line.quantity),
-                    ...(line.batchNo.trim() ? { batchNo: line.batchNo.trim() } : {}),
-                    ...(line.expiry.trim() ? { expiry: line.expiry.trim() } : {}),
-                    ...(line.costPrice ? { costPrice: Number(line.costPrice) } : {}),
+                    ...(line.batchNo.trim()
+                      ? { batchNo: line.batchNo.trim() }
+                      : {}),
+                    ...(line.expiry.trim()
+                      ? { expiry: line.expiry.trim() }
+                      : {}),
+                    ...(line.costPrice
+                      ? { costPrice: Number(line.costPrice) }
+                      : {}),
                   })),
                 },
               });
               await onDone();
             } catch (caught) {
-              onError(caught instanceof ApiError ? caught.message : 'Could not record it.');
+              onError(
+                caught instanceof ApiError
+                  ? caught.message
+                  : "Could not record it.",
+              );
             } finally {
               setBusy(false);
             }
@@ -456,23 +540,30 @@ function AdjustModal({
   onDone: () => Promise<void>;
   onError: (message: string | null) => void;
 }) {
-  const [type, setType] = useState('ADJUST_OUT');
-  const [quantity, setQuantity] = useState('');
-  const [reasonCode, setReasonCode] = useState(reasonCodes[0] ?? 'other');
-  const [reasonText, setReasonText] = useState('');
+  const [type, setType] = useState("ADJUST_OUT");
+  const [quantity, setQuantity] = useState("");
+  const [reasonCode, setReasonCode] = useState(reasonCodes[0] ?? "other");
+  const [reasonText, setReasonText] = useState("");
   const [busy, setBusy] = useState(false);
 
   return (
     <Modal open title={`Correct ${productName}`} onClose={onClose}>
       <p className="text-sm text-muted">
-        This writes a movement rather than editing the number, so the history still explains how
-        the shelf got to where it is.
+        This writes a movement rather than editing the number, so the history
+        still explains how the shelf got to where it is.
       </p>
       <div className="mt-3 flex flex-col gap-2">
         <Field label="What happened">
-          <Select value={type} onChange={(event) => setType(event.target.value)}>
-            <option value="ADJUST_OUT">There is less than the system says</option>
-            <option value="ADJUST_IN">There is more than the system says</option>
+          <Select
+            value={type}
+            onChange={(event) => setType(event.target.value)}
+          >
+            <option value="ADJUST_OUT">
+              There is less than the system says
+            </option>
+            <option value="ADJUST_IN">
+              There is more than the system says
+            </option>
             <option value="DAMAGE">Damaged</option>
             <option value="EXPIRE">Expired</option>
             <option value="RETURN_TO_SUPPLIER">Returned to the supplier</option>
@@ -488,16 +579,22 @@ function AdjustModal({
           />
         </Field>
         <Field label="Reason">
-          <Select value={reasonCode} onChange={(event) => setReasonCode(event.target.value)}>
+          <Select
+            value={reasonCode}
+            onChange={(event) => setReasonCode(event.target.value)}
+          >
             {reasonCodes.map((code) => (
               <option key={code} value={code}>
-                {code.replaceAll('_', ' ')}
+                {code.replaceAll("_", " ")}
               </option>
             ))}
           </Select>
         </Field>
         <Field label="Anything to add">
-          <Input value={reasonText} onChange={(event) => setReasonText(event.target.value)} />
+          <Input
+            value={reasonText}
+            onChange={(event) => setReasonText(event.target.value)}
+          />
         </Field>
       </div>
 
@@ -513,18 +610,24 @@ function AdjustModal({
             onError(null);
             try {
               await api(`/branches/${branchId}/adjustments`, {
-                method: 'POST',
+                method: "POST",
                 body: {
                   batchId,
                   type,
                   quantity: Number(quantity),
                   reasonCode,
-                  ...(reasonText.trim() ? { reasonText: reasonText.trim() } : {}),
+                  ...(reasonText.trim()
+                    ? { reasonText: reasonText.trim() }
+                    : {}),
                 },
               });
               await onDone();
             } catch (caught) {
-              onError(caught instanceof ApiError ? caught.message : 'Could not record it.');
+              onError(
+                caught instanceof ApiError
+                  ? caught.message
+                  : "Could not record it.",
+              );
             } finally {
               setBusy(false);
             }

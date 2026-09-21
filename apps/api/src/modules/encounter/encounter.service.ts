@@ -189,14 +189,22 @@ export class EncounterService {
     // ENC-F-13: one open visit per patient per branch. The database has the
     // same rule as a partial unique index; this is here to say why.
     const openHere = await tx.encounter.findFirst({
-      where: { patientId: input.patientId, branchId, status: { in: [...OPEN_STATUSES] } },
+      where: {
+        patientId: input.patientId,
+        branchId,
+        status: { in: [...OPEN_STATUSES] },
+      },
       select: { id: true, queueNo: true, status: true },
     });
     if (openHere) {
       throw new ConflictError(
         `${patient.name} is already in the queue here as ${openHere.queueNo}.`,
         'encounter_already_open',
-        { encounterId: openHere.id, queueNo: openHere.queueNo, status: openHere.status },
+        {
+          encounterId: openHere.id,
+          queueNo: openHere.queueNo,
+          status: openHere.status,
+        },
       );
     }
     // At another branch it is allowed, and worth saying out loud: a referred
@@ -212,7 +220,10 @@ export class EncounterService {
       type === EncounterType.EMERGENCY
         ? EncounterPriority.EMERGENCY
         : (input.priority ?? EncounterPriority.NORMAL);
-    if (priority !== EncounterPriority.NORMAL && !(input.priorityReason ?? '').trim()) {
+    if (
+      priority !== EncounterPriority.NORMAL &&
+      !(input.priorityReason ?? '').trim()
+    ) {
       throw new BadRequestError(
         'Say why this patient is being seen sooner. It is shown to whoever is skipped.',
         'priority_reason_required',
@@ -235,7 +246,9 @@ export class EncounterService {
     // ENC-F-05: whether triage happens at all is the clinic's decision.
     const { triageRequired } = await this.settings.group(branchId, 'queue');
     const firstStatus =
-      triageRequired === 'NEVER' ? EncounterStatus.DOCTOR_WAITING : EncounterStatus.TRIAGE_WAITING;
+      triageRequired === 'NEVER'
+        ? EncounterStatus.DOCTOR_WAITING
+        : EncounterStatus.TRIAGE_WAITING;
 
     const id = newId();
     await tx.encounter.create({
@@ -258,14 +271,27 @@ export class EncounterService {
       },
     });
 
-    await this.writeEvent(tx, ctx, id, null, EncounterStatus.REGISTERED, 'check_in', null);
+    await this.writeEvent(
+      tx,
+      ctx,
+      id,
+      null,
+      EncounterStatus.REGISTERED,
+      'check_in',
+      null,
+    );
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
       action: AuditAction.EncounterCreated,
       entityType: 'encounter',
       entityId: id,
       subjectPatientId: input.patientId,
-      after: { encounterNo: allocated.encounterNo, queueNo: allocated.queueNo, type, priority },
+      after: {
+        encounterNo: allocated.encounterNo,
+        queueNo: allocated.queueNo,
+        type,
+        priority,
+      },
     });
     this.events.publish({
       name: DomainEvent.EncounterCreated,
@@ -273,7 +299,11 @@ export class EncounterService {
       branchId,
       actorId: ctx.userId,
       occurredAt: now,
-      payload: { encounterId: id, patientId: input.patientId, queueNo: allocated.queueNo },
+      payload: {
+        encounterId: id,
+        patientId: input.patientId,
+        queueNo: allocated.queueNo,
+      },
     });
 
     // Straight into the first queue, as one action from the user's point of
@@ -334,14 +364,37 @@ export class EncounterService {
         allowed.length === 0
           ? `This visit is ${readable(before.status)} and cannot be moved on.`
           : `A visit that is ${readable(before.status)} cannot become ${readable(to)}. ` +
-            `It can become: ${allowed.map((rule) => readable(rule.to)).join(', ')}.`,
+              `It can become: ${allowed.map((rule) => readable(rule.to)).join(', ')}.`,
         { from: before.status, to, allowed: allowed.map((rule) => rule.to) },
+      );
+    }
+
+    /**
+     * ENC-F-24: a move backwards across a station has to say why.
+     *
+     * Enforced here rather than on the screen that offers it, because a
+     * screen is a suggestion and this is a rule. An unexplained jump
+     * backwards in a timeline is worse than no record of it: it reads as
+     * a mistake nobody owned, and this is exactly the move a patient
+     * asks about afterwards.
+     */
+    const rule = ruleFor(before.status, to);
+    if (rule?.requiresReason && (options.note ?? '').trim().length < 3) {
+      throw new InvariantViolationError(
+        'reason_required',
+        `Say why this patient is going back to ${readable(to)}. ` +
+          'It is shown on the visit and on the audit trail.',
+        { from: before.status, to },
       );
     }
 
     // ENC-F-10, ENC-R-04: evaluated now, against live data, never cached.
     if (to === EncounterStatus.COMPLETED && !options.force) {
-      const blockers = await this.completionBlockers(tx, before.branchId, encounterId);
+      const blockers = await this.completionBlockers(
+        tx,
+        before.branchId,
+        encounterId,
+      );
       if (blockers.length > 0) {
         throw new InvariantViolationError(
           'completion_blocked',
@@ -351,12 +404,39 @@ export class EncounterService {
       }
     }
 
-    const data: Record<string, unknown> = { status: to, statusSince: now };
+    /**
+     * ENC-F-24: going back gives them their place back.
+     *
+     * `statusSince` is what every queue orders by, so a patient sent
+     * from the pharmacy back to the doctor would otherwise land behind
+     * everybody who arrived while they were being dispensed to — after
+     * they had already waited for the doctor once. In the corridor they
+     * are seen almost immediately, because the doctor needs thirty
+     * seconds to fix a dose, and the board should say so.
+     *
+     * So the clock is wound back to when they last entered this status
+     * rather than restarted. Nothing is invented: the timestamp comes
+     * from the event that put them there the first time.
+     */
+    const restored = rule?.back
+      ? await tx.encounterEvent.findFirst({
+          where: { encounterId, toStatus: to },
+          orderBy: { occurredAt: 'desc' },
+          select: { occurredAt: true },
+        })
+      : null;
+
+    const data: Record<string, unknown> = {
+      status: to,
+      statusSince: restored?.occurredAt ?? now,
+    };
     // The stage timestamps. Recorded as they happen, because a duration
     // worked out later from the timeline is a duration nobody trusts.
     if (to === EncounterStatus.TRIAGE_IN_PROGRESS) data['triageAt'] = now;
-    if (to === EncounterStatus.IN_CONSULTATION) data['consultationStartedAt'] = now;
-    if (before.status === EncounterStatus.IN_CONSULTATION) data['consultationEndedAt'] = now;
+    if (to === EncounterStatus.IN_CONSULTATION)
+      data['consultationStartedAt'] = now;
+    if (before.status === EncounterStatus.IN_CONSULTATION)
+      data['consultationEndedAt'] = now;
     if (to === EncounterStatus.DISPENSING) data['dispensedAt'] = now;
     if (to === EncounterStatus.COMPLETED) data['completedAt'] = now;
     if (to === EncounterStatus.CANCELLED) {
@@ -366,7 +446,10 @@ export class EncounterService {
     }
     // Returning someone called by mistake keeps their place in the queue,
     // which is the entire point of the move (§14).
-    if (to === EncounterStatus.DOCTOR_WAITING && before.status === EncounterStatus.IN_CONSULTATION) {
+    if (
+      to === EncounterStatus.DOCTOR_WAITING &&
+      before.status === EncounterStatus.IN_CONSULTATION
+    ) {
       data['consultationStartedAt'] = null;
       // Their place in the queue is kept, which is the whole point of the
       // move. The trigger insists status_since changes when status does,
@@ -374,7 +457,10 @@ export class EncounterService {
       // amount that satisfies the backstop without losing the position.
       data['statusSince'] = new Date(before.statusSince.getTime() + 1);
     }
-    if (to === EncounterStatus.TRIAGE_WAITING || to === EncounterStatus.DOCTOR_WAITING) {
+    if (
+      to === EncounterStatus.TRIAGE_WAITING ||
+      to === EncounterStatus.DOCTOR_WAITING
+    ) {
       // A new queue, so the call state starts again.
       data['calledAt'] = null;
     }
@@ -390,6 +476,10 @@ export class EncounterService {
       to,
       options.action ?? (options.force ? 'force' : 'transition'),
       options.note ?? null,
+      // When it happened, which is now — even where `statusSince` has
+      // been wound back to give somebody their place in the queue. The
+      // timeline is a record of events, and this event is happening now.
+      now,
     );
 
     if (options.force) {
@@ -399,7 +489,9 @@ export class EncounterService {
     }
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
-      action: options.force ? AuditAction.EncounterForced : AuditAction.EncounterStatusChanged,
+      action: options.force
+        ? AuditAction.EncounterForced
+        : AuditAction.EncounterStatusChanged,
       entityType: 'encounter',
       entityId: encounterId,
       subjectPatientId: before.patientId,
@@ -467,7 +559,10 @@ export class EncounterService {
       return { moved: false, status: encounter.status };
     }
 
-    const { paymentBeforeDispense } = await this.settings.group(encounter.branchId, 'queue');
+    const { paymentBeforeDispense } = await this.settings.group(
+      encounter.branchId,
+      'queue',
+    );
     const next = orders.hasProcedures
       ? EncounterStatus.PROCEDURE_WAITING
       : orders.hasRx && !paymentBeforeDispense
@@ -485,12 +580,21 @@ export class EncounterService {
     const settings = await this.settings.group(branchId, 'queue');
     const all = await this.completion.blockers(tx, encounterId);
     return all.filter((blocker) => {
-      if (blocker.reason === 'undispensed') return settings.requireDispenseBeforeComplete;
-      if (blocker.reason === 'unpaid') return settings.requirePaymentBeforeComplete;
+      if (blocker.reason === 'undispensed')
+        return settings.requireDispenseBeforeComplete;
+      if (blocker.reason === 'unpaid')
+        return settings.requirePaymentBeforeComplete;
       return true;
     });
   }
 
+  /**
+   * `at` is the instant this happened, passed in rather than read again
+   * here. Reading the clock twice makes the event and the column it
+   * describes disagree by a few milliseconds, and that matters: sending
+   * a patient back reads `statusSince` *out* of this table to give them
+   * their place in the queue back (ENC-F-24).
+   */
   private async writeEvent(
     tx: Tx,
     ctx: TenantContext,
@@ -499,6 +603,7 @@ export class EncounterService {
     to: EncounterStatus,
     action: string,
     note: string | null,
+    at?: Date,
   ) {
     await tx.encounterEvent.create({
       data: {
@@ -511,7 +616,7 @@ export class EncounterService {
         actorId: ctx.userId,
         actorName: ctx.userName,
         note,
-        occurredAt: this.clock.now(),
+        occurredAt: at ?? this.clock.now(),
       },
     });
   }
@@ -546,13 +651,20 @@ export class EncounterService {
     const station: Station | undefined = stationOf(encounter.status);
     return {
       ...encounter,
-      waitingMinutes: Math.floor((now.getTime() - encounter.statusSince.getTime()) / 60_000),
+      waitingMinutes: Math.floor(
+        (now.getTime() - encounter.statusSince.getTime()) / 60_000,
+      ),
       station: station ?? null,
       open: !TERMINAL_STATUSES.includes(encounter.status),
       allowedNext: allowedFrom(encounter.status).map((rule) => ({
         to: rule.to,
         label: rule.label,
         note: rule.note ?? null,
+        // The screen groups the moves backwards away from the moves
+        // onwards, and asks for a reason where the table demands one
+        // (ENC-F-24). Both facts belong to the table, not to the page.
+        back: rule.back ?? false,
+        requiresReason: rule.requiresReason ?? false,
       })),
     };
   }

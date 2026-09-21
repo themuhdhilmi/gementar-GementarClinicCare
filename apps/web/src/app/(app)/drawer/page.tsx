@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState } from "react";
 import {
   ApiError,
   METHOD_LABEL,
@@ -9,10 +9,21 @@ import {
   type CashSession,
   type ClosePreview,
   type PaymentMethod,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Card, EmptyState, Field, Input, Modal, TextField } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  TextField,
+} from "@/components/ui";
 
 type ZReport = {
   session: CashSession;
@@ -25,7 +36,13 @@ type ZReport = {
   payments: number;
   voids: number;
   voidedSen: string;
-  movements: Array<{ type: string; amount: string; reason: string | null; by: string; at: string }>;
+  movements: Array<{
+    type: string;
+    amount: string;
+    reason: string | null;
+    by: string;
+    at: string;
+  }>;
   lines: Array<{
     receiptNo: string;
     method: PaymentMethod;
@@ -37,12 +54,12 @@ type ZReport = {
 };
 
 const MOVEMENT_LABEL: Record<string, string> = {
-  FLOAT_IN: 'Opening float',
-  PAYMENT_IN: 'Payment',
-  VOID_OUT: 'Voided payment',
-  REFUND_OUT: 'Refund',
-  CASH_DROP: 'To the safe',
-  PETTY_OUT: 'Petty cash',
+  FLOAT_IN: "Opening float",
+  PAYMENT_IN: "Payment",
+  VOID_OUT: "Voided payment",
+  REFUND_OUT: "Refund",
+  CASH_DROP: "To the safe",
+  PETTY_OUT: "Petty cash",
 };
 
 /**
@@ -68,11 +85,11 @@ export default function DrawerPage() {
   const [dropping, setDropping] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const [float, setFloat] = useState('200');
-  const [counted, setCounted] = useState('');
-  const [note, setNote] = useState('');
-  const [dropAmount, setDropAmount] = useState('');
-  const [dropReason, setDropReason] = useState('');
+  const [float, setFloat] = useState("200");
+  const [counted, setCounted] = useState("");
+  const [note, setNote] = useState("");
+  const [dropAmount, setDropAmount] = useState("");
+  const [dropReason, setDropReason] = useState("");
 
   const load = useCallback(async () => {
     if (!branchId) return;
@@ -83,14 +100,19 @@ export default function DrawerPage() {
     setSession(current.session);
     setPreview(
       current.session
-        ? await api<ClosePreview>(`/cash-sessions/${current.session.id}/preview-close`)
+        ? await api<ClosePreview>(
+            `/cash-sessions/${current.session.id}/preview-close`,
+          )
         : null,
     );
-    if (can('eod.close')) {
-      const past = await api<{ items: CashSession[] }>(`/branches/${branchId}/cash-sessions`, {
-        query: { days: 14 },
-      });
-      setHistory(past.items.filter((row) => row.status === 'CLOSED'));
+    if (can("eod.close")) {
+      const past = await api<{ items: CashSession[] }>(
+        `/branches/${branchId}/cash-sessions`,
+        {
+          query: { days: 14 },
+        },
+      );
+      setHistory(past.items.filter((row) => row.status === "CLOSED"));
     }
   }, [branchId, can]);
 
@@ -104,7 +126,9 @@ export default function DrawerPage() {
       await load();
       return true;
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'That did not work.');
+      setError(
+        caught instanceof ApiError ? caught.message : "That did not work.",
+      );
       return false;
     } finally {
       setBusy(false);
@@ -114,127 +138,181 @@ export default function DrawerPage() {
   if (!branchId) return <EmptyState title="No branch selected" />;
 
   const expected = preview ? Number(preview.expectedCashSen) : 0;
-  const countedSen = counted === '' ? null : Math.round(Number(counted) * 100);
+  const countedSen = counted === "" ? null : Math.round(Number(counted) * 100);
   const variance = countedSen === null ? null : countedSen - expected;
   const threshold = preview?.varianceApprovalSen ?? 1_000;
   const needsApproval = variance !== null && Math.abs(variance) > threshold;
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-semibold">Drawer</h1>
-        <p className="text-sm text-muted">
-          What is expected in it, and what was counted. A difference is recorded, never corrected.
-        </p>
-      </div>
+      <PageHeader
+        title="Drawer"
+        description="What is expected in it, and what was counted. A difference is recorded, never corrected."
+        meta={
+          session && (
+            <>
+              <Chip
+                tone={session.status === "OPEN" ? "success" : "neutral"}
+                dot
+              >
+                Drawer {session.drawerCode} {session.status.toLowerCase()}
+              </Chip>
+              <span className="text-muted">
+                Opened {new Date(session.openedAt).toLocaleTimeString("en-MY")}{" "}
+                with {senToRinggit(session.floatSen)}
+              </span>
+            </>
+          )
+        }
+        actions={
+          session && (
+            <>
+              {can("eod.close") && (
+                <>
+                  <Button variant="secondary" onClick={() => setDropping(true)}>
+                    Cash out
+                  </Button>
+                  <Button onClick={() => setClosing(true)}>
+                    Count and close
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="quiet"
+                onClick={() =>
+                  void guard(async () =>
+                    setReport(
+                      await api<ZReport>(
+                        `/cash-sessions/${session.id}/z-report`,
+                      ),
+                    ),
+                  )
+                }
+              >
+                Z-report
+              </Button>
+            </>
+          )
+        }
+      />
 
       {error && <Alert title="Not done">{error}</Alert>}
 
       {!session ? (
-        <Card title="No drawer is open" description="Nothing can be taken until one is.">
-          {can('eod.close') ? (
+        <Card
+          title="No drawer is open"
+          description="Nothing can be taken until one is."
+        >
+          {can("eod.close") ? (
             <Button onClick={() => setOpening(true)}>Open the drawer</Button>
           ) : (
-            <p className="text-sm text-muted">Ask a cashier or the administrator to open it.</p>
+            <p className="text-sm text-muted">
+              Ask a cashier or the administrator to open it.
+            </p>
           )}
         </Card>
       ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card title="Expected in the drawer" description="Float, plus cash in, less what left.">
-              <p className="text-3xl font-semibold tabular-nums">
-                {senToRinggit(preview?.expectedCashSen ?? '0')}
-              </p>
-              <p className="mt-1 text-sm text-muted">
-                Opened {new Date(session.openedAt).toLocaleTimeString('en-MY')} with{' '}
-                {senToRinggit(session.floatSen)}
-              </p>
-            </Card>
-            <Card title="Taken today" description="Every method, posted only.">
-              {preview && Object.keys(preview.totalsByMethod).length === 0 ? (
-                <p className="text-sm text-muted">Nothing yet.</p>
-              ) : (
-                <dl className="flex flex-col gap-1 text-sm">
-                  {Object.entries(preview?.totalsByMethod ?? {}).map(([method, total]) => (
-                    <div key={method} className="flex justify-between">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card
+            title="Expected in the drawer"
+            description="The float, plus cash taken, less what has left it."
+          >
+            <p className="text-4xl font-semibold tracking-tight tabular-nums">
+              {senToRinggit(preview?.expectedCashSen ?? "0")}
+            </p>
+            <p className="mt-2 text-[13px] text-muted">
+              Count it against this at the end of the shift. Anything else is a
+              variance, and a variance is recorded rather than adjusted away.
+            </p>
+          </Card>
+
+          <Card
+            title="Taken today"
+            description="Every method. Posted payments only."
+          >
+            {preview && Object.keys(preview.totalsByMethod).length === 0 ? (
+              <p className="text-sm text-muted">Nothing yet.</p>
+            ) : (
+              <dl className="flex flex-col divide-y divide-line text-sm">
+                {Object.entries(preview?.totalsByMethod ?? {}).map(
+                  ([method, total]) => (
+                    <div key={method} className="flex justify-between py-1.5">
                       <dt className="text-muted">
                         {METHOD_LABEL[method as PaymentMethod] ?? method}
                       </dt>
-                      <dd className="tabular-nums">{senToRinggit(total)}</dd>
+                      <dd className="font-medium tabular-nums">
+                        {senToRinggit(total)}
+                      </dd>
                     </div>
-                  ))}
-                </dl>
-              )}
-            </Card>
-            <Card title={`Drawer ${session.drawerCode}`} description={session.status}>
-              <div className="flex flex-wrap gap-2">
-                {can('eod.close') && (
-                  <>
-                    <Button size="sm" variant="secondary" onClick={() => setDropping(true)}>
-                      Cash out
-                    </Button>
-                    <Button size="sm" onClick={() => setClosing(true)}>
-                      Count and close
-                    </Button>
-                  </>
+                  ),
                 )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    void guard(async () =>
-                      setReport(await api<ZReport>(`/cash-sessions/${session.id}/z-report`)),
-                    )
-                  }
-                >
-                  Z-report
-                </Button>
-              </div>
-            </Card>
-          </div>
-        </>
+              </dl>
+            )}
+          </Card>
+        </div>
       )}
 
       {history.length > 0 && (
-        <Card title="Closed today and this fortnight">
+        <Card
+          title="Closed drawers"
+          description="This shift and the fortnight behind it."
+        >
           <ul className="flex flex-col divide-y divide-line text-sm">
-            {history.map((row) => (
-              <li key={row.id} className="flex items-center justify-between py-2">
-                <span>
-                  {row.drawerCode} ·{' '}
-                  {new Date(row.openedAt).toLocaleDateString('en-MY')}{' '}
-                  {row.reopenedAt && <span className="text-warning">· reopened</span>}
-                </span>
-                <span className="flex items-center gap-3">
-                  <span
-                    className={`tabular-nums ${
-                      row.varianceSen && row.varianceSen !== '0' ? 'text-warning' : 'text-muted'
-                    }`}
-                  >
-                    {row.varianceSen === '0' || row.varianceSen === null
-                      ? 'balanced'
-                      : senToRinggit(row.varianceSen)}
+            {history.map((row) => {
+              const balanced =
+                row.varianceSen === "0" || row.varianceSen === null;
+              return (
+                <li
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-3 py-2.5"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium">{row.drawerCode}</span>
+                    <span className="text-muted">
+                      {new Date(row.openedAt).toLocaleDateString("en-MY")}
+                    </span>
+                    {row.reopenedAt && <Chip tone="warning">reopened</Chip>}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      void guard(async () =>
-                        setReport(await api<ZReport>(`/cash-sessions/${row.id}/z-report`)),
-                      )
-                    }
-                  >
-                    Z-report
-                  </Button>
-                </span>
-              </li>
-            ))}
+                  <span className="flex items-center gap-3">
+                    {/* A balanced drawer is the uninteresting case and is
+                        said quietly; a variance is the one somebody has to
+                        go and look at. */}
+                    <span
+                      className={`tabular-nums ${
+                        balanced ? "text-muted" : "font-medium text-warning"
+                      }`}
+                    >
+                      {balanced ? "balanced" : senToRinggit(row.varianceSen!)}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      onClick={() =>
+                        void guard(async () =>
+                          setReport(
+                            await api<ZReport>(
+                              `/cash-sessions/${row.id}/z-report`,
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      Z-report
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}
 
       {/* ------------------------------------------------------ open */}
-      <Modal open={opening} title="Open the drawer" onClose={() => setOpening(false)}>
+      <Modal
+        open={opening}
+        title="Open the drawer"
+        onClose={() => setOpening(false)}
+      >
         <TextField
           label="Float"
           hint="What is in the drawer before the first patient."
@@ -252,24 +330,31 @@ export default function DrawerPage() {
             onClick={async () => {
               const ok = await guard(() =>
                 api(`/branches/${branchId}/cash-sessions`, {
-                  method: 'POST',
+                  method: "POST",
                   body: { float: Number(float) },
                 }),
               );
               if (ok) setOpening(false);
             }}
           >
-            Open with {senToRinggit(String(Math.round(Number(float || 0) * 100)))}
+            Open with{" "}
+            {senToRinggit(String(Math.round(Number(float || 0) * 100)))}
           </Button>
         </div>
       </Modal>
 
       {/* ----------------------------------------------------- close */}
-      <Modal open={closing} title="Count and close" onClose={() => setClosing(false)}>
+      <Modal
+        open={closing}
+        title="Count and close"
+        onClose={() => setClosing(false)}
+      >
         <dl className="flex flex-col gap-1 text-sm">
           <div className="flex justify-between">
             <dt className="text-muted">Expected</dt>
-            <dd className="tabular-nums">{senToRinggit(preview?.expectedCashSen ?? '0')}</dd>
+            <dd className="tabular-nums">
+              {senToRinggit(preview?.expectedCashSen ?? "0")}
+            </dd>
           </div>
         </dl>
         <div className="mt-3">
@@ -284,13 +369,17 @@ export default function DrawerPage() {
         </div>
 
         {variance !== null && (
-          <Alert tone={variance === 0 ? 'success' : needsApproval ? 'danger' : 'warning'}>
+          <Alert
+            tone={
+              variance === 0 ? "success" : needsApproval ? "danger" : "warning"
+            }
+          >
             {variance === 0
-              ? 'The drawer balances.'
+              ? "The drawer balances."
               : `Out by ${senToRinggit(String(variance))}. ${
                   needsApproval
-                    ? 'That is more than the clinic allows without an administrator.'
-                    : 'Within what the clinic allows; it is still recorded.'
+                    ? "That is more than the clinic allows without an administrator."
+                    : "Within what the clinic allows; it is still recorded."
                 }`}
           </Alert>
         )}
@@ -299,7 +388,7 @@ export default function DrawerPage() {
           <div className="mt-3">
             <TextField
               label="What happened?"
-              hint={needsApproval ? 'Required.' : 'Worth writing down.'}
+              hint={needsApproval ? "Required." : "Worth writing down."}
               value={note}
               onChange={(event) => setNote(event.target.value)}
             />
@@ -312,33 +401,42 @@ export default function DrawerPage() {
           </Button>
           <Button
             loading={busy}
-            disabled={counted === '' || (needsApproval && note.trim().length < 3)}
+            disabled={
+              counted === "" || (needsApproval && note.trim().length < 3)
+            }
             onClick={async () => {
               const ok = await guard(() =>
                 api(`/cash-sessions/${session!.id}/close`, {
-                  method: 'POST',
+                  method: "POST",
                   body: {
                     counted: Number(counted),
                     note: note.trim() || undefined,
                     // An administrator saying so, deliberately.
-                    approve: needsApproval && can('admin.settings') ? true : undefined,
+                    approve:
+                      needsApproval && can("admin.settings") ? true : undefined,
                   },
                 }),
               );
               if (ok) {
                 setClosing(false);
-                setCounted('');
-                setNote('');
+                setCounted("");
+                setNote("");
               }
             }}
           >
-            {needsApproval && !can('admin.settings') ? 'Needs an administrator' : 'Close the drawer'}
+            {needsApproval && !can("admin.settings")
+              ? "Needs an administrator"
+              : "Close the drawer"}
           </Button>
         </div>
       </Modal>
 
       {/* ------------------------------------------------------ drop */}
-      <Modal open={dropping} title="Take cash out" onClose={() => setDropping(false)}>
+      <Modal
+        open={dropping}
+        title="Take cash out"
+        onClose={() => setDropping(false)}
+      >
         <div className="flex flex-col gap-3">
           <Field label="Amount">
             <Input
@@ -365,9 +463,9 @@ export default function DrawerPage() {
             onClick={async () => {
               const ok = await guard(() =>
                 api(`/cash-sessions/${session!.id}/movements`, {
-                  method: 'POST',
+                  method: "POST",
                   body: {
-                    type: 'CASH_DROP',
+                    type: "CASH_DROP",
                     amount: Number(dropAmount),
                     reason: dropReason.trim(),
                   },
@@ -375,8 +473,8 @@ export default function DrawerPage() {
               );
               if (ok) {
                 setDropping(false);
-                setDropAmount('');
-                setDropReason('');
+                setDropAmount("");
+                setDropReason("");
               }
             }}
           >
@@ -386,19 +484,23 @@ export default function DrawerPage() {
       </Modal>
 
       {/* -------------------------------------------------- Z-report */}
-      <Modal open={report !== null} title="Z-report" onClose={() => setReport(null)}>
+      <Modal
+        open={report !== null}
+        title="Z-report"
+        onClose={() => setReport(null)}
+      >
         {report && (
           <div className="flex flex-col gap-3 text-sm">
             {report.reopened && (
               <Alert tone="warning">
-                This drawer was reopened after it was closed. An earlier copy of this report may
-                say something different.
+                This drawer was reopened after it was closed. An earlier copy of
+                this report may say something different.
               </Alert>
             )}
             <p className="text-muted">
-              {report.session.drawerCode} ·{' '}
-              {new Date(report.session.openedAt).toLocaleString('en-MY')}
-              {report.asAtClose ? ' · as at close' : ' · still open'}
+              {report.session.drawerCode} ·{" "}
+              {new Date(report.session.openedAt).toLocaleString("en-MY")}
+              {report.asAtClose ? " · as at close" : " · still open"}
             </p>
 
             <dl className="flex flex-col gap-1">
@@ -412,27 +514,37 @@ export default function DrawerPage() {
               ))}
               <div className="flex justify-between border-t border-line pt-1 font-medium">
                 <dt>Collected</dt>
-                <dd className="tabular-nums">{senToRinggit(report.collectedSen)}</dd>
+                <dd className="tabular-nums">
+                  {senToRinggit(report.collectedSen)}
+                </dd>
               </div>
-              {report.roundingSen !== '0' && (
+              {report.roundingSen !== "0" && (
                 <div className="flex justify-between">
                   <dt className="text-muted">Rounding</dt>
-                  <dd className="tabular-nums">{senToRinggit(report.roundingSen)}</dd>
+                  <dd className="tabular-nums">
+                    {senToRinggit(report.roundingSen)}
+                  </dd>
                 </div>
               )}
               <div className="flex justify-between">
                 <dt className="text-muted">Expected in the drawer</dt>
-                <dd className="tabular-nums">{senToRinggit(report.expectedCashSen)}</dd>
+                <dd className="tabular-nums">
+                  {senToRinggit(report.expectedCashSen)}
+                </dd>
               </div>
               {report.session.countedCashSen && (
                 <>
                   <div className="flex justify-between">
                     <dt className="text-muted">Counted</dt>
-                    <dd className="tabular-nums">{senToRinggit(report.session.countedCashSen)}</dd>
+                    <dd className="tabular-nums">
+                      {senToRinggit(report.session.countedCashSen)}
+                    </dd>
                   </div>
                   <div className="flex justify-between font-medium">
                     <dt>Difference</dt>
-                    <dd className="tabular-nums">{senToRinggit(report.session.varianceSen)}</dd>
+                    <dd className="tabular-nums">
+                      {senToRinggit(report.session.varianceSen)}
+                    </dd>
                   </div>
                 </>
               )}
@@ -447,7 +559,9 @@ export default function DrawerPage() {
             </dl>
 
             {report.session.varianceNote && (
-              <p className="text-xs text-muted">{report.session.varianceNote}</p>
+              <p className="text-xs text-muted">
+                {report.session.varianceNote}
+              </p>
             )}
 
             <details>
@@ -459,9 +573,11 @@ export default function DrawerPage() {
                   <li key={index} className="flex justify-between py-1">
                     <span>
                       {MOVEMENT_LABEL[row.type] ?? row.type}
-                      {row.reason ? ` · ${row.reason}` : ''}
+                      {row.reason ? ` · ${row.reason}` : ""}
                     </span>
-                    <span className="tabular-nums">{senToRinggit(row.amount)}</span>
+                    <span className="tabular-nums">
+                      {senToRinggit(row.amount)}
+                    </span>
                   </li>
                 ))}
               </ul>

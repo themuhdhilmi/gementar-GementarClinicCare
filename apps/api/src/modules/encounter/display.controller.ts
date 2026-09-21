@@ -9,7 +9,7 @@ import {
   Sse,
 } from '@nestjs/common';
 import { map, type Observable } from 'rxjs';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { newId } from '../../shared/ids/uuid.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { Clock } from '../../shared/time/clock.js';
@@ -48,7 +48,10 @@ export class DisplayController {
 
   @Get('branches/:branchId/display-tokens')
   @RequirePermission('admin.settings')
-  async listTokens(@Ctx() ctx: TenantContext, @Param('branchId') branchId: string) {
+  async listTokens(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+  ) {
     void ctx;
     return { items: await this.display.list(this.db.tx(), branchId) };
   }
@@ -96,7 +99,9 @@ export class DisplayController {
     const view = await this.db.withTenant(resolved.tenantId, () =>
       this.display.view(resolved.branchId),
     );
-    void this.display.touch(resolved.id, resolved.tenantId).catch(() => undefined);
+    void this.display
+      .touch(resolved.id, resolved.tenantId)
+      .catch(() => undefined);
     return view;
   }
 
@@ -111,7 +116,9 @@ export class DisplayController {
   @NoRequestTransaction('A waiting-room screen holds this open all day.')
   async stream(
     @Param('token') token: string,
-  ): Promise<Observable<{ data: { kind: string; queueNo: string; at: string } }>> {
+  ): Promise<
+    Observable<{ data: { kind: string; queueNo: string; at: string } }>
+  > {
     const resolved = await this.display.resolve(token);
     // Re-shaped on the way out: the screen needs to know that something
     // changed and which number was called, and nothing else reaches it.
@@ -120,7 +127,11 @@ export class DisplayController {
         data:
           'heartbeat' in event.data
             ? { kind: 'heartbeat', queueNo: '', at: event.data.heartbeat }
-            : { kind: event.data.kind, queueNo: event.data.queueNo, at: event.data.at },
+            : {
+                kind: event.data.kind,
+                queueNo: event.data.queueNo,
+                at: event.data.at,
+              },
       })),
     );
   }
@@ -129,7 +140,10 @@ export class DisplayController {
 
   @Get('branches/:branchId/rooms')
   @RequirePermission('patient.read')
-  async listRooms(@Ctx() ctx: TenantContext, @Param('branchId') branchId: string) {
+  async listRooms(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+  ) {
     void ctx;
     return {
       items: await this.db.tx().branchRoom.findMany({

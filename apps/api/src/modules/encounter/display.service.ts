@@ -23,7 +23,12 @@ export type DisplayView = {
   branch: { name: string; code: string };
   nowServing: Array<{ queueNo: string; label: string | null; where: string }>;
   waiting: Array<{ queueNo: string; label: string | null }>;
-  recentlyCalled: Array<{ queueNo: string; label: string | null; where: string; at: string }>;
+  recentlyCalled: Array<{
+    queueNo: string;
+    label: string | null;
+    where: string;
+    at: string;
+  }>;
   waitingCount: number;
   at: string;
 };
@@ -93,7 +98,9 @@ export class DisplayService {
 
   async revoke(ctx: TenantContext, tokenId: string) {
     const tx = this.db.tx();
-    const token = await tx.displayToken.findFirst({ where: { id: tokenId, revokedAt: null } });
+    const token = await tx.displayToken.findFirst({
+      where: { id: tokenId, revokedAt: null },
+    });
     if (!token) throw new NotFoundError('Display token');
 
     await tx.displayToken.update({
@@ -119,13 +126,17 @@ export class DisplayService {
    * one outside identity, and it reaches exactly this one table; everything
    * afterwards happens inside the branch's own tenant scope.
    */
-  async resolve(token: string): Promise<{ tenantId: string; branchId: string; id: string }> {
+  async resolve(
+    token: string,
+  ): Promise<{ tenantId: string; branchId: string; id: string }> {
     const hash = Uint8Array.from(this.hash(token));
-    const found = await this.db.withPlatform('resolve a waiting-room display token', (tx) =>
-      tx.displayToken.findFirst({
-        where: { tokenHash: hash, revokedAt: null },
-        select: { id: true, tenantId: true, branchId: true },
-      }),
+    const found = await this.db.withPlatform(
+      'resolve a waiting-room display token',
+      (tx) =>
+        tx.displayToken.findFirst({
+          where: { tokenHash: hash, revokedAt: null },
+          select: { id: true, tenantId: true, branchId: true },
+        }),
     );
     if (!found) throw new NotFoundError('Display');
     return found;
@@ -135,7 +146,10 @@ export class DisplayService {
   async view(branchId: string): Promise<DisplayView> {
     const tx = this.db.tx();
     const now = this.clock.now();
-    const { displayShowFirstName } = await this.settings.group(branchId, 'queue');
+    const { displayShowFirstName } = await this.settings.group(
+      branchId,
+      'queue',
+    );
 
     const branch = await tx.branch.findFirst({
       where: { id: branchId },
@@ -180,7 +194,10 @@ export class DisplayService {
      */
     const label = (name: string): string | null => {
       if (!displayShowFirstName) return null;
-      const parts = name.trim().split(/\s+/).filter((part) => !PARTICLES.has(part.toLowerCase()));
+      const parts = name
+        .trim()
+        .split(/\s+/)
+        .filter((part) => !PARTICLES.has(part.toLowerCase()));
       const first = parts[0] ?? '';
       const last = parts.length > 1 ? parts.at(-1)! : '';
       return last ? `${first} ${last[0]!.toUpperCase()}.` : first;
@@ -203,12 +220,18 @@ export class DisplayService {
       })),
       waiting: waiting
         .sort((a, b) => {
-          const rank = (p: string) => (p === 'EMERGENCY' ? 0 : p === 'URGENT' ? 1 : 2);
-          return rank(a.priority) - rank(b.priority) ||
-            a.statusSince.getTime() - b.statusSince.getTime();
+          const rank = (p: string) =>
+            p === 'EMERGENCY' ? 0 : p === 'URGENT' ? 1 : 2;
+          return (
+            rank(a.priority) - rank(b.priority) ||
+            a.statusSince.getTime() - b.statusSince.getTime()
+          );
         })
         .slice(0, 12)
-        .map((row) => ({ queueNo: row.queueNo, label: label(row.patient.name) })),
+        .map((row) => ({
+          queueNo: row.queueNo,
+          label: label(row.patient.name),
+        })),
       recentlyCalled: rows
         .filter((row) => row.calledAt)
         .sort((a, b) => b.calledAt!.getTime() - a.calledAt!.getTime())
@@ -225,14 +248,30 @@ export class DisplayService {
   }
 
   async touch(tokenId: string, tenantId: string): Promise<void> {
-    await this.db.withTenantIndependently(tenantId, 'display token last seen', (tx) =>
-      tx.displayToken.update({ where: { id: tokenId }, data: { lastSeenAt: this.clock.now() } }),
+    await this.db.withTenantIndependently(
+      tenantId,
+      'display token last seen',
+      (tx) =>
+        tx.displayToken.update({
+          where: { id: tokenId },
+          data: { lastSeenAt: this.clock.now() },
+        }),
     );
   }
 }
 
 /** Malaysian name particles, which are not part of what someone is called. */
-const PARTICLES = new Set(['bin', 'binti', 'bt', 'bte', 'a/l', 'a/p', 's/o', 'd/o', '@']);
+const PARTICLES = new Set([
+  'bin',
+  'binti',
+  'bt',
+  'bte',
+  'a/l',
+  'a/p',
+  's/o',
+  'd/o',
+  '@',
+]);
 
 function whereFor(status: EncounterStatus): string {
   switch (status) {

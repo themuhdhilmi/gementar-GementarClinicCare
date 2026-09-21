@@ -1,4 +1,4 @@
-import { Logo } from './logo';
+import { Logo } from "./logo";
 
 /**
  * The right half of the sign-in screen: black, with the brand red used as
@@ -12,7 +12,7 @@ export function BrandPanel() {
       className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between"
       style={{
         background:
-          'linear-gradient(155deg, var(--brand-from) 0%, var(--brand-mid) 52%, var(--brand-to) 100%)',
+          "linear-gradient(155deg, var(--brand-from) 0%, var(--brand-mid) 52%, var(--brand-to) 100%)",
       }}
     >
       <Pattern />
@@ -30,11 +30,11 @@ export function BrandPanel() {
         <div
           aria-hidden
           className="mt-5 h-1 w-16 rounded-full"
-          style={{ background: 'var(--primary)' }}
+          style={{ background: "var(--primary)" }}
         />
         <p className="mt-4 max-w-md text-[15px] leading-relaxed text-brand-ink-muted">
-          Register, triage, consult, prescribe, dispense, bill and take payment in one place, with
-          nothing kept on paper alongside it.
+          Register, triage, consult, prescribe, dispense, bill and take payment
+          in one place, with nothing kept on paper alongside it.
         </p>
 
         <ul className="mt-10 space-y-5 border-t border-brand-rule pt-8">
@@ -81,13 +81,18 @@ function Point({
       <span
         aria-hidden
         className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md border text-brand-ink"
-        style={{ background: 'rgba(230,1,7,0.14)', borderColor: 'rgba(230,1,7,0.38)' }}
+        style={{
+          background: "rgba(230,1,7,0.14)",
+          borderColor: "rgba(230,1,7,0.38)",
+        }}
       >
         {icon}
       </span>
       <div>
         <p className="text-sm font-semibold text-brand-ink">{title}</p>
-        <p className="mt-0.5 max-w-sm text-sm leading-relaxed text-brand-ink-muted">{body}</p>
+        <p className="mt-0.5 max-w-sm text-sm leading-relaxed text-brand-ink-muted">
+          {body}
+        </p>
       </div>
     </li>
   );
@@ -97,10 +102,23 @@ function Point({
 function Pattern() {
   return (
     <>
-      <svg aria-hidden className="pointer-events-none absolute inset-0 size-full opacity-[0.07]">
+      <svg
+        aria-hidden
+        className="pointer-events-none absolute inset-0 size-full opacity-[0.07]"
+      >
         <defs>
-          <pattern id="cc-grid" width="88" height="88" patternUnits="userSpaceOnUse">
-            <path d="M44 36V52M36 44H52" fill="none" stroke="#ff4b45" strokeWidth="1.4" />
+          <pattern
+            id="cc-grid"
+            width="88"
+            height="88"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M44 36V52M36 44H52"
+              fill="none"
+              stroke="#ff4b45"
+              strokeWidth="1.4"
+            />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#cc-grid)" />
@@ -108,7 +126,10 @@ function Pattern() {
       <div
         aria-hidden
         className="pointer-events-none absolute -right-32 -top-32 size-[28rem] rounded-full"
-        style={{ background: 'radial-gradient(circle, var(--brand-glow), transparent 68%)' }}
+        style={{
+          background:
+            "radial-gradient(circle, var(--brand-glow), transparent 68%)",
+        }}
       />
     </>
   );
@@ -116,7 +137,16 @@ function Pattern() {
 
 function SignatureIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M3 17c3 0 4-10 7-10s3 10 6 10c1.5 0 2.5-1 2.5-1" />
       <path d="M4 21h16" />
     </svg>
@@ -125,7 +155,16 @@ function SignatureIcon() {
 
 function KeyIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="8" cy="12" r="4" />
       <path d="M12 12h9M17 12v4M20 12v3" />
     </svg>
@@ -134,7 +173,16 @@ function KeyIcon() {
 
 function EyeIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z" />
       <circle cx="12" cy="12" r="2.6" />
     </svg>

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -14,21 +14,22 @@ import {
   type SettingsDocument,
   type TenantOverview,
   type Weekday,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import { Cell, Column, DataTable } from "@/components/data-table";
 import {
   Alert,
   Button,
-  Card,
   Chip,
   Drawer,
-  EmptyState,
   Field,
   Input,
   Modal,
+  PageHeader,
+  Skeleton,
   TextField,
-} from '@/components/ui';
+} from "@/components/ui";
 
 type Draft = {
   code: string;
@@ -45,16 +46,16 @@ type Draft = {
 };
 
 const BLANK: Draft = {
-  code: '',
-  name: '',
-  addressLine1: '',
-  addressLine2: '',
-  city: '',
-  state: '',
-  postcode: '',
-  phone: '',
-  email: '',
-  licenceNo: '',
+  code: "",
+  name: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  postcode: "",
+  phone: "",
+  email: "",
+  licenceNo: "",
   operatingHours: {},
 };
 
@@ -62,14 +63,14 @@ function toDraft(branch: BranchDetail): Draft {
   return {
     code: branch.code,
     name: branch.name,
-    addressLine1: branch.addressLine1 ?? '',
-    addressLine2: branch.addressLine2 ?? '',
-    city: branch.city ?? '',
-    state: branch.state ?? '',
-    postcode: branch.postcode ?? '',
-    phone: branch.phone ?? '',
-    email: branch.email ?? '',
-    licenceNo: branch.licenceNo ?? '',
+    addressLine1: branch.addressLine1 ?? "",
+    addressLine2: branch.addressLine2 ?? "",
+    city: branch.city ?? "",
+    state: branch.state ?? "",
+    postcode: branch.postcode ?? "",
+    phone: branch.phone ?? "",
+    email: branch.email ?? "",
+    licenceNo: branch.licenceNo ?? "",
     operatingHours: branch.operatingHours ?? {},
   };
 }
@@ -86,7 +87,7 @@ export default function BranchesPage() {
   const { can } = useSession();
   const [branches, setBranches] = useState<BranchDetail[] | null>(null);
   const [tenant, setTenant] = useState<TenantOverview | null>(null);
-  const [editing, setEditing] = useState<BranchDetail | 'new' | null>(null);
+  const [editing, setEditing] = useState<BranchDetail | "new" | null>(null);
   const [draft, setDraft] = useState<Draft>(BLANK);
   const [confirming, setConfirming] = useState<BranchDetail | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -95,8 +96,8 @@ export default function BranchesPage() {
 
   const load = useCallback(async () => {
     const [list, overview] = await Promise.all([
-      api<{ items: BranchDetail[] }>('/branches/all'),
-      api<TenantOverview>('/tenant'),
+      api<{ items: BranchDetail[] }>("/branches/all"),
+      api<TenantOverview>("/tenant"),
     ]);
     setBranches(list.items);
     setTenant(overview);
@@ -104,10 +105,16 @@ export default function BranchesPage() {
 
   useAsyncEffect(() => load(), [load]);
 
-  if (!can('admin.settings')) {
+  if (!can("admin.settings")) {
     return <Alert tone="info">Branches are managed by an administrator.</Alert>;
   }
-  if (!branches || !tenant) return <p className="text-sm text-muted">Loading…</p>;
+  if (!branches || !tenant)
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-64" />
+      </div>
+    );
 
   async function act(what: string, run: () => Promise<unknown>) {
     setBusy(true);
@@ -119,100 +126,125 @@ export default function BranchesPage() {
       setNotice(what);
       return true;
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Something went wrong.",
+      );
       return false;
     } finally {
       setBusy(false);
     }
   }
 
-  function open(branch: BranchDetail | 'new') {
+  function open(branch: BranchDetail | "new") {
     setEditing(branch);
-    setDraft(branch === 'new' ? BLANK : toDraft(branch));
+    setDraft(branch === "new" ? BLANK : toDraft(branch));
     setError(null);
   }
 
-  const creating = editing === 'new';
-  const current = editing === 'new' ? null : editing;
+  const creating = editing === "new";
+  const current = editing === "new" ? null : editing;
+
+  const columns: Array<Column<BranchDetail>> = [
+    {
+      key: "code",
+      header: "Code",
+      width: "w-24",
+      cell: (branch) => (
+        <span className="font-mono text-xs tabular">{branch.code}</span>
+      ),
+    },
+    {
+      key: "name",
+      header: "Name",
+      cell: (branch) => (
+        <Cell
+          primary={branch.name}
+          secondary={
+            [branch.city, branch.state].filter(Boolean).join(", ") || undefined
+          }
+        />
+      ),
+    },
+    {
+      key: "open",
+      header: "Open",
+      hideBelow: "md",
+      cell: (branch) => (
+        <span className="text-muted">
+          {openDaysSummary(branch.operatingHours)}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (branch) => <Chip tone={branch.status}>{branch.status}</Chip>,
+    },
+    {
+      key: "actions",
+      header: "",
+      numeric: true,
+      cell: (branch) => (
+        <div className="flex justify-end gap-1.5">
+          <Button variant="secondary" size="sm" onClick={() => open(branch)}>
+            Edit
+          </Button>
+          {branch.status === "ACTIVE" ? (
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={() => setConfirming(branch)}
+            >
+              Deactivate
+            </Button>
+          ) : (
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={() =>
+                void act(`${branch.name} is open again.`, () =>
+                  api(`/branches/${branch.id}/activate`, { method: "POST" }),
+                )
+              }
+            >
+              Reactivate
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Branches</h1>
-          <p className="text-sm text-muted">
-            Where the clinic sees patients. Every record carries the branch it happened at.
-          </p>
-        </div>
-        <Button onClick={() => open('new')}>Add a branch</Button>
-      </div>
+      <PageHeader
+        title="Branches"
+        description="Where the clinic sees patients. Every record carries the branch it happened at, which is why a branch is deactivated rather than removed."
+        meta={
+          <span className="text-muted">
+            {branches.filter((b) => b.status === "ACTIVE").length} open of{" "}
+            {branches.length}
+          </span>
+        }
+        actions={<Button onClick={() => open("new")}>Add a branch</Button>}
+      />
 
       {error && !editing && <Alert title="Not done">{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
 
-      <Card>
-        {branches.length === 0 ? (
-          <EmptyState title="No branches yet">
-            A clinic needs at least one before anyone can be given a role.
-          </EmptyState>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted">
-                <tr className="border-b border-line">
-                  <th className="pb-2 font-medium">Code</th>
-                  <th className="pb-2 font-medium">Name</th>
-                  <th className="pb-2 font-medium">Where</th>
-                  <th className="pb-2 font-medium">Open</th>
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {branches.map((branch) => (
-                  <tr key={branch.id} className="border-b border-line last:border-0">
-                    <td className="py-2.5 font-mono text-xs">{branch.code}</td>
-                    <td className="py-2.5 font-medium">{branch.name}</td>
-                    <td className="py-2.5 text-muted">
-                      {[branch.city, branch.state].filter(Boolean).join(', ') || '—'}
-                    </td>
-                    <td className="py-2.5 text-muted">{openDaysSummary(branch.operatingHours)}</td>
-                    <td className="py-2.5">
-                      <Chip tone={branch.status}>{branch.status}</Chip>
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => open(branch)}>
-                        Edit
-                      </Button>
-                      {branch.status === 'ACTIVE' ? (
-                        <Button variant="ghost" size="sm" onClick={() => setConfirming(branch)}>
-                          Deactivate
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            void act(`${branch.name} is open again.`, () =>
-                              api(`/branches/${branch.id}/activate`, { method: 'POST' }),
-                            )
-                          }
-                        >
-                          Reactivate
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      <DataTable
+        rows={branches}
+        columns={columns}
+        rowKey={(branch) => branch.id}
+        rowTone={(branch) => (branch.status === "ACTIVE" ? undefined : "muted")}
+        caption="Branches"
+        empty="No branches yet"
+        emptyHint="A clinic needs at least one before anyone can be given a role."
+      />
 
       <Drawer
         open={editing !== null}
-        title={creating ? 'Add a branch' : (current?.name ?? '')}
+        title={creating ? "Add a branch" : (current?.name ?? "")}
         onClose={() => setEditing(null)}
         footer={
           <div className="flex items-center justify-end gap-2">
@@ -239,13 +271,16 @@ export default function BranchesPage() {
                   creating ? `${draft.name} added.` : `${draft.name} saved.`,
                   () =>
                     creating
-                      ? api('/branches', { method: 'POST', body })
-                      : api(`/branches/${current!.id}`, { method: 'PATCH', body }),
+                      ? api("/branches", { method: "POST", body })
+                      : api(`/branches/${current!.id}`, {
+                          method: "PATCH",
+                          body,
+                        }),
                 );
                 if (ok) setEditing(null);
               }}
             >
-              {creating ? 'Add branch' : 'Save'}
+              {creating ? "Add branch" : "Save"}
             </Button>
           </div>
         }
@@ -258,8 +293,8 @@ export default function BranchesPage() {
               label="Code"
               hint={
                 creating
-                  ? 'Two to eight letters or digits. It becomes part of every invoice number, so it can never be changed.'
-                  : 'Part of every document number already issued here, so it is permanent.'
+                  ? "Two to eight letters or digits. It becomes part of every invoice number, so it can never be changed."
+                  : "Part of every document number already issued here, so it is permanent."
               }
             >
               <Input
@@ -277,7 +312,9 @@ export default function BranchesPage() {
               label="Name"
               value={draft.name}
               placeholder="Cawangan Cheras"
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, name: event.target.value })
+              }
             />
           </div>
 
@@ -285,22 +322,30 @@ export default function BranchesPage() {
             <TextField
               label="Address"
               value={draft.addressLine1}
-              onChange={(event) => setDraft({ ...draft, addressLine1: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, addressLine1: event.target.value })
+              }
             />
             <TextField
               label="Address line 2"
               value={draft.addressLine2}
-              onChange={(event) => setDraft({ ...draft, addressLine2: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, addressLine2: event.target.value })
+              }
             />
             <TextField
               label="City"
               value={draft.city}
-              onChange={(event) => setDraft({ ...draft, city: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, city: event.target.value })
+              }
             />
             <TextField
               label="State"
               value={draft.state}
-              onChange={(event) => setDraft({ ...draft, state: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, state: event.target.value })
+              }
             />
             <TextField
               label="Postcode"
@@ -308,30 +353,40 @@ export default function BranchesPage() {
               value={draft.postcode}
               inputMode="numeric"
               maxLength={5}
-              onChange={(event) => setDraft({ ...draft, postcode: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, postcode: event.target.value })
+              }
             />
             <TextField
               label="Phone"
               value={draft.phone}
-              onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, phone: event.target.value })
+              }
             />
             <TextField
               label="Email"
               type="email"
               value={draft.email}
-              onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, email: event.target.value })
+              }
             />
             <TextField
               label="Clinic licence number"
               hint="Printed on documents issued here."
               value={draft.licenceNo}
-              onChange={(event) => setDraft({ ...draft, licenceNo: event.target.value })}
+              onChange={(event) =>
+                setDraft({ ...draft, licenceNo: event.target.value })
+              }
             />
           </div>
 
           <HoursEditor
             hours={draft.operatingHours}
-            onChange={(operatingHours) => setDraft({ ...draft, operatingHours })}
+            onChange={(operatingHours) =>
+              setDraft({ ...draft, operatingHours })
+            }
           />
 
           {current && (
@@ -350,13 +405,13 @@ export default function BranchesPage() {
 
       <Modal
         open={confirming !== null}
-        title={`Deactivate ${confirming?.name ?? ''}?`}
+        title={`Deactivate ${confirming?.name ?? ""}?`}
         onClose={() => setConfirming(null)}
       >
         <p className="text-sm text-muted">
-          Nobody will be able to work there and nothing already recorded is touched. It can be
-          reopened at any time. If work is still open at the branch, this will be refused and say
-          how much.
+          Nobody will be able to work there and nothing already recorded is
+          touched. It can be reopened at any time. If work is still open at the
+          branch, this will be refused and say how much.
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setConfirming(null)}>
@@ -368,7 +423,10 @@ export default function BranchesPage() {
             onClick={async () => {
               const branch = confirming!;
               const ok = await act(`${branch.name} is closed.`, () =>
-                api(`/branches/${branch.id}/deactivate`, { method: 'POST', body: {} }),
+                api(`/branches/${branch.id}/deactivate`, {
+                  method: "POST",
+                  body: {},
+                }),
               );
               if (ok) setConfirming(null);
             }}
@@ -383,9 +441,9 @@ export default function BranchesPage() {
 
 function openDaysSummary(hours: OperatingHours): string {
   const open = WEEKDAYS.filter(({ key }) => (hours?.[key]?.length ?? 0) > 0);
-  if (open.length === 0) return 'Not set';
-  if (open.length === 7) return 'Every day';
-  return open.map(({ label }) => label.slice(0, 3)).join(' ');
+  if (open.length === 0) return "Not set";
+  if (open.length === 7) return "Every day";
+  return open.map(({ label }) => label.slice(0, 3)).join(" ");
 }
 
 /** TEN-F-06: per weekday, more than one range, because clinics shut for lunch. */
@@ -407,7 +465,8 @@ function HoursEditor({
     <fieldset className="rounded-md border border-line p-4">
       <legend className="px-1 text-sm font-medium">Opening hours</legend>
       <p className="mb-3 text-sm text-muted">
-        Leave a day empty when the clinic is shut. Add a second range for a lunch break.
+        Leave a day empty when the clinic is shut. Add a second range for a
+        lunch break.
       </p>
 
       <div className="flex flex-col gap-2">
@@ -416,7 +475,9 @@ function HoursEditor({
           return (
             <div key={key} className="flex flex-wrap items-center gap-2">
               <span className="w-24 shrink-0 text-sm">{label}</span>
-              {ranges.length === 0 && <span className="text-sm text-muted">Closed</span>}
+              {ranges.length === 0 && (
+                <span className="text-sm text-muted">Closed</span>
+              )}
               {ranges.map((range, index) => (
                 <span key={index} className="flex items-center gap-1">
                   <Input
@@ -446,7 +507,12 @@ function HoursEditor({
                     variant="ghost"
                     size="sm"
                     aria-label={`Remove this range on ${label}`}
-                    onClick={() => setDay(key, ranges.filter((_, i) => i !== index))}
+                    onClick={() =>
+                      setDay(
+                        key,
+                        ranges.filter((_, i) => i !== index),
+                      )
+                    }
                   >
                     ×
                   </Button>
@@ -456,7 +522,12 @@ function HoursEditor({
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  setDay(key, [...ranges, ranges.length === 0 ? ['09:00', '17:00'] : ['14:00', '18:00']])
+                  setDay(key, [
+                    ...ranges,
+                    ranges.length === 0
+                      ? ["09:00", "17:00"]
+                      : ["14:00", "18:00"],
+                  ])
                 }
               >
                 Add hours
@@ -467,7 +538,10 @@ function HoursEditor({
                   size="sm"
                   onClick={() => {
                     const next: OperatingHours = {};
-                    for (const day of WEEKDAYS) next[day.key] = ranges.map((r) => [...r] as [string, string]);
+                    for (const day of WEEKDAYS)
+                      next[day.key] = ranges.map(
+                        (r) => [...r] as [string, string],
+                      );
                     onChange(next);
                   }}
                 >
@@ -505,7 +579,9 @@ function LetterheadEditor({
       await onSaved();
       setVersion((n) => n + 1);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Something went wrong.",
+      );
     } finally {
       setBusy(false);
     }
@@ -515,7 +591,8 @@ function LetterheadEditor({
     <fieldset className="rounded-md border border-line p-4">
       <legend className="px-1 text-sm font-medium">Letterhead</legend>
       <p className="mb-3 text-sm text-muted">
-        Printed at the top and bottom of receipts, prescriptions and medical certificates.
+        Printed at the top and bottom of receipts, prescriptions and medical
+        certificates.
       </p>
       {error && <Alert title="Not saved">{error}</Alert>}
 
@@ -540,15 +617,26 @@ function LetterheadEditor({
             className="hidden"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              event.target.value = '';
+              event.target.value = "";
               if (file) {
-                void run(() => upload(`/branches/${branch.id}/letterhead/logo`, 'logo', file));
+                void run(() =>
+                  upload(
+                    `/branches/${branch.id}/letterhead/logo`,
+                    "logo",
+                    file,
+                  ),
+                );
               }
             }}
           />
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" loading={busy} onClick={() => picker.current?.click()}>
-              {branch.hasLogo ? 'Replace logo' : 'Upload logo'}
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={busy}
+              onClick={() => picker.current?.click()}
+            >
+              {branch.hasLogo ? "Replace logo" : "Upload logo"}
             </Button>
             {branch.hasLogo && (
               <Button
@@ -556,7 +644,9 @@ function LetterheadEditor({
                 size="sm"
                 onClick={() =>
                   void run(() =>
-                    api(`/branches/${branch.id}/letterhead/logo`, { method: 'DELETE' }),
+                    api(`/branches/${branch.id}/letterhead/logo`, {
+                      method: "DELETE",
+                    }),
                   )
                 }
               >
@@ -589,7 +679,7 @@ function LetterheadEditor({
             onClick={() =>
               void run(() =>
                 api(`/branches/${branch.id}/letterhead`, {
-                  method: 'PATCH',
+                  method: "PATCH",
                   body: { headerText, footerText },
                 }),
               )
@@ -615,7 +705,9 @@ function BranchSettings({
   clinic: SettingsDocument;
   onSaved: () => Promise<void>;
 }) {
-  const [overrides, setOverrides] = useState<SettingsDocument>(branch.settings ?? {});
+  const [overrides, setOverrides] = useState<SettingsDocument>(
+    branch.settings ?? {},
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -625,19 +717,27 @@ function BranchSettings({
 
   return (
     <fieldset className="rounded-md border border-line p-4">
-      <legend className="px-1 text-sm font-medium">Settings just for this branch</legend>
+      <legend className="px-1 text-sm font-medium">
+        Settings just for this branch
+      </legend>
       <p className="mb-3 text-sm text-muted">
-        Everything follows the clinic unless it is overridden here. Only the overrides are stored,
-        so a change to the clinic still reaches this branch.
+        Everything follows the clinic unless it is overridden here. Only the
+        overrides are stored, so a change to the clinic still reaches this
+        branch.
       </p>
       {error && <Alert title="Not saved">{error}</Alert>}
 
       <div className="flex flex-col gap-3">
         {fields.map((field) => {
           const overridden = overrides[field.group]?.[field.key] !== undefined;
-          const shown = overridden ? overrides[field.group]![field.key]! : clinicValue(field);
+          const shown = overridden
+            ? overrides[field.group]![field.key]!
+            : clinicValue(field);
           return (
-            <div key={`${field.group}.${field.key}`} className="flex flex-wrap items-center gap-3">
+            <div
+              key={`${field.group}.${field.key}`}
+              className="flex flex-wrap items-center gap-3"
+            >
               <label className="flex w-64 shrink-0 items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -645,10 +745,12 @@ function BranchSettings({
                   checked={overridden}
                   onChange={(event) => {
                     const group = { ...overrides[field.group] };
-                    if (event.target.checked) group[field.key] = clinicValue(field);
+                    if (event.target.checked)
+                      group[field.key] = clinicValue(field);
                     else delete group[field.key];
                     const next = { ...overrides };
-                    if (Object.keys(group).length === 0) delete next[field.group];
+                    if (Object.keys(group).length === 0)
+                      delete next[field.group];
                     else next[field.group] = group;
                     setOverrides(next);
                   }}
@@ -661,7 +763,7 @@ function BranchSettings({
                 </span>
               </label>
 
-              {field.type === 'boolean' ? (
+              {field.type === "boolean" ? (
                 <input
                   type="checkbox"
                   className="size-4"
@@ -670,13 +772,16 @@ function BranchSettings({
                   onChange={(event) =>
                     setOverrides({
                       ...overrides,
-                      [field.group]: { ...overrides[field.group], [field.key]: event.target.checked },
+                      [field.group]: {
+                        ...overrides[field.group],
+                        [field.key]: event.target.checked,
+                      },
                     })
                   }
                 />
               ) : (
                 <Input
-                  type={field.type === 'number' ? 'number' : 'text'}
+                  type={field.type === "number" ? "number" : "text"}
                   value={String(shown)}
                   disabled={!overridden}
                   className="h-8 max-w-[10rem] text-sm"
@@ -686,7 +791,9 @@ function BranchSettings({
                       [field.group]: {
                         ...overrides[field.group],
                         [field.key]:
-                          field.type === 'number' ? Number(event.target.value) : event.target.value,
+                          field.type === "number"
+                            ? Number(event.target.value)
+                            : event.target.value,
                       },
                     })
                   }
@@ -722,12 +829,16 @@ function BranchSettings({
                 };
               }
               await api(`/branches/${branch.id}/settings`, {
-                method: 'PATCH',
+                method: "PATCH",
                 body: { settings: patch },
               });
               await onSaved();
             } catch (caught) {
-              setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+              setError(
+                caught instanceof ApiError
+                  ? caught.message
+                  : "Something went wrong.",
+              );
             } finally {
               setBusy(false);
             }

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { ApiError, api } from '@/lib/api';
-import { Alert, Button, Modal, TextField } from './ui';
+import { useState } from "react";
+import { ApiError, api } from "@/lib/api";
+import { Alert, Button, Modal, TextField } from "./ui";
 
 /**
  * IAM-F-11 made visible: when the API says a sensitive action needs a fresh
@@ -16,7 +16,7 @@ export function useReauth() {
     try {
       await action();
     } catch (caught) {
-      if (caught instanceof ApiError && caught.code === 'reauth_required') {
+      if (caught instanceof ApiError && caught.code === "reauth_required") {
         setPending(() => action);
         return;
       }
@@ -48,7 +48,7 @@ function ReauthDialog({
   onCancel: () => void;
   onConfirmed: () => Promise<void>;
 }) {
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -57,11 +57,13 @@ function ReauthDialog({
     setBusy(true);
     setError(null);
     try {
-      await api('/auth/reauth', { method: 'POST', body: { password } });
-      setPassword('');
+      await api("/auth/reauth", { method: "POST", body: { password } });
+      setPassword("");
       await onConfirmed();
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not confirm.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Could not confirm.",
+      );
     } finally {
       setBusy(false);
     }
@@ -71,8 +73,8 @@ function ReauthDialog({
     <Modal open={open} title="Confirm it is you" onClose={onCancel}>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <p className="text-sm text-muted">
-          This action changes how the account is secured, so it needs your password again. The
-          confirmation lasts five minutes.
+          This action changes how the account is secured, so it needs your
+          password again. The confirmation lasts five minutes.
         </p>
         {error && <Alert>{error}</Alert>}
         <TextField

@@ -12,16 +12,18 @@ import {
   type Page,
 } from "@/lib/api";
 import { useAsyncEffect } from "@/lib/use-async";
+import { Cell, Column, DataTable } from "@/components/data-table";
 import {
   Alert,
   Button,
   Card,
   Chip,
-  EmptyState,
   Field,
   Input,
   Modal,
+  PageHeader,
   Select,
+  Toolbar,
   timeAgo,
 } from "@/components/ui";
 
@@ -128,16 +130,66 @@ export default function AuditPage() {
     setPage(1);
   }
 
+  const columns: Array<Column<AuditRow>> = [
+    {
+      key: "when",
+      header: "When",
+      width: "w-32",
+      cell: (row) => (
+        <span
+          className="whitespace-nowrap text-muted"
+          title={new Date(row.occurredAt).toLocaleString("en-MY")}
+        >
+          {timeAgo(row.occurredAt)}
+        </span>
+      ),
+    },
+    {
+      key: "action",
+      header: "Action",
+      cell: (row) =>
+        row.action === "audit.break_glass" ? (
+          <Chip tone="LOCKED">break-glass</Chip>
+        ) : (
+          <span className="font-mono text-xs">{row.action}</span>
+        ),
+    },
+    {
+      key: "who",
+      header: "Who",
+      cell: (row) => (
+        <Cell primary={row.actorName} secondary={row.actorRole ?? "—"} />
+      ),
+    },
+    {
+      key: "subject",
+      header: "Subject",
+      hideBelow: "md",
+      cell: (row) => (
+        <span className="text-muted">
+          {row.entityType}
+          {row.entityId ? ` · ${row.entityId.slice(-8)}` : ""}
+        </span>
+      ),
+    },
+    {
+      key: "changed",
+      header: "What changed",
+      hideBelow: "lg",
+      cell: (row) => (
+        <span className="block max-w-md truncate text-xs text-muted">
+          {row.reason ?? changedKeys(row)}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-semibold">Audit</h1>
-        <p className="text-sm text-muted">
-          Who did what, when, and what it looked like before. Entries cannot be
-          edited or deleted, by anyone — the database refuses, not the
-          application.
-        </p>
-      </div>
+      <PageHeader
+        title="Audit"
+        description="Who did what, when, and what it looked like before. Entries cannot be edited or deleted by anyone — the database refuses, not the application."
+      />
 
       {error && <Alert title="Not shown">{error}</Alert>}
 
@@ -159,183 +211,143 @@ export default function AuditPage() {
         ))}
       </div>
 
-      <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-56">
-            <Field label="Kind of activity">
-              <Select
-                value={group}
-                onChange={(event) => {
-                  setGroup(event.target.value);
-                  setAction("");
-                  setPage(1);
-                }}
-              >
-                <option value="">Everything</option>
-                {Object.entries(AUDIT_GROUP_LABEL).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <div className="w-40">
-            <Field label="Period">
-              <Select
-                value={days}
-                onChange={(event) => {
-                  setDays(event.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="1">Last 24 hours</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 90 days</option>
-                <option value="365">Last 12 months</option>
-              </Select>
-            </Field>
-          </div>
-          <div className="w-72">
-            <Field
-              label="A particular patient"
-              hint="Paste a patient id from their record."
-            >
-              <Input
-                value={patientId}
-                placeholder="optional"
-                onChange={(event) => {
-                  setPatientId(event.target.value);
-                  setPage(1);
-                }}
-              />
-            </Field>
-          </div>
-          {action && (
-            <Button size="sm" variant="ghost" onClick={() => setAction("")}>
-              Clear &ldquo;{action}&rdquo;
-            </Button>
-          )}
-          <div className="ml-auto">
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={exporting}
-              onClick={async () => {
-                setExporting(true);
-                setError(null);
-                try {
-                  await downloadCsv({
-                    actionGroup: group || undefined,
-                    action: action || undefined,
-                    patientId: patientId.trim() || undefined,
-                    from: isoDaysAgo(Math.min(Number(days), 92)),
-                  });
-                } catch (caught) {
-                  setError(
-                    caught instanceof ApiError
-                      ? caught.message
-                      : "The export needs your password again.",
-                  );
-                } finally {
-                  setExporting(false);
-                }
+      <Toolbar>
+        <div className="w-56">
+          <Field label="Kind of activity">
+            <Select
+              value={group}
+              onChange={(event) => {
+                setGroup(event.target.value);
+                setAction("");
+                setPage(1);
               }}
             >
-              Export CSV
-            </Button>
-          </div>
+              <option value="">Everything</option>
+              {Object.entries(AUDIT_GROUP_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
         </div>
-        <p className="mt-2 text-xs text-muted">
+        <div className="w-40">
+          <Field label="Period">
+            <Select
+              value={days}
+              onChange={(event) => {
+                setDays(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="1">Last 24 hours</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="365">Last 12 months</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="w-72">
+          <Field
+            label="A particular patient"
+            hint="Paste a patient id from their record."
+          >
+            <Input
+              value={patientId}
+              placeholder="optional"
+              onChange={(event) => {
+                setPatientId(event.target.value);
+                setPage(1);
+              }}
+            />
+          </Field>
+        </div>
+        {action && (
+          <Button size="sm" variant="ghost" onClick={() => setAction("")}>
+            Clear &ldquo;{action}&rdquo;
+          </Button>
+        )}
+        <div className="ml-auto">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={exporting}
+            onClick={async () => {
+              setExporting(true);
+              setError(null);
+              try {
+                await downloadCsv({
+                  actionGroup: group || undefined,
+                  action: action || undefined,
+                  patientId: patientId.trim() || undefined,
+                  from: isoDaysAgo(Math.min(Number(days), 92)),
+                });
+              } catch (caught) {
+                setError(
+                  caught instanceof ApiError
+                    ? caught.message
+                    : "The export needs your password again.",
+                );
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            Export CSV
+          </Button>
+        </div>
+        <p className="w-full text-xs text-muted">
           An export covers at most 92 days, asks for your password again, and is
           itself recorded.
         </p>
-      </Card>
+      </Toolbar>
 
-      {!events ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : events.items.length === 0 ? (
-        <EmptyState title="Nothing recorded for that filter" />
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-line bg-surface">
-            <table className="w-full text-sm">
-              <thead className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">When</th>
-                  <th className="px-4 py-2.5 font-medium">Action</th>
-                  <th className="px-4 py-2.5 font-medium">Who</th>
-                  <th className="px-4 py-2.5 font-medium">Subject</th>
-                  <th className="px-4 py-2.5 font-medium">What changed</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {events.items.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="cursor-pointer hover:bg-surface-muted"
-                    onClick={async () => {
-                      try {
-                        setOpen(await api<AuditEntry>(`/audit/${row.id}`));
-                      } catch {
-                        setError("Could not open that entry.");
-                      }
-                    }}
-                  >
-                    <td className="whitespace-nowrap px-4 py-2.5 text-muted">
-                      {timeAgo(row.occurredAt)}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {row.action === "audit.break_glass" ? (
-                        <Chip tone="LOCKED">break-glass</Chip>
-                      ) : (
-                        <span className="font-mono text-xs">{row.action}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <p>{row.actorName}</p>
-                      <p className="text-xs text-muted">
-                        {row.actorRole ?? "—"}
-                      </p>
-                    </td>
-                    <td className="px-4 py-2.5 text-muted">
-                      {row.entityType}
-                      {row.entityId ? ` · ${row.entityId.slice(-8)}` : ""}
-                    </td>
-                    <td className="max-w-md truncate px-4 py-2.5 text-xs text-muted">
-                      {row.reason ?? changedKeys(row)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <DataTable
+        rows={events?.items ?? []}
+        loading={events === null}
+        columns={columns}
+        rowKey={(row) => row.id}
+        rowTone={(row) =>
+          row.action === "audit.break_glass" ? "warning" : undefined
+        }
+        onRowClick={async (row) => {
+          try {
+            setOpen(await api<AuditEntry>(`/audit/${row.id}`));
+          } catch {
+            setError("Could not open that entry.");
+          }
+        }}
+        caption="Audit trail"
+        empty="Nothing recorded for that filter"
+        emptyHint="Widen the period, or clear the kind of activity."
+      />
 
-          <div className="flex items-center justify-between text-sm text-muted">
-            <span>
-              {events.total} entr{events.total === 1 ? "y" : "ies"}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= events.pageCount}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
+      {events && events.pageCount > 1 && (
+        <div className="flex items-center justify-between text-sm text-muted">
+          <span className="tabular-nums">
+            {events.total} entr{events.total === 1 ? "y" : "ies"} · page {page}{" "}
+            of {events.pageCount}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={page >= events.pageCount}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
           </div>
-        </>
+        </div>
       )}
 
       <EntryDialog entry={open} onClose={() => setOpen(null)} />

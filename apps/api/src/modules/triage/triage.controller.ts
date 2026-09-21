@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { AuditService } from '../audit/audit.service.js';

@@ -17,17 +17,33 @@
  * because a status chip has to be readable at a glance from across a room.
  */
 :root {
+  /* The height of the sticky bar at the top of the working area. A
+     patient banner has to stick *below* it, not under it, and two
+     components agreeing on a number by eye is how that breaks. */
+  --app-bar-h: 3.5rem;
   /* Light only. The brand is red, black and white, and a clinic screen is
      read in a bright room; telling the browser keeps form controls from
      being auto-darkened on a machine set to a dark scheme. */
   color-scheme: only light;
 
-  --background: #f6f6f7;
+  --background: #f5f6f8;
   --surface: #ffffff;
-  --surface-muted: #f1f1f3;
+  /* A third step between the page and a card, for table heads, toolbars
+     and the inside of a well. Two greys were not enough to build a
+     hierarchy with; four is one too many. */
+  --surface-sunken: #fafafb;
+  --surface-muted: #eff0f3;
   --foreground: #0a0a0b;
-  --muted: #63666b;
-  --border: #e2e2e6;
+  /* Secondary text at 5.6:1 on white — readable on a cheap monitor in a
+     bright room, which is the machine this runs on. */
+  --muted: #5d6066;
+  /* Fainter still, for the things that are there but should not compete:
+     a timestamp, a unit, a hint. 4.6:1, so it is still legible. */
+  --muted-soft: #7c8089;
+  --border: #e4e5ea;
+  /* For the edge that has to hold a shape on its own: an input, a table
+     rule under a heading. */
+  --border-strong: #cdced6;
 
   --primary: #e60107;
   --primary-hover: #c20008;
@@ -56,6 +72,22 @@
   --brand-ink: #ffffff;
   --brand-ink-muted: #b4b6bb;
   --brand-rule: #2e2e34;
+
+  /*
+   * Elevation, as three steps and no more.
+   *
+   * A shadow is depth, and depth is meaning: level 1 is a thing resting
+   * on the page, 2 is a thing floating above it, 3 is a thing demanding
+   * an answer. More steps than that and nobody — including the person
+   * writing the next screen — can tell them apart, so they get used at
+   * random and the hierarchy stops meaning anything.
+   *
+   * Tinted with the foreground rather than pure black: a neutral-grey
+   * shadow on a warm-grey page reads as dirt.
+   */
+  --shadow-1: 0 1px 2px rgba(10, 10, 11, 0.05), 0 1px 1px rgba(10, 10, 11, 0.03);
+  --shadow-2: 0 1px 3px rgba(10, 10, 11, 0.07), 0 6px 16px -4px rgba(10, 10, 11, 0.06);
+  --shadow-3: 0 12px 32px -8px rgba(10, 10, 11, 0.18), 0 4px 10px -4px rgba(10, 10, 11, 0.08);
 }
 
 @theme inline {
@@ -64,7 +96,10 @@
   --color-surface-muted: var(--surface-muted);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-muted-soft: var(--muted-soft);
+  --color-surface-sunken: var(--surface-sunken);
   --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-ink: var(--primary-ink);
@@ -82,6 +117,10 @@
   --color-brand-rule: var(--brand-rule);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --shadow-e1: var(--shadow-1);
+  --shadow-e2: var(--shadow-2);
+  --shadow-e3: var(--shadow-3);
 }
 
 body {
@@ -92,6 +131,24 @@ body {
 *:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/*
+ * Numbers in a column have to line up, or the eye cannot compare them —
+ * which is the only reason to put them in a column. Applied here rather
+ * than remembered per table.
+ */
+.tabular,
+table td,
+table th {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A scrollbar inside a panel should not look like a system window's. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 /* Respect a reduced-motion preference: nothing here needs animation. */

@@ -10,23 +10,48 @@ Patients seeded ([03](../03-patient/README.md)). Sign in as **Puan Zana**.
 
 ## Walk through
 
+0. **As Dr Aisyah → Clinic → "What a visit goes through".** The route a
+   patient takes, drawn as a chain, with the parts this clinic can
+   change. Read the line at the top — it updates as you change the
+   controls beneath it.
+   - Set **Triage** to *"Never — straight to the doctor"* and watch the
+     chain lose a station. That is the small-clinic setup: reception to
+     the doctor's room, nobody taking vitals in between.
+   - Tick **"One counter does both"**. Pharmacy and Pay collapse into a
+     single **Counter**. That is the common Malaysian shape: out of the
+     doctor's room, to one window for the medicine and the bill
+     together.
+   - Untick it and tick **"Pay before collecting medicine"** instead —
+     Pay and Pharmacy swap places. With one counter the question does
+     not arise, so that option hides itself.
+   - Names in brackets — *(Procedure)*, *(Pharmacy)* — happen only when
+     that visit needs them. They are not settings; they are what the
+     doctor ordered.
 1. **Patients → Ahmad → Check in.** He gets a queue number and appears
-   on **Today**.
-2. **Today.** Columns by station: waiting for triage, in triage, waiting
+   on **Today**. With triage set to *never*, he arrives already waiting
+   for the doctor.
+2. **Open his visit** (click the row). Across the top is the journey:
+   **Checked in → Triage → Doctor → Pharmacy → Pay → Done**, with a tick
+   on what is behind him, a filled pill on where he is, and dashes on
+   what is still ahead. It follows the same settings as the board — no
+   triage step where the clinic has no triage, one **Counter** where one
+   person does both — and it only mentions a procedure once one has
+   actually been ordered.
+3. **Today.** Columns by station: waiting for triage, in triage, waiting
    for the doctor, and so on. Check in three more people so there is
    something to look at.
-3. **Open a second browser window on Today** and sign in as Dr Farid.
+4. **Open a second browser window on Today** and sign in as Dr Farid.
    Check somebody in from the first window. **The second updates within
    a second**, without a refresh — it is an SSE stream, not polling.
-4. **Call the next patient** from the doctor's column. The row moves and
+5. **Call the next patient** from the doctor's column. The row moves and
    the call is counted.
-5. **Call the same person again.** The count goes up. A patient called
+6. **Call the same person again.** The count goes up. A patient called
    three times is a patient who has gone to the toilet, and the number
    is what tells the front desk to go and look.
-6. **Skip somebody.** They go to the back but keep their number.
-7. **Mark somebody a no-show**, with a reason. Then **revert it** — they
+7. **Skip somebody.** They go to the back but keep their number.
+8. **Mark somebody a no-show**, with a reason. Then **revert it** — they
    came back.
-8. **Issue a display token.** There is no screen for this yet
+9. **Issue a display token.** There is no screen for this yet
    (`ENC-OPEN-16`), so as the administrator:
    ```bash
    curl -sb cookies.txt -X POST -H 'Content-Type: application/json' \
@@ -36,7 +61,7 @@ Patients seeded ([03](../03-patient/README.md)). Sign in as **Puan Zana**.
    It returns an address like `/display/<token>`. Open it in a private
    window: that is the waiting-room screen — numbers in very large
    type, a first name at most, no clinical detail, no sign-in.
-9. **Call somebody** and watch the waiting-room screen change.
+10. **Call somebody** and watch the waiting-room screen change.
 
 ## Try to break it
 
@@ -57,6 +82,34 @@ Patients seeded ([03](../03-patient/README.md)). Sign in as **Puan Zana**.
 - **Revoke the display token** (`DELETE /display-tokens/<id>`) and
   watch the waiting-room screen stop. That is what to do when a screen
   is replaced or photographed.
+
+- **Set triage to never, then check somebody in.** They start at
+  *waiting for the doctor*, not at triage. Set it back to *the front
+  desk decides* and the next patient starts at triage again. **The
+  triage tab disappears from the board too** — a queue nobody can join
+  is a tab nobody should have to scan past.
+- **Turn on one counter, then look at Today.** Pharmacy and Payment are
+  gone; there is one **Counter** tab holding both lines. Send one
+  patient there with a prescription and one without, and both appear in
+  it.
+- **Press "Call next" at the counter twice.** Somebody waiting for
+  medicine is called *into dispensing*. Somebody only waiting to pay is
+  called and **stays where they are** — there is no "being paid" state,
+  and inventing one would put a step in the record that never happened.
+- **Watch the strip move.** Keep the visit open in one window and
+  advance the patient from another. Each step ticks over as they pass
+  it.
+- **Cancel a visit, then look at the strip.** The last step reads
+  *Cancelled* rather than *Done* — a visit that ended badly should not
+  look finished.
+- **Finish a visit straight from dispensing.** One window, one person:
+  hand over the medicine, take the money on the billing screen, and
+  close the visit without a second queue position. That move was always
+  legal; nothing new had to be invented for it.
+- **Override it for one branch only.** The flow view on Clinic sets the
+  default; **Branches → settings** overrides per branch, through the
+  ordinary settings form rather than a second flow editor
+  (`ENC-OPEN-17`). One branch can skip triage while another keeps it.
 
 ## What is deliberately not here
 

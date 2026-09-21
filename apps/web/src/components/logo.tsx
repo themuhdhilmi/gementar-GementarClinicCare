@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import Image from "next/image";
 
 /**
  * The lockup from `documents/media/logos/logo.png`, prepared for the web by
@@ -12,18 +12,20 @@ import Image from 'next/image';
  * surface that is dark whatever the theme — the sign-in panel.
  */
 export function Logo({
-  className = 'h-10 w-auto',
-  surface = 'light',
+  className = "h-10 w-auto",
+  surface = "light",
   compact = false,
   priority = false,
 }: {
   className?: string;
-  surface?: 'light' | 'dark';
+  surface?: "light" | "dark";
   compact?: boolean;
   priority?: boolean;
 }) {
-  const name = `${compact ? 'logo-compact' : 'logo'}${surface === 'dark' ? '-dark' : ''}`;
-  const size = compact ? { width: 720, height: 250 } : { width: 900, height: 312 };
+  const name = `${compact ? "logo-compact" : "logo"}${surface === "dark" ? "-dark" : ""}`;
+  const size = compact
+    ? { width: 720, height: 250 }
+    : { width: 900, height: 312 };
 
   return (
     <Image
@@ -41,7 +43,7 @@ export function Logo({
 }
 
 /** The mark alone, for places too narrow for the lockup. */
-export function LogoMark({ className = 'size-8' }: { className?: string }) {
+export function LogoMark({ className = "size-8" }: { className?: string }) {
   return (
     <Image
       src="/brand/mark.png"

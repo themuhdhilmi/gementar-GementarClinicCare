@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useCallback, useState } from "react";
 import {
   ApiError,
   CLINICAL_SECTIONS,
@@ -11,12 +11,25 @@ import {
   type ClinicalSummary,
   type ConsultationView,
   type PatientRecord,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { PatientHeader, loadClinicalSummary } from '@/components/patient-header';
-import { SignedPrescription } from '@/components/prescription-signed';
-import { Alert, Button, Card, Field, Modal, Select, TextField } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  PatientHeader,
+  loadClinicalSummary,
+} from "@/components/patient-header";
+import { SignedPrescription } from "@/components/prescription-signed";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  Field,
+  Modal,
+  Select,
+  Skeleton,
+  TextField,
+} from "@/components/ui";
 
 /**
  * A signed consultation, read-only, with its amendments beside it.
@@ -35,10 +48,10 @@ export default function SignedConsultationPage() {
   const [patient, setPatient] = useState<PatientRecord | null>(null);
   const [clinical, setClinical] = useState<ClinicalSummary | null>(null);
   const [amending, setAmending] = useState(false);
-  const [type, setType] = useState<'ADDENDUM' | 'CORRECTION'>('ADDENDUM');
-  const [field, setField] = useState<ClinicalSection>('hpi');
-  const [text, setText] = useState('');
-  const [reason, setReason] = useState('');
+  const [type, setType] = useState<"ADDENDUM" | "CORRECTION">("ADDENDUM");
+  const [field, setField] = useState<ClinicalSection>("hpi");
+  const [text, setText] = useState("");
+  const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -55,38 +68,47 @@ export default function SignedConsultationPage() {
 
   useAsyncEffect(() => load(), [load]);
 
-  if (!view || !patient) return <p className="text-sm text-muted">Loading…</p>;
+  if (!view || !patient)
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-10 w-56" />
+        <Skeleton className="h-64" />
+      </div>
+    );
   const { consultation, diagnoses, amendments } = view;
 
   /** Corrections that supersede a given section, oldest first. */
   const correctionsFor = (key: ClinicalSection) =>
-    amendments.filter((a) => a.type === 'CORRECTION' && a.field === key);
+    amendments.filter((a) => a.type === "CORRECTION" && a.field === key);
 
   return (
     <div>
       <PatientHeader patient={patient} clinical={clinical} compact />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Consultation</h1>
-        {consultation.status === 'SIGNED' ? (
-          <span className="rounded-full bg-success-soft px-2.5 py-1 text-xs font-medium text-success">
-            Signed {consultation.signedAt ? new Date(consultation.signedAt).toLocaleString() : ''}
-          </span>
+        <h1 className="text-lg font-semibold tracking-tight">Consultation</h1>
+        {consultation.status === "SIGNED" ? (
+          <Chip tone="success" dot>
+            Signed{" "}
+            {consultation.signedAt
+              ? new Date(consultation.signedAt).toLocaleString("en-MY")
+              : ""}
+          </Chip>
         ) : (
-          <span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-medium text-muted">
-            {consultation.status === 'DRAFT' ? 'Draft' : 'Abandoned'}
-          </span>
+          <Chip tone="neutral">
+            {consultation.status === "DRAFT" ? "Draft" : "Abandoned"}
+          </Chip>
         )}
         {amendments.length > 0 && (
-          <span className="rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning">
-            {amendments.length} amendment{amendments.length === 1 ? '' : 's'}
-          </span>
+          <Chip tone="warning">
+            {amendments.length} amendment{amendments.length === 1 ? "" : "s"}
+          </Chip>
         )}
       </div>
 
       {error && <Alert title="Not done">{error}</Alert>}
 
-      {consultation.status === 'CANCELLED' && (
+      {consultation.status === "CANCELLED" && (
         <Alert tone="info" title="This draft was abandoned">
           {consultation.cancelReason}
         </Alert>
@@ -102,16 +124,24 @@ export default function SignedConsultationPage() {
               <Card key={section.key} title={section.label}>
                 <p
                   className={`whitespace-pre-wrap text-sm ${
-                    corrections.length > 0 ? 'text-muted line-through' : ''
+                    corrections.length > 0 ? "text-muted line-through" : ""
                   }`}
                 >
-                  {original || <span className="text-muted">Nothing recorded</span>}
+                  {original || (
+                    <span className="text-muted">Nothing recorded</span>
+                  )}
                 </p>
                 {corrections.map((correction) => (
-                  <div key={correction.id} className="mt-3 border-l-2 border-warning pl-3">
-                    <p className="whitespace-pre-wrap text-sm">{correction.current.text}</p>
+                  <div
+                    key={correction.id}
+                    className="mt-3 border-l-2 border-warning pl-3"
+                  >
+                    <p className="whitespace-pre-wrap text-sm">
+                      {correction.current.text}
+                    </p>
                     <p className="mt-1 text-xs text-muted">
-                      Corrected {new Date(correction.amendedAt).toLocaleString()} —{' '}
+                      Corrected{" "}
+                      {new Date(correction.amendedAt).toLocaleString()} —{" "}
                       {correction.reason}
                     </p>
                   </div>
@@ -120,16 +150,22 @@ export default function SignedConsultationPage() {
             );
           })}
 
-          {amendments.filter((a) => a.type === 'ADDENDUM').length > 0 && (
+          {amendments.filter((a) => a.type === "ADDENDUM").length > 0 && (
             <Card title="Added afterwards">
               <ul className="flex flex-col gap-3">
                 {amendments
-                  .filter((a) => a.type === 'ADDENDUM')
+                  .filter((a) => a.type === "ADDENDUM")
                   .map((addendum) => (
-                    <li key={addendum.id} className="border-l-2 border-primary pl-3">
-                      <p className="whitespace-pre-wrap text-sm">{addendum.current.text}</p>
+                    <li
+                      key={addendum.id}
+                      className="border-l-2 border-primary pl-3"
+                    >
+                      <p className="whitespace-pre-wrap text-sm">
+                        {addendum.current.text}
+                      </p>
                       <p className="mt-1 text-xs text-muted">
-                        {new Date(addendum.amendedAt).toLocaleString()} — {addendum.reason}
+                        {new Date(addendum.amendedAt).toLocaleString()} —{" "}
+                        {addendum.reason}
                       </p>
                     </li>
                   ))}
@@ -148,8 +184,10 @@ export default function SignedConsultationPage() {
                   <li key={d.id}>
                     <span className="font-medium">{d.description}</span>
                     <span className="block text-xs text-muted">
-                      {d.rank === 'PRIMARY' ? 'Main' : 'Secondary'} ·{' '}
-                      {d.certainty === 'CONFIRMED' ? 'Confirmed' : 'Provisional'}
+                      {d.rank === "PRIMARY" ? "Main" : "Secondary"} ·{" "}
+                      {d.certainty === "CONFIRMED"
+                        ? "Confirmed"
+                        : "Provisional"}
                       {d.icd10Code && ` · ${d.icd10Code}`}
                     </span>
                   </li>
@@ -162,16 +200,20 @@ export default function SignedConsultationPage() {
               the way to change one. */}
           <SignedPrescription
             consultationId={consultation.id}
-            canAmend={consultation.status === 'SIGNED' && can('clinical.amend')}
+            canAmend={consultation.status === "SIGNED" && can("clinical.amend")}
           />
 
-          {consultation.status === 'SIGNED' && can('clinical.amend') && (
+          {consultation.status === "SIGNED" && can("clinical.amend") && (
             <Card title="Something to add or correct?">
               <p className="mb-3 text-sm text-muted">
-                The record itself does not change. What you write is kept beside it, with your
-                name and your reason.
+                The record itself does not change. What you write is kept beside
+                it, with your name and your reason.
               </p>
-              <Button variant="secondary" size="sm" onClick={() => setAmending(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setAmending(true)}
+              >
                 Amend
               </Button>
             </Card>
@@ -197,30 +239,38 @@ export default function SignedConsultationPage() {
         </div>
       </div>
 
-      <Modal open={amending} title="Amend this record" onClose={() => setAmending(false)}>
+      <Modal
+        open={amending}
+        title="Amend this record"
+        onClose={() => setAmending(false)}
+      >
         <div className="flex flex-col gap-3">
           <Field
             label="What kind of change?"
             hint={
-              type === 'ADDENDUM'
-                ? 'Adds something that was left out. Nothing already written changes.'
-                : 'Supersedes one section. The original stays, struck through.'
+              type === "ADDENDUM"
+                ? "Adds something that was left out. Nothing already written changes."
+                : "Supersedes one section. The original stays, struck through."
             }
           >
             <Select
               value={type}
-              onChange={(event) => setType(event.target.value as 'ADDENDUM' | 'CORRECTION')}
+              onChange={(event) =>
+                setType(event.target.value as "ADDENDUM" | "CORRECTION")
+              }
             >
               <option value="ADDENDUM">Add something</option>
               <option value="CORRECTION">Correct a section</option>
             </Select>
           </Field>
 
-          {type === 'CORRECTION' && (
+          {type === "CORRECTION" && (
             <Field label="Which section?">
               <Select
                 value={field}
-                onChange={(event) => setField(event.target.value as ClinicalSection)}
+                onChange={(event) =>
+                  setField(event.target.value as ClinicalSection)
+                }
               >
                 {CLINICAL_SECTIONS.map((section) => (
                   <option key={section.key} value={section.key}>
@@ -231,7 +281,9 @@ export default function SignedConsultationPage() {
             </Field>
           )}
 
-          <Field label={type === 'CORRECTION' ? 'What it should say' : 'What to add'}>
+          <Field
+            label={type === "CORRECTION" ? "What it should say" : "What to add"}
+          >
             <textarea
               rows={4}
               value={text}
@@ -259,20 +311,24 @@ export default function SignedConsultationPage() {
                 setError(null);
                 try {
                   await api(`/consultations/${id}/amend`, {
-                    method: 'POST',
+                    method: "POST",
                     body: {
                       type,
-                      field: type === 'CORRECTION' ? field : undefined,
+                      field: type === "CORRECTION" ? field : undefined,
                       current: text,
                       reason,
                     },
                   });
                   await load();
                   setAmending(false);
-                  setText('');
-                  setReason('');
+                  setText("");
+                  setReason("");
                 } catch (caught) {
-                  setError(caught instanceof ApiError ? caught.message : 'Could not amend.');
+                  setError(
+                    caught instanceof ApiError
+                      ? caught.message
+                      : "Could not amend.",
+                  );
                 } finally {
                   setBusy(false);
                 }

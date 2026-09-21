@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState } from "react";
 import {
   ApiError,
   api,
@@ -10,10 +10,21 @@ import {
   type SettingValue,
   type SettingsDocument,
   type TenantOverview,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Button, Card, Chip, Field, Input, TextField } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import { FLOW_SETTING_KEYS, PatientFlow } from "@/components/patient-flow";
+import {
+  Alert,
+  Button,
+  Card,
+  Chip,
+  Field,
+  Input,
+  PageHeader,
+  Skeleton,
+  TextField,
+} from "@/components/ui";
 
 /**
  * Admin → Clinic settings (TEN-F-01, TEN-F-04, TEN-F-05).
@@ -26,28 +37,39 @@ import { Alert, Button, Card, Chip, Field, Input, TextField } from '@/components
 export default function ClinicPage() {
   const { can } = useSession();
   const [data, setData] = useState<TenantOverview | null>(null);
-  const [profile, setProfile] = useState({ name: '', timezone: '', tin: '', businessRegNo: '' });
+  const [profile, setProfile] = useState({
+    name: "",
+    timezone: "",
+    tin: "",
+    businessRegNo: "",
+  });
   const [draft, setDraft] = useState<SettingsDocument>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const next = await api<TenantOverview>('/tenant');
+    const next = await api<TenantOverview>("/tenant");
     setData(next);
     setProfile({
       name: next.tenant.name,
       timezone: next.tenant.timezone,
-      tin: next.tenant.tin ?? '',
-      businessRegNo: next.tenant.businessRegNo ?? '',
+      tin: next.tenant.tin ?? "",
+      businessRegNo: next.tenant.businessRegNo ?? "",
     });
     setDraft(next.settings);
   }, []);
 
   useAsyncEffect(() => load(), [load]);
 
-  if (!data) return <p className="text-sm text-muted">Loading…</p>;
-  const readOnly = !can('admin.settings');
+  if (!data)
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-10 w-56" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  const readOnly = !can("admin.settings");
 
   async function save(what: string, run: () => Promise<unknown>) {
     setBusy(true);
@@ -58,7 +80,9 @@ export default function ClinicPage() {
       await load();
       setNotice(`${what} saved.`);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+      setError(
+        caught instanceof ApiError ? caught.message : "Something went wrong.",
+      );
     } finally {
       setBusy(false);
     }
@@ -69,15 +93,20 @@ export default function ClinicPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Clinic settings</h1>
-          <p className="text-sm text-muted">
-            {data.tenant.name} · {data.tenant.slug} · {data.tenant.currency}
-          </p>
-        </div>
-        <Chip tone={data.tenant.status}>{data.tenant.status}</Chip>
-      </div>
+      <PageHeader
+        title="Clinic settings"
+        description="How this clinic works, and what it prints. Changing one of these changes every branch."
+        meta={
+          <>
+            <Chip tone={data.tenant.status} dot>
+              {data.tenant.status}
+            </Chip>
+            <span className="text-muted">
+              {data.tenant.name} · {data.tenant.slug} · {data.tenant.currency}
+            </span>
+          </>
+        }
+      />
 
       {error && <Alert title="Not saved">{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
@@ -96,31 +125,42 @@ export default function ClinicPage() {
             label="Name"
             value={profile.name}
             disabled={readOnly}
-            onChange={(event) => setProfile({ ...profile, name: event.target.value })}
+            onChange={(event) =>
+              setProfile({ ...profile, name: event.target.value })
+            }
           />
           <TextField
             label="Time zone"
             hint="Reports and opening hours are read in this zone."
             value={profile.timezone}
             disabled={readOnly}
-            onChange={(event) => setProfile({ ...profile, timezone: event.target.value })}
+            onChange={(event) =>
+              setProfile({ ...profile, timezone: event.target.value })
+            }
           />
           <TextField
             label="Business registration number"
             hint="SSM number, printed on invoices."
             value={profile.businessRegNo}
             disabled={readOnly}
-            onChange={(event) => setProfile({ ...profile, businessRegNo: event.target.value })}
+            onChange={(event) =>
+              setProfile({ ...profile, businessRegNo: event.target.value })
+            }
           />
           <TextField
             label="Tax identification number"
             hint="TIN, needed for MyInvois when e-Invoice is switched on."
             value={profile.tin}
             disabled={readOnly}
-            onChange={(event) => setProfile({ ...profile, tin: event.target.value })}
+            onChange={(event) =>
+              setProfile({ ...profile, tin: event.target.value })
+            }
           />
         </div>
-        <Field label="Web address" hint="The subdomain never changes: documents and links depend on it.">
+        <Field
+          label="Web address"
+          hint="The subdomain never changes: documents and links depend on it."
+        >
           <Input value={data.tenant.slug} disabled readOnly />
         </Field>
         {!readOnly && (
@@ -128,9 +168,9 @@ export default function ClinicPage() {
             <Button
               loading={busy}
               onClick={() =>
-                void save('Clinic details', () =>
-                  api('/tenant', {
-                    method: 'PATCH',
+                void save("Clinic details", () =>
+                  api("/tenant", {
+                    method: "PATCH",
                     body: {
                       name: profile.name,
                       timezone: profile.timezone,
@@ -147,15 +187,37 @@ export default function ClinicPage() {
         )}
       </Card>
 
+      {/* ENC-F-05. The four settings that decide the route are shown as
+          the route, above the generated form, and filtered out of it —
+          two controls for one value is worse than none. */}
+      <PatientFlow
+        queue={draft["queue"] ?? {}}
+        disabled={readOnly}
+        onChange={(key, value) =>
+          setDraft({ ...draft, queue: { ...draft["queue"], [key]: value } })
+        }
+      />
+
       {groups.map((group) => (
         <Card
           key={group}
           title={SETTINGS_GROUP_LABEL[group] ?? group}
-          description="Applies everywhere unless a branch overrides it."
+          description={
+            group === "queue"
+              ? "The rest of the queue. What a visit goes through is above."
+              : "Applies everywhere unless a branch overrides it."
+          }
         >
           <div className="flex flex-col gap-4">
             {data.schema.fields
               .filter((field) => field.group === group)
+              .filter(
+                (field) =>
+                  !(
+                    field.group === "queue" &&
+                    (FLOW_SETTING_KEYS as readonly string[]).includes(field.key)
+                  ),
+              )
               .map((field) => (
                 <SettingRow
                   key={`${field.group}.${field.key}`}
@@ -165,7 +227,10 @@ export default function ClinicPage() {
                   onChange={(value) =>
                     setDraft({
                       ...draft,
-                      [field.group]: { ...draft[field.group], [field.key]: value },
+                      [field.group]: {
+                        ...draft[field.group],
+                        [field.key]: value,
+                      },
                     })
                   }
                 />
@@ -180,8 +245,11 @@ export default function ClinicPage() {
             loading={busy}
             disabled={!changed}
             onClick={() =>
-              void save('Settings', () =>
-                api('/tenant/settings', { method: 'PATCH', body: { settings: draft } }),
+              void save("Settings", () =>
+                api("/tenant/settings", {
+                  method: "PATCH",
+                  body: { settings: draft },
+                }),
               )
             }
           >
@@ -192,7 +260,9 @@ export default function ClinicPage() {
               Discard changes
             </Button>
           )}
-          <span className="text-sm text-muted">Schema version {data.schema.version}</span>
+          <span className="text-sm text-muted">
+            Schema version {data.schema.version}
+          </span>
         </div>
       )}
 
@@ -206,13 +276,15 @@ export default function ClinicPage() {
               <span
                 className={`mt-0.5 inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-medium ${
                   data.modules[module.key]
-                    ? 'bg-success-soft text-success'
-                    : 'bg-surface-muted text-muted'
+                    ? "bg-success-soft text-success"
+                    : "bg-surface-muted text-muted"
                 }`}
               >
-                {data.modules[module.key] ? 'On' : 'Off'}
+                {data.modules[module.key] ? "On" : "Off"}
               </span>
-              <span className={data.modules[module.key] ? '' : 'text-muted'}>{module.label}</span>
+              <span className={data.modules[module.key] ? "" : "text-muted"}>
+                {module.label}
+              </span>
             </li>
           ))}
         </ul>
@@ -234,7 +306,7 @@ function SettingRow({
 }) {
   const label = settingLabel(field.key);
 
-  if (field.type === 'boolean') {
+  if (field.type === "boolean") {
     return (
       <label className="flex items-start gap-3">
         <input
@@ -255,12 +327,16 @@ function SettingRow({
   return (
     <Field label={label} hint={field.help}>
       <Input
-        type={field.type === 'number' ? 'number' : 'text'}
+        type={field.type === "number" ? "number" : "text"}
         value={String(value)}
         disabled={disabled}
         className="max-w-xs"
         onChange={(event) =>
-          onChange(field.type === 'number' ? Number(event.target.value) : event.target.value)
+          onChange(
+            field.type === "number"
+              ? Number(event.target.value)
+              : event.target.value,
+          )
         }
       />
     </Field>

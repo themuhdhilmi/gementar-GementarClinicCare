@@ -1,26 +1,33 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   api,
   minutes,
   senToRinggit,
   type DashboardTiles,
-} from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useAsyncEffect } from '@/lib/use-async';
-import { Alert, Card, EmptyState } from '@/components/ui';
+} from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { useAsyncEffect } from "@/lib/use-async";
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  PageHeader,
+  Skeleton,
+} from "@/components/ui";
 
 const STATION: Record<string, string> = {
-  REGISTERED: 'Waiting for triage',
-  TRIAGE_IN_PROGRESS: 'In triage',
-  DOCTOR_WAITING: 'Waiting for the doctor',
-  IN_CONSULTATION: 'With the doctor',
-  PHARMACY_WAITING: 'Waiting at the pharmacy',
-  DISPENSING: 'Being dispensed',
-  PAYMENT_WAITING: 'Waiting to pay',
+  REGISTERED: "Waiting for triage",
+  TRIAGE_IN_PROGRESS: "In triage",
+  DOCTOR_WAITING: "Waiting for the doctor",
+  IN_CONSULTATION: "With the doctor",
+  PHARMACY_WAITING: "Waiting at the pharmacy",
+  DISPENSING: "Being dispensed",
+  PAYMENT_WAITING: "Waiting to pay",
 };
 
 /**
@@ -45,7 +52,11 @@ export default function DashboardPage() {
       setFreshAt(new Date());
       setError(null);
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not read the dashboard.');
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not read the dashboard.",
+      );
     }
   }, [branchId]);
 
@@ -66,7 +77,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!branchId) return;
-    const source = new EventSource(`/api/v1/branches/${branchId}/dashboard/stream`);
+    const source = new EventSource(
+      `/api/v1/branches/${branchId}/dashboard/stream`,
+    );
     source.onmessage = (event) => {
       const payload = JSON.parse(event.data) as { heartbeat?: string };
       if (!payload.heartbeat) void reload.current();
@@ -75,24 +88,44 @@ export default function DashboardPage() {
   }, [branchId]);
 
   if (!branchId) return <EmptyState title="No branch selected" />;
-  if (!tiles) return <p className="text-sm text-muted">Loading…</p>;
+  if (!tiles)
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }, (_, i) => (
+          <Skeleton key={i} className="h-28" />
+        ))}
+      </div>
+    );
 
   const waiting = tiles.queue.reduce((sum, row) => sum + row.waiting, 0);
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">Today</h1>
-          <p className="text-sm text-muted">
-            {tiles.day} · {tiles.timezone}
-            {freshAt ? ` · updated ${freshAt.toLocaleTimeString('en-MY')}` : ''}
-          </p>
-        </div>
-        <Link href="/reports" className="text-sm text-primary-ink underline">
-          All reports
-        </Link>
-      </div>
+      <PageHeader
+        title="Today"
+        description="The numbers this branch is running on right now. Each one opens the report it came from."
+        meta={
+          <>
+            <span className="text-muted">
+              {tiles.day} · {tiles.timezone}
+            </span>
+            {freshAt && (
+              <span className="inline-flex items-center gap-2 text-muted">
+                <span
+                  aria-hidden
+                  className="size-1.5 rounded-full bg-success"
+                />
+                updated {freshAt.toLocaleTimeString("en-MY")}
+              </span>
+            )}
+          </>
+        }
+        actions={
+          <Link href="/reports">
+            <Button variant="secondary">All reports</Button>
+          </Link>
+        }
+      />
 
       {error && <Alert title="Not shown">{error}</Alert>}
 
@@ -108,10 +141,13 @@ export default function DashboardPage() {
           value={String(waiting)}
           hint={
             tiles.queue.length === 0
-              ? 'Nobody is waiting'
+              ? "Nobody is waiting"
               : tiles.queue
-                  .map((row) => `${STATION[row.status] ?? row.status}: ${row.waiting}`)
-                  .join(' · ')
+                  .map(
+                    (row) =>
+                      `${STATION[row.status] ?? row.status}: ${row.waiting}`,
+                  )
+                  .join(" · ")
           }
           href="/queue"
         />
@@ -127,7 +163,7 @@ export default function DashboardPage() {
             <Tile
               title="Billed today"
               value={senToRinggit(tiles.money.billedSen)}
-              hint={`${tiles.money.issued} invoice${tiles.money.issued === 1 ? '' : 's'} · ${senToRinggit(
+              hint={`${tiles.money.issued} invoice${tiles.money.issued === 1 ? "" : "s"} · ${senToRinggit(
                 tiles.money.discountedSen,
               )} discounted`}
               href="/reports/daily-sales"
@@ -137,20 +173,23 @@ export default function DashboardPage() {
               value={String(tiles.money.voided)}
               hint={
                 tiles.money.voided === 0
-                  ? 'Nothing cancelled after being issued'
+                  ? "Nothing cancelled after being issued"
                   : `${senToRinggit(tiles.money.voidedSen)} taken back`
               }
               href="/reports/voids"
             />
             <Tile
               title="Collected today"
-              value={senToRinggit(tiles.collections?.totalSen ?? '0')}
+              value={senToRinggit(tiles.collections?.totalSen ?? "0")}
               hint={
                 Object.keys(tiles.collections?.byMethod ?? {}).length === 0
-                  ? 'Nothing taken yet'
+                  ? "Nothing taken yet"
                   : Object.entries(tiles.collections?.byMethod ?? {})
-                      .map(([method, total]) => `${method.replace('_', ' ')}: ${senToRinggit(total)}`)
-                      .join(' · ')
+                      .map(
+                        ([method, total]) =>
+                          `${method.replace("_", " ")}: ${senToRinggit(total)}`,
+                      )
+                      .join(" · ")
               }
               href="/reports/collections"
             />
@@ -159,44 +198,49 @@ export default function DashboardPage() {
 
         <Tile
           title="Drawer"
-          value={tiles.cashSession.open ? senToRinggit(tiles.cashSession.expectedCashSen) : '—'}
+          value={
+            tiles.cashSession.open
+              ? senToRinggit(tiles.cashSession.expectedCashSen)
+              : "—"
+          }
           hint={
             tiles.cashSession.open
               ? `${tiles.cashSession.drawerCode} open since ${new Date(
                   tiles.cashSession.openedAt,
-                ).toLocaleTimeString('en-MY')}`
-              : 'No drawer is open — nothing can be taken'
+                ).toLocaleTimeString("en-MY")}`
+              : "No drawer is open — nothing can be taken"
           }
           href="/drawer"
-          tone={tiles.cashSession.open ? undefined : 'warning'}
+          tone={tiles.cashSession.open ? undefined : "warning"}
         />
         <Tile
           title="Stock needing attention"
           value={String(tiles.stock.low + tiles.stock.critical)}
           hint={`${tiles.stock.critical} critical · ${tiles.stock.expiring} expiring · ${tiles.stock.expired} expired`}
           href="/reports/stock-alerts"
-          tone={tiles.stock.critical > 0 ? 'warning' : undefined}
+          tone={tiles.stock.critical > 0 ? "warning" : undefined}
         />
         <Tile
           title="Unsigned notes"
           value={String(tiles.unsignedDraftsOver24h)}
           hint="Drafts more than a day old. A visit with no record."
-          tone={tiles.unsignedDraftsOver24h > 0 ? 'warning' : undefined}
+          tone={tiles.unsignedDraftsOver24h > 0 ? "warning" : undefined}
         />
         {tiles.money ? (
           <Tile
             title="Unbilled visits"
             value={String(tiles.money.openDrafts)}
             hint="Bills started and never issued."
-            tone={tiles.money.openDrafts > 0 ? 'warning' : undefined}
+            tone={tiles.money.openDrafts > 0 ? "warning" : undefined}
             href="/billing"
           />
         ) : null}
       </div>
 
-      {!can('report.financial') && (
+      {!can("report.financial") && (
         <p className="text-xs text-muted">
-          Takings, discounts and outstanding balances are the administrator&rsquo;s.
+          Takings, discounts and outstanding balances are the
+          administrator&rsquo;s.
         </p>
       )}
     </div>
@@ -214,16 +258,26 @@ function Tile({
   value: string;
   hint: string;
   href?: string;
-  tone?: 'warning';
+  tone?: "warning";
 }) {
   const body = (
-    <Card title={title} className={tone === 'warning' ? 'border-warning/50' : undefined}>
-      <p className="text-3xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-sm text-muted">{hint}</p>
+    <Card
+      padding="tight"
+      className={`h-full ${
+        tone === "warning" ? "border-warning/60 bg-warning-soft/20" : ""
+      } ${href ? "transition-shadow group-hover:shadow-e2" : ""}`}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+        {title}
+      </p>
+      <p className="mt-1.5 text-3xl font-semibold tracking-tight tabular-nums">
+        {value}
+      </p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{hint}</p>
     </Card>
   );
   return href ? (
-    <Link href={href} className="block transition-opacity hover:opacity-90">
+    <Link href={href} className="group block focus-visible:outline-none">
       {body}
     </Link>
   ) : (

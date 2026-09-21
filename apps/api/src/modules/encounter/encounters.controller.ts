@@ -11,9 +11,12 @@ import {
 } from '@nestjs/common';
 import type { Observable } from 'rxjs';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { EncounterStatus } from '../../generated/prisma/enums.js';
-import { BadRequestError, NotFoundError } from '../../shared/errors/domain-errors.js';
+import {
+  BadRequestError,
+  NotFoundError,
+} from '../../shared/errors/domain-errors.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import {
   Ctx,
@@ -83,7 +86,9 @@ export class EncountersController {
     // want; "any" shows patients nobody has been assigned to as well.
     const filterDoctor = mine === 'true' ? ctx.userId : (doctorId ?? null);
     return {
-      items: await this.queues.board(branchId, asStation(station), { doctorId: filterDoctor }),
+      items: await this.queues.board(branchId, asStation(station), {
+        doctorId: filterDoctor,
+      }),
     };
   }
 
@@ -108,7 +113,9 @@ export class EncountersController {
    */
   @Sse('branches/:branchId/queues-stream')
   @RequirePermission('patient.read')
-  @NoRequestTransaction('A stream stays open for hours; a transaction must not.')
+  @NoRequestTransaction(
+    'A stream stays open for hours; a transaction must not.',
+  )
   streamQueue(
     @Ctx() ctx: TenantContext,
     @Param('branchId') branchId: string,
@@ -125,13 +132,16 @@ export class EncountersController {
     void ctx;
     const tx = this.db.tx();
     const encounter = await this.encounters.getOrThrow(tx, id);
-    const [timeline, blockers] = await Promise.all([
+    const [timeline, blockers, flow] = await Promise.all([
       this.queues.timeline(tx, id),
       this.encounters.completionBlockers(tx, encounter.branchId, id),
+      this.queues.flow(tx, encounter),
     ]);
     return {
       encounter: this.encounters.present(encounter),
       timeline,
+      // ENC-F-11: the journey, at a glance, above the detail.
+      flow,
       // The checklist on the chart: what is still standing in the way of
       // finishing, in words rather than as a disabled button with no reason.
       completionBlockers: blockers,
@@ -192,7 +202,11 @@ export class EncountersController {
   @Audited(AuditAction.EncounterNoShow)
   @RequirePermission('encounter.cancel')
   @HttpCode(200)
-  async noShow(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
+  async noShow(
+    @Ctx() ctx: TenantContext,
+    @Param('id') id: string,
+    @Body() dto: ReasonDto,
+  ) {
     return this.encounters.transition(ctx, id, EncounterStatus.NO_SHOW, {
       note: dto.reason,
       action: 'no_show',
@@ -203,7 +217,11 @@ export class EncountersController {
   @Audited(AuditAction.EncounterCancelled)
   @RequirePermission('encounter.cancel')
   @HttpCode(200)
-  async cancel(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
+  async cancel(
+    @Ctx() ctx: TenantContext,
+    @Param('id') id: string,
+    @Body() dto: ReasonDto,
+  ) {
     return this.encounters.transition(ctx, id, EncounterStatus.CANCELLED, {
       note: dto.reason,
       action: 'cancel',
@@ -218,7 +236,10 @@ export class EncountersController {
   async revertNoShow(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     const encounter = await this.encounters.getOrThrow(this.db.tx(), id);
     if (encounter.status !== EncounterStatus.NO_SHOW) {
-      throw new BadRequestError('This visit is not marked absent.', 'not_a_no_show');
+      throw new BadRequestError(
+        'This visit is not marked absent.',
+        'not_a_no_show',
+      );
     }
     // The clinic's day, not the server's, and not UTC. A visit registered
     // at 9pm in Kuala Lumpur is still today when somebody comes back at

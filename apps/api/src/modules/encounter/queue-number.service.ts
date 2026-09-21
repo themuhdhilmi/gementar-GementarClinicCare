@@ -69,13 +69,19 @@ export class QueueNumberService {
     timezone: string,
     priority: EncounterPriority,
     now: Date,
-  ): Promise<{ queueNo: string; encounterNo: string; day: string; sequence: number }> {
+  ): Promise<{
+    queueNo: string;
+    encounterNo: string;
+    day: string;
+    sequence: number;
+  }> {
     const tx = this.db.tx();
     const tenantId = requireTenantId();
     const day = QueueNumberService.clinicDay(now, timezone);
 
     const { numberPrefix } = await this.settings.group(branchId, 'queue');
-    const letter = priority === EncounterPriority.EMERGENCY ? 'E' : numberPrefix || 'A';
+    const letter =
+      priority === EncounterPriority.EMERGENCY ? 'E' : numberPrefix || 'A';
 
     // The lock is the point. Two receptionists pressing check-in at the same
     // moment is the ordinary case in a busy clinic, not a rare race.

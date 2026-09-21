@@ -11,7 +11,15 @@ import {
   type IdType,
   type PatientRecord,
 } from "@/lib/api";
-import { Alert, Button, Card, Field, Select, TextField } from "@/components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  Field,
+  PageHeader,
+  Select,
+  TextField,
+} from "@/components/ui";
 
 const ID_TYPES: IdType[] = [
   "MYKAD",
@@ -243,15 +251,15 @@ export default function RegisterPatientPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Register a patient</h1>
-        <Link
-          href="/patients"
-          className="text-sm text-muted underline hover:text-foreground"
-        >
-          Back to search
-        </Link>
-      </div>
+      <PageHeader
+        title="Register a patient"
+        description="An identity card fills in the date of birth and sex by itself. Everything else can be added later from the record."
+        actions={
+          <Link href="/patients">
+            <Button variant="secondary">Back to search</Button>
+          </Link>
+        }
+      />
 
       {error && (
         <Alert

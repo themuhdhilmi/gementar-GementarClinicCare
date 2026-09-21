@@ -77,6 +77,7 @@ Replacing the whiteboard and the shouted queue number is the first thing the pil
 | ENC-F-21 | Queue statistics on each board: waiting count, longest wait, average wait today. | Should |
 | ENC-F-22 | Board shows elapsed time in current status; rows turn amber at branch-configurable thresholds (default 30 min) and red at 60. | Should |
 | ENC-F-23 | Patient privacy on the display: queue number and first name + initial only (branch setting: number only). | Must |
+| ENC-F-24 | Sending a patient back: every station that can hold a patient offers a move to the step before it — triage to its own queue, procedures, pharmacy, dispensing and the cashier back to the doctor's queue. Backward moves across a station are refused without a written reason, which is shown on the visit and on the audit trail. The patient keeps the `status_since` they had when they last entered that status, so they do not queue twice for the same step. | Must |
 
 ## 4. Key workflows
 
@@ -393,6 +394,7 @@ nothing.
 | ENC-F-19 live updates | `QueueStreamService`, `useQueueStream` | ENC-T-07 in part; see `ENC-OPEN-02` |
 | ENC-F-20, F-23 the display | `DisplayService`, `app/display/[token]` | ENC-T-07, 5 display tests |
 | ENC-F-21 … F-22 statistics, thresholds | `QueueService.stats`, `waitTone` | Board tests |
+| ENC-F-24 sending back | `back`/`requiresReason` in `transitions.ts`, the reason guard in `EncounterService.transition` | ENC-T-11, T-12, T-13 and 4 table tests |
 | ENC-R-01 … R-10 | Service, triggers, partial index | The database refuses each independently |
 
 ## 22. Notes worth keeping

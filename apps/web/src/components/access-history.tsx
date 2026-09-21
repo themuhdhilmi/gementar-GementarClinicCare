@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { ApiError, api, type AuditRow } from "@/lib/api";
 import { useAsyncEffect } from "@/lib/use-async";
-import { Alert, EmptyState, Select, timeAgo } from "@/components/ui";
+import { Alert, EmptyState, Select, Skeleton, timeAgo } from "@/components/ui";
 
 /**
  * AUD-F-11: everyone who has looked at, or changed, this patient's
@@ -52,7 +52,7 @@ export function AccessHistory({ patientId }: { patientId: string }) {
       </div>
 
       {!items ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <Skeleton className="h-20" />
       ) : items.length === 0 ? (
         <EmptyState title="Nothing in that period" />
       ) : (

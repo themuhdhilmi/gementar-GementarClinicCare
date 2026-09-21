@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { AuditAction } from '../audit/audit.actions.js';
-import { Audited, NotAudited } from '../audit/audit.decorators.js';
+import { Audited } from '../audit/audit.decorators.js';
 import { InvoiceStatus } from '../../generated/prisma/enums.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
