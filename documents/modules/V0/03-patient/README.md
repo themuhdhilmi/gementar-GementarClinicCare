@@ -23,9 +23,20 @@ clinical.
    - `012-345 6789` — a phone number in any format
    - `ramasamy muthu` — a name with the words the wrong way round,
      because *"bin"* and *"a/l"* are not part of anybody's name
-2. **New patient → type `900101-14-5678`.** Date of birth and sex fill
-   themselves in. Now try `901301-14-5678` — refused, because there is
-   no thirteenth month.
+2. **New patient → type `900101145678`, no dashes.** They appear as you
+   type: `900101-14-5678`. Date of birth and sex fill themselves in at
+   the twelfth digit.
+   - **Paste** `900101 14 5678` with spaces, or with extra digits on the
+     end. It normalises.
+   - **Backspace onto a dash.** It removes the digit in front of it
+     rather than the dash, so the field does not fight you.
+   - **Click into the middle and insert a digit.** The caret stays put;
+     it is counted in digits, not characters.
+   - Now try `901301-14-5678` — refused on save, because there is no
+     thirteenth month.
+   - **Search for an IC that does not exist, then press New patient.**
+     You arrive with the number already in the field *and* the date of
+     birth and sex already read from it.
 3. **Open Chan Wei Ming.** The allergy badge is **amber**: "allergies
    not recorded". Open **Ahmad bin Zulkifli** — **green**, with a name
    against it.
