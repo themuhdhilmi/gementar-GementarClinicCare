@@ -302,10 +302,19 @@ describe('Tenant isolation (PostgreSQL, row-level security in force)', () => {
   });
 
   it('every model is classified, and every exemption is documented', async () => {
+    // A partition is not a model. `audit_log` is partitioned by month
+    // (AUD-F-14), so its partitions carry the same columns and the same
+    // policies; classifying each of them would mean this test failed
+    // every time a new month arrived.
     const tables = await harness.db.withPlatform('schema audit', (tx) =>
       tx.$queryRawUnsafe<Array<{ table_name: string }>>(
-        `SELECT table_name FROM information_schema.columns
-          WHERE table_schema = current_schema() AND column_name = 'tenant_id' AND is_nullable = 'NO'`,
+        `SELECT c.column_name, c.table_name FROM information_schema.columns c
+           JOIN pg_class p ON p.relname = c.table_name
+           JOIN pg_namespace n ON n.oid = p.relnamespace AND n.nspname = c.table_schema
+          WHERE c.table_schema = current_schema()
+            AND c.column_name = 'tenant_id'
+            AND c.is_nullable = 'NO'
+            AND NOT p.relispartition`,
       ),
     );
     const names = tables.map((t) => t.table_name).sort();

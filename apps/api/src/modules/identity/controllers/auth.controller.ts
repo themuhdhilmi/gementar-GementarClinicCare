@@ -8,6 +8,8 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { AuditAction } from '../../audit/audit.actions.js';
+import { Audited, NotAudited } from '../../audit/audit.decorators.js';
 import {
   AllowDuringMfaEnrolment,
   AllowPreMfa,
@@ -35,6 +37,7 @@ export class AuthController {
   ) {}
 
   @Post('login')
+  @Audited(AuditAction.AuthLogin)
   @Public()
   @NoPermission('Public entry point; protected by rate limiting and lockout instead.')
   @HttpCode(200)
@@ -56,6 +59,7 @@ export class AuthController {
   }
 
   @Post('mfa/verify')
+  @Audited(AuditAction.AuthLogin)
   @AllowPreMfa()
   @NoPermission('Completes authentication for the current session.')
   @HttpCode(200)
@@ -73,6 +77,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @Audited(AuditAction.AuthLogout)
   @AllowPreMfa()
   @AllowDuringMfaEnrolment()
   @NoPermission('Ending your own session needs no permission.')
@@ -83,6 +88,7 @@ export class AuthController {
   }
 
   @Post('password/forgot')
+  @Audited(AuditAction.AuthPasswordResetRequested)
   @Public()
   @NoPermission('Public; always answers the same way to avoid confirming who exists.')
   @HttpCode(202)
@@ -94,6 +100,7 @@ export class AuthController {
   }
 
   @Post('password/reset')
+  @Audited(AuditAction.AuthPasswordReset)
   @Public()
   @NoPermission('Authorised by the single-use token in the request body.')
   @HttpCode(200)
@@ -109,6 +116,7 @@ export class AuthController {
   }
 
   @Post('reauth')
+  @Audited(AuditAction.AuthReauth)
   @AllowPreMfa()
   @AllowDuringMfaEnrolment()
   @NoPermission('Proves identity for the current session.')

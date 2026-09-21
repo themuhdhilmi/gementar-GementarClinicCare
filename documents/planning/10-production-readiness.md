@@ -26,14 +26,14 @@ blocker if the clinic can do that job on paper the way they do today.
 | | |
 |---|---|
 | **Written** | 2026-09-21 |
-| **Covers** | v0-01 … v0-11 (all of V0 except PAY, DOC, RPT) |
-| **Reviewed against** | the nine `*-end-item-OPEN.md` registers |
+| **Covers** | all fifteen V0 modules |
+| **Reviewed against** | all fifteen `*-end-item-OPEN.md` registers |
 
 ---
 
 ## 1. Production blockers
 
-Seventeen. None of them is a feature.
+Nineteen. **Not one of them is code.**
 
 ### 1.1 Data you cannot get back
 
@@ -69,11 +69,13 @@ Each is an hour in a room, not a sprint.
 
 | # | Item | Why it blocks |
 |---|---|---|
-| `DSP-OPEN-01` | **No label printer, so nothing prints.** | A pharmacy counter cannot hand a patient an unlabelled bag. The payload is complete — drug, dose, instructions in the patient's language, lot, expiry, warnings — and has never met paper. Needs the printer model and label size (`DSP-Q-02`), a template, and twenty real labels read at arm's length. |
+| `DSP-OPEN-01` / `DOC-OPEN-01` / `PAY-OPEN-01` | **No printer has ever been used, so nothing prints.** | A pharmacy counter cannot hand a patient an unlabelled bag, and a cashier cannot take money without giving a receipt. Every document now exists and is stored and reprintable — labels at 50×30 mm, certificates on A4, receipts on 80 mm thermal — so the remaining gap is entirely physical. One afternoon settles all three. Needs their printer models (`DSP-Q-02`, `DOC-Q-01`, `PAY-Q-02`) and real stock through each. |
+| `DOC-OPEN-02` | **The medical certificate's wording is invented.** | Bilingual, plausible, and written by somebody who has never issued one. An MC is a legal document an employer acts on and the clinic's name is on it; wording their patients' employers reject is a problem the clinic discovers one patient at a time. The same twenty minutes covers the referral and the letter, and `DOC-Q-04` asks for a sample of what they issue today, which is faster than defending ours. |
 | `DSP-OPEN-02` | **The controlled register has never been shown to an inspector.** | The data is right and append-only, and a controlled drug physically cannot leave without an entry. Whether the *printed* register is what their inspector expects to be handed is unknown, and finding out during an inspection is the wrong time. §18 asks for two weeks of parallel paper at R3. |
 | `IAM-OPEN-04` | **No email provider is configured.** | Invitations and password resets are hand-carried links. That is survivable for six people on day one and not survivable the first time somebody is locked out on a Saturday. Needs a sending domain with SPF, DKIM and DMARC, and one real reset that arrives in an inbox rather than in spam. |
 | `IAM-OPEN-08` | **There is exactly one administrator, and MFA is mandatory for them.** | If that person loses their phone *and* their recovery codes, nobody can reset the second factor through the application. Recovery needs database access and a command-line script. Two administrators, recovery codes in two different drawers. |
 | `TEN-OPEN-14` | **The five default settings are guesses.** | The discount limit of 10%, cash rounding to 5 sen, daily queue-number reset, and not requiring a diagnosis to sign. A wrong discount limit is a real and recurring loss. Reading five lines aloud to the owner closes it. |
+| `PAY-OPEN-06` | **The till has never been reconciled against this system.** | Three evenings of parallel running, with the Z-report compared to their actual cash count to the sen. It is the only test of the money that matters and it cannot be written in a repository. Everything upstream of it — rounding, receipt numbers, the drawer — is proved; whether the clinic's day comes out right at six o'clock is not. |
 
 ---
 
@@ -84,28 +86,41 @@ useful part — it is what stops each of these being re-litigated every week.
 
 ### 2.1 Modules that do not exist yet
 
-`PAY` payment, `DOC` documents, `RPT` reporting.
+None. All fifteen are built.
 
-**Not blockers**, because the clinic does all of these today without this
-system and can continue to. A prescription is written, printed by hand or
-read off the screen, and the pharmacy counter works the way it worked last
-year. Nothing is lost that was not already outside the system.
+This section used to hold `PAY`, and its going closed seven items in
+four other registers: billing's void check against a real ledger
+(`BIL-OPEN-11`) and its outstanding-balance guard (`BIL-OPEN-16`), the
+receipt (`DOC-OPEN-10`), and reporting's collections, end-of-day pack
+and reconciliation (`RPT-OPEN-01` … `RPT-OPEN-04`).
+
+**Nothing on this page is now waiting for code.** Every remaining
+blocker is a backup, a database grant, a printer, or an hour in a room
+with the people who run the clinic.
 
 What this costs: invoices are produced and **nothing collects payment**
 (`BIL-OPEN-10`), so money is taken at the counter and written in the
-clinic's own book against an invoice number the system issued; and
-nothing is printed — no invoice, receipt, prescription slip, dispensing
-label or immunisation certificate (`BIL-OPEN-09`, `CON-OPEN-05`,
-`RX-OPEN-02`, `DSP-OPEN-01`, `PRC-OPEN-09`).
+clinic's own book against an invoice number the system issued.
+
+`DOC` is now built, which changes the second half of this. Certificates,
+referrals, letters, lab requests, prescription slips, invoices and
+dispensing labels are all rendered, numbered, stored and reprintable —
+they have simply never been printed on the clinic's own machines, which
+is `DOC-OPEN-01` above. Three documents are still absent rather than
+unproven: the **receipt**, which needs `PAY` (`DOC-OPEN-10`); the
+**consultation record** (`CON-OPEN-05`, `DOC-OPEN-11`); and the
+**immunisation card** (`PRC-OPEN-09`, `DOC-OPEN-12`). Each is a template
+and a route once somebody decides what belongs on it.
 
 The one thing to *decide* rather than defer: whether the clinic bills on
 paper during the pilot, or whether the pilot waits for `BIL`. That is a
 scheduling answer, not an engineering one.
 
-### 2.2 Measurements taken on the wrong machine
+### 2.2 Measurements taken on the wrong machine, or not taken
 
 `IAM-OPEN-01`, `IAM-OPEN-02`, `IAM-OPEN-03`, `IAM-OPEN-23`, `TEN-OPEN-04`,
-`PAT-OPEN-02`, `ENC-OPEN-03`.
+`PAT-OPEN-02`, `ENC-OPEN-03`, `AUD-OPEN-05`, `AUD-OPEN-06`,
+`RPT-OPEN-05`.
 
 **Not blockers**, because every one of them is expected to *improve* on the
 real host — the database moves from a network hop away to the same box.
@@ -121,7 +136,8 @@ skip the line.
 ### 2.3 Things that work and have no screen
 
 `INV-OPEN-11` catalogue admin, `PRC-OPEN-10` procedure admin,
-`TEN-OPEN-06` module switches, `TRI-OPEN-04` the vitals chart.
+`TEN-OPEN-06` module switches, `TRI-OPEN-04` the vitals chart,
+`DOC-OPEN-07` the doctor's signature upload.
 
 **Not blockers**, because each has a working API and a documented `curl`,
 and in every case there is exactly one person who would use it — me, during
@@ -135,16 +151,19 @@ hour.
 ### 2.4 Built, and waiting for something to notice it
 
 `CON-OPEN-02` consultation integrity, `INV-OPEN-14` stock reconciliation,
-`IAM-OPEN-12` break-glass review.
+`IAM-OPEN-12` break-glass review, `DOC-OPEN-18` document integrity,
+`AUD-OPEN-01` the audit dashboard.
 
-Three jobs that detect exactly the things you would most want to know
+Five detectors that find exactly the things you would most want to know
 about, and write them to a log nobody reads.
 
 **Not blockers** in the strict sense, because the detection works and the
 evidence is recorded. But this is the softest "not a blocker" on the page:
 detection nobody sees is very close to no detection. A ten-minute cron that
-greps for `INTEGRITY FAILURE` and `STOCK MISMATCH` and emails is worth
-doing before go-live even though nothing forces it.
+greps for `INTEGRITY FAILURE`, `STOCK MISMATCH`, `DOCUMENT INTEGRITY
+FAILURE` and `AUDIT PARTITION GAP` and emails is worth doing before
+go-live even though nothing forces it. It is about an hour, and it is the
+single highest ratio of value to effort left on this page.
 
 ### 2.5 Guards that currently guard nothing
 
@@ -199,13 +218,20 @@ Not by severity — by what unblocks the next thing.
    suite passing against the restricted account is the proof.
 4. **`IAM-OPEN-10` the key, `IAM-OPEN-04` email, `IAM-OPEN-08` a second
    administrator.** Operational, independent, all small.
-   **`DSP-OPEN-01` the label printer** belongs here too: it is a purchase
-   and a template, not engineering, and the counter cannot open without
-   it.
+   **`DSP-OPEN-01` / `DOC-OPEN-01` the printers** belong here too: a
+   purchase and an afternoon, not engineering, and the counter cannot
+   open without labels. One visit settles labels, A4 certificates and
+   thermal receipts together.
 5. **The room, in one visit:** `RX-OPEN-01` drug classes, `TRI-OPEN-01`
    thresholds, `PRC-OPEN-01` consumable mappings, `BIL-OPEN-01` the fee
-   schedule and discount cap, `TEN-OPEN-14` the five defaults,
-   `CON-OPEN-01` templates, `DSP-OPEN-02` the register layout. Also
+   schedule and discount cap, `PAY-OPEN-02` which payment methods they
+   take, `PAY-OPEN-04` the variance threshold, `PAY-OPEN-05` whether
+   they give credit, `TEN-OPEN-14` the five defaults,
+   `CON-OPEN-01` templates, `DSP-OPEN-02` the register layout,
+   `DOC-OPEN-02` the certificate wording, `DOC-OPEN-03` whether a full
+   identity number belongs on it, and `DOC-OPEN-04` whether to continue
+   their existing certificate numbering — which, like the invoice
+   series, must be decided *before* the first one is issued. Also
    `BIL-OPEN-02`: whether to continue their existing invoice numbering,
    which must be decided *before* the first invoice is issued. These are the same meeting, and the
    catalogue screens (`INV-OPEN-11`, `PRC-OPEN-10`) should exist before it
@@ -213,7 +239,12 @@ Not by severity — by what unblocks the next thing.
    the fee-schedule screen, and it blocks that conversation in practice.
 6. **`INV-OPEN-01` the opening count.** After the catalogue is real, and on
    a day the clinic is closed.
-7. **The ten-minute cron** for `CON-OPEN-02` and `INV-OPEN-14`.
+   **`PAY-OPEN-06` three days of parallel running** starts the week
+   after, once the prices and the printers are settled — it is the last
+   thing before the system is trusted with the day's takings.
+7. **The ten-minute cron** for `CON-OPEN-02`, `INV-OPEN-14`,
+   `DOC-OPEN-18`, `IAM-OPEN-12` and `AUD-OPEN-01`. One script, five
+   registers, an hour.
 
 Steps 1 to 4 are mine and take days. Step 5 is theirs and takes one
 morning. Step 6 is theirs and takes one day. Nothing in the list is

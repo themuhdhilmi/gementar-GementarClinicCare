@@ -15,6 +15,7 @@ import {
 } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { useAsyncEffect } from '@/lib/use-async';
+import { PaymentPanel } from '@/components/payment-panel';
 import { Alert, Button, Card, EmptyState, Field, Input, Modal, Select } from '@/components/ui';
 
 /**
@@ -402,12 +403,18 @@ function InvoiceScreen({
             )}
           </div>
 
-          {/* Nothing collects money yet. Saying so beats a dead button. */}
-          {invoice.status === 'ISSUED' && (
-            <p className="mt-3 text-xs text-muted">
-              Take payment at the counter and record it in the book — payment is the next module.
-            </p>
-          )}
+          {/* PAY-F-07: the payment panel appears the moment there is a
+              bill to pay, and stays until the balance is nothing. */}
+          {(invoice.status === 'ISSUED' || invoice.status === 'PARTIAL') &&
+            can('payment.take') && (
+              <div className="mt-4 border-t border-line pt-4">
+                <PaymentPanel
+                  invoiceId={invoice.id}
+                  branchId={invoice.branchId}
+                  onPaid={() => void onReload()}
+                />
+              </div>
+            )}
         </Card>
       </div>
 

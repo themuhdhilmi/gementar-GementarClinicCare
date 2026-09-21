@@ -1,4 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { newId } from '../../shared/ids/uuid.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { requireTenantId } from '../../shared/prisma/tenant-scope.js';
@@ -36,6 +38,7 @@ export class ConsultationController {
   // ------------------------------------------------------ the record
 
   @Post('encounters/:id/consultations')
+  @Audited(AuditAction.ConsultationCreated)
   @RequirePermission('clinical.write')
   @HttpCode(201)
   async start(
@@ -54,6 +57,7 @@ export class ConsultationController {
 
   /** CON-F-12: called every few seconds while the doctor is typing. */
   @Patch('consultations/:id')
+  @NotAudited('a draft autosaves every few seconds; what is recorded is the signature (CON-F-14), and every change after it is an amendment')
   @RequirePermission('clinical.write')
   async save(
     @Ctx() ctx: TenantContext,
@@ -64,6 +68,7 @@ export class ConsultationController {
   }
 
   @Put('consultations/:id/diagnoses')
+  @NotAudited('part of the same draft as the note; recorded at signature')
   @RequirePermission('clinical.write')
   async diagnoses(
     @Ctx() ctx: TenantContext,
@@ -74,6 +79,7 @@ export class ConsultationController {
   }
 
   @Post('consultations/:id/sign')
+  @Audited(AuditAction.ConsultationSigned)
   @RequirePermission('clinical.sign')
   @HttpCode(200)
   async sign(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: SignDto) {
@@ -81,6 +87,7 @@ export class ConsultationController {
   }
 
   @Post('consultations/:id/cancel')
+  @Audited(AuditAction.ConsultationCancelled)
   @RequirePermission('clinical.write')
   @HttpCode(200)
   async cancel(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -88,6 +95,7 @@ export class ConsultationController {
   }
 
   @Post('consultations/:id/amend')
+  @Audited(AuditAction.ConsultationAmended)
   @RequirePermission('clinical.amend')
   @HttpCode(200)
   async amend(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: AmendDto) {
@@ -101,6 +109,7 @@ export class ConsultationController {
 
   /** §14: a locum has gone home with drafts open. */
   @Post('consultations/:id/reassign')
+  @Audited(AuditAction.ConsultationReassigned)
   @RequirePermission('admin.settings')
   @RequireReauth()
   @HttpCode(200)
@@ -145,6 +154,7 @@ export class ConsultationController {
   }
 
   @Post('clinical-templates')
+  @Audited(AuditAction.TemplateChanged)
   @NoPermission(
     'A doctor manages their own templates and an administrator the clinic\u2019s. ' +
       'Two permissions, so TemplateService decides which applies.',
@@ -155,6 +165,7 @@ export class ConsultationController {
   }
 
   @Patch('clinical-templates/:id')
+  @Audited(AuditAction.TemplateChanged)
   @NoPermission(
     'A doctor manages their own templates and an administrator the clinic\u2019s. ' +
       'Two permissions, so TemplateService decides which applies.',
@@ -168,6 +179,7 @@ export class ConsultationController {
   }
 
   @Delete('clinical-templates/:id')
+  @Audited(AuditAction.TemplateChanged)
   @NoPermission(
     'A doctor manages their own templates and an administrator the clinic\u2019s. ' +
       'Two permissions, so TemplateService decides which applies.',
@@ -177,6 +189,7 @@ export class ConsultationController {
   }
 
   @Post('consultations/:id/apply-template/:templateId')
+  @Audited(AuditAction.TemplateUsed)
   @RequirePermission('clinical.write')
   @HttpCode(200)
   async applyTemplate(
@@ -201,6 +214,7 @@ export class ConsultationController {
   }
 
   @Post('me/quick-phrases')
+  @NotAudited('a private text shortcut belonging to one doctor, containing no patient data')
   @RequirePermission('clinical.write')
   @HttpCode(201)
   async addPhrase(@Ctx() ctx: TenantContext, @Body() dto: QuickPhraseDto) {
@@ -221,6 +235,7 @@ export class ConsultationController {
   }
 
   @Delete('me/quick-phrases/:id')
+  @NotAudited('a private text shortcut belonging to one doctor, containing no patient data')
   @RequirePermission('clinical.write')
   async removePhrase(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     const tx = this.db.tx();

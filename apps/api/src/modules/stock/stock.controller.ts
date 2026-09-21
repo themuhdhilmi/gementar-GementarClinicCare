@@ -11,6 +11,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { StockMovementType } from '../../generated/prisma/enums.js';
 import { BadRequestError } from '../../shared/errors/domain-errors.js';
 import { DbService } from '../../shared/prisma/db.service.js';
@@ -122,6 +124,7 @@ export class StockController {
 
   /** INV-F-12. */
   @Post('branches/:branchId/stock-in')
+  @Audited(AuditAction.StockReceived)
   @RequirePermission('stock.receive')
   receive(
     @Ctx() ctx: TenantContext,
@@ -133,6 +136,7 @@ export class StockController {
 
   /** INV-F-13. */
   @Post('branches/:branchId/adjustments')
+  @Audited(AuditAction.StockAdjusted)
   @HttpCode(200)
   @RequirePermission('stock.adjust')
   adjust(
@@ -151,6 +155,7 @@ export class StockController {
 
   /** INV-F-14. */
   @Post('branches/:branchId/expiry-writeoff')
+  @Audited(AuditAction.StockExpiryWrittenOff)
   @HttpCode(200)
   @RequirePermission('stock.adjust')
   writeOff(
@@ -163,6 +168,7 @@ export class StockController {
 
   /** A recall. Loud, and only an administrator. */
   @Post('batches/:id/block')
+  @Audited(AuditAction.BatchBlocked)
   @HttpCode(200)
   @RequirePermission('stock.adjust')
   block(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: BlockBatchDto) {
@@ -179,6 +185,7 @@ export class StockController {
 
   /** Freezes what the system expects, before anybody starts counting. */
   @Post('branches/:branchId/counts')
+  @Audited(AuditAction.StockCountOpened)
   @RequirePermission('stock.count')
   openCount(
     @Ctx() ctx: TenantContext,
@@ -200,6 +207,7 @@ export class StockController {
   }
 
   @Put('counts/:id/lines')
+  @NotAudited('blind entry into an open count; the count is recorded when it is submitted and again when it is approved')
   @HttpCode(200)
   @RequirePermission('stock.count')
   enterCount(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: CountEntryDto) {
@@ -207,6 +215,7 @@ export class StockController {
   }
 
   @Post('counts/:id/submit')
+  @Audited(AuditAction.StockCountSubmitted)
   @HttpCode(200)
   @RequirePermission('stock.count')
   submitCount(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -215,6 +224,7 @@ export class StockController {
 
   /** Posts one adjustment per line that disagrees. */
   @Post('counts/:id/approve')
+  @Audited(AuditAction.StockCountApproved)
   @HttpCode(200)
   @RequirePermission('stock.adjust')
   approveCount(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -222,6 +232,7 @@ export class StockController {
   }
 
   @Post('counts/:id/cancel')
+  @Audited(AuditAction.StockCountCancelled)
   @HttpCode(200)
   @RequirePermission('stock.count')
   cancelCount(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: CountReasonDto) {
@@ -236,6 +247,7 @@ export class StockController {
    * same person still has to approve it.
    */
   @Post('branches/:branchId/counts/import')
+  @Audited(AuditAction.StockCountImported)
   @HttpCode(200)
   @RequirePermission('stock.count')
   @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: 20_000_000 } }))
@@ -269,6 +281,7 @@ export class StockController {
   }
 
   @Post('branches/:branchId/alerts/acknowledge')
+  @Audited(AuditAction.StockAlertAcknowledged)
   @HttpCode(200)
   @RequirePermission('stock.read')
   acknowledge(
@@ -288,6 +301,7 @@ export class StockController {
   }
 
   @Post('branches/:branchId/quarantine/:batchId/release')
+  @Audited(AuditAction.StockQuarantineReleased)
   @HttpCode(200)
   @RequirePermission('stock.adjust')
   release(
@@ -315,6 +329,7 @@ export class StockController {
    * for the morning somebody wants to know before tomorrow.
    */
   @Post('admin/stock-reconciliation')
+  @Audited(AuditAction.StockReconciled)
   @HttpCode(200)
   @RequirePermission('admin.settings')
   async reconcile(@Ctx() ctx: TenantContext) {

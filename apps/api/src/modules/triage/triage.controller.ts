@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -63,6 +64,7 @@ export class TriageController {
   }
 
   @Post('encounters/:id/triage')
+  @Audited(AuditAction.TriageRecorded)
   @RequirePermission('triage.write')
   @HttpCode(201)
   async record(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: TriageDto) {
@@ -71,6 +73,7 @@ export class TriageController {
   }
 
   @Patch('triage/:id')
+  @Audited(AuditAction.TriageRecorded)
   @RequirePermission('triage.write')
   async update(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: TriageDto) {
     const { advance, escalate, ...readings } = dto;
@@ -80,6 +83,7 @@ export class TriageController {
   }
 
   @Post('triage/:id/amend')
+  @Audited(AuditAction.TriageAmended)
   @RequirePermission('triage.write')
   @HttpCode(200)
   async amend(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: AmendTriageDto) {

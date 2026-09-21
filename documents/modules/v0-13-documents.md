@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-13-documents-end-item-OPEN.md](v0-13-documents-end-item-OPEN.md) |
 | **Delivery phase** | Phase 2 (MC, referral, Rx printout) · Phase 4 (invoice, receipt) |
 | **Spec sections** | 20 |
 | **Depends on** | CON, RX, BIL, PAY, PAT, TEN, AUD |
@@ -144,17 +144,17 @@ Document: `ISSUED` → `CANCELLED` (with optional `replaced_by_id`).
 | POST | `/consultations/:id/documents/referral` | DOCTOR | `{ to, reason, summary, urgency }` |
 | POST | `/consultations/:id/documents/letter` | DOCTOR | Free-form; fee item optional |
 | POST | `/consultations/:id/documents/lab-request` | DOCTOR | |
-| POST | `/prescriptions/:id/print` | `document.issue` | Rx printout |
-| GET | `/invoices/:id/print` · `/payments/:id/receipt` | (BIL/PAY perms) | Returns stored document |
+| POST | `/prescriptions/:id/print` | `document.issue` | Rx printout. Refuses a draft prescription. |
+| POST | `/invoices/:id/print` · `/payments/:id/receipt` | `document.issue` | **`POST`, not `GET`:** issuing a document writes a numbered, immutable row, which is not something a `GET` may do. The receipt is not built — `DOC-OPEN-10`. Reading one back afterwards is `GET /documents/:id/file`. |
 | GET | `/documents/:id` | `patient.read` (+ `clinical.read` for clinical types) | Metadata |
 | GET | `/documents/:id/file` | as above | Signed URL / stream |
 | POST | `/documents/:id/print` | `document.reprint` | Increments count; audited; COPY overlay when `print_count > 0` |
 | POST | `/documents/:id/cancel` | issuer or ADMIN | Reason; optional replacement flow |
-| GET | `/patients/:id/documents?type=` | `patient.read` | |
+| GET | `/patients/:id/issued-documents?type=` | `patient.read` | **Path changed.** §8 originally named `/patients/:id/documents`; `PAT` already owns that for files attached *to* a patient. `DOC-OPEN-14`. |
 | GET | `/encounters/:id/documents` | `patient.read` | |
-| CRUD | `/document-templates` | `admin.settings` | Editable blocks only in V0 |
-| PUT | `/me/signature` | DOCTOR | Upload |
-| GET | `/verify/:code` | public | V1 (returns type, date, validity — no clinical detail) |
+| CRUD | `/document-templates` | `admin.settings` | **Not built.** What exists is the branch letterhead — header text, footer text and logo — rendered onto every A4 document and editable on the branch screen. `DOC-OPEN-08`. |
+| PUT | `/me/signature` · GET the same | `clinical.sign` | Upload. PNG or JPEG, verified by magic number rather than by the browser's claim. No screen yet — `DOC-OPEN-07`. |
+| GET | `/verify/:code` | public | V1 (returns type, date, validity — no clinical detail). **Not built**; the code is generated, stored and printed from today so certificates issued now become verifiable later. `DOC-OPEN-13`. |
 
 Print dispatch is client-side (kiosk print) or via the local print agent if the spike chooses it; the API returns a print-ready payload either way.
 
@@ -255,20 +255,103 @@ All §9; template changes; signature uploads; every reprint with actor; MC issue
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| DOC-Q-01 | Exact printer models: A4, receipt, label; connected how (USB/network)? | Pilot clinic |
-| DOC-Q-02 | Full IC on MC — confirm their current practice and any employer/regulator expectation. | Pilot clinic |
-| DOC-Q-03 | Continue existing MC/receipt numbering series? | Pilot clinic |
-| DOC-Q-04 | MC wording/format they use today (sample). | Pilot clinic |
-| DOC-Q-05 | Do doctors want signature images or typed blocks? | Pilot clinic doctors |
-| DOC-Q-06 | Any documents beyond this list they issue regularly? | Pilot clinic |
+| ID | Question | Who | Answer, or what was built without one |
+|---|---|---|---|
+| DOC-Q-01 | Exact printer models: A4, receipt, label; connected how (USB/network)? | Pilot clinic | **Not answered, and it is the one that mattered.** Everything renders as deterministic HTML the browser prints, which needs no driver and no installation and works on whatever they have. Nothing has met a printer. `DOC-OPEN-01`. |
+| DOC-Q-02 | Full IC on MC — confirm their current practice and any employer/regulator expectation. | Pilot clinic | **Not answered.** Built as DOC-R-08 specifies: full number on a certificate, masked on a referral, full on a prescription only when it carries a controlled drug. One line to change if they say otherwise. `DOC-OPEN-03`. |
+| DOC-Q-03 | Continue existing MC/receipt numbering series? | Pilot clinic | **Not answered.** Starts at 000001 per branch, per type, per year. Continuing an existing series is one `UPDATE` before the first issue and has to be deliberate. `DOC-OPEN-04`. |
+| DOC-Q-04 | MC wording/format they use today (sample). | Pilot clinic | **Not answered.** The bilingual wording is invented and plausible and has been read by nobody who issues certificates. `DOC-OPEN-02`. |
+| DOC-Q-05 | Do doctors want signature images or typed blocks? | Pilot clinic doctors | **Not answered, so both work.** Upload an image and it is embedded; upload nothing and a typed block prints. The document records which it used. `DOC-OPEN-05`. |
+| DOC-Q-06 | Any documents beyond this list they issue regularly? | Pilot clinic | **Not answered.** Adding a type is an enum value, a template function and a route — perhaps two hours — so this is worth asking late rather than guessing early. |
 
 ## 21. Definition of done
 
-- [ ] Phase 0 printing spike complete; approach recorded in DOC-F-01/03
-- [ ] All Must requirements implemented
-- [ ] DOC-T-01 … T-08 green (T-06 recorded as a manual test with photo)
-- [ ] MC, referral, receipt, label printed on the clinic's printers and approved
-- [ ] Integrity job covering documents
-- [ ] Open questions answered
+- [ ] **Phase 0 printing spike complete; approach recorded in DOC-F-01/03** — `DOC-OPEN-01`. The spike was specified as blocking and did not happen. Deterministic HTML printed by the browser was chosen provisionally, which is the path DOC-F-03 already specifies for receipts and labels.
+- [x] **All Must requirements implemented** — except `RECEIPT`, which needs a payment to exist (`DOC-OPEN-10`), and the consultation-record printout (`DOC-OPEN-11`). Certificates, referrals, letters, lab requests, prescription printouts, invoice printouts and labels all issue.
+- [x] **DOC-T-01 … T-08 green** — all eight, inside 20 tests in `test/documents.e2e-spec.ts`, plus 20 unit tests on the templates. T-06 is **not** done: it is the manual printer test and belongs to `DOC-OPEN-01`.
+- [ ] **MC, referral, receipt, label printed on the clinic's printers and approved** — `DOC-OPEN-01`, `DOC-OPEN-02`.
+- [x] **Integrity job covering documents** — nightly, re-reads every stored file and compares it against the hash taken at issue. Proved by altering a stored file on disk, around the database entirely, and watching the job find it.
+- [x] **Open questions answered** — §20, six of six as "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| DOC-F-01 rendering approach | `templates.ts`, pure functions to HTML | Provisional. `DOC-OPEN-01` |
+| DOC-F-02 letterhead per branch | `letterheadFor`, logo inlined as a data URI | "the branch letterhead and its logo reach the paper" |
+| DOC-F-03 print target per type | `TARGET_FOR`, `@page` per template | A4, 80 mm and 50×30 mm templates exist; none has met paper |
+| DOC-F-04 stored and reprintable | `storage.put`, `file()` | DOC-T-03 |
+| DOC-F-05 medical certificate | `issueMc`, `mc_detail` | DOC-T-02 |
+| DOC-F-06 referral | `issueReferral` | DOC-T-07, and the unsigned-consultation refusal |
+| DOC-F-07 prescription printout | `issueRxPrint` | Refuses a draft prescription; controlled drugs carry the full IC |
+| DOC-F-08 invoice and receipt | `issueInvoicePrint` | Invoice only. Receipt is `DOC-OPEN-10` |
+| DOC-F-09 dispensing label | `issueLabel`, `labelPage` | Issues from the dispensed item, with batch and expiry |
+| DOC-F-10 queue ticket | **Not built.** In the enum, nothing issues one | — |
+| DOC-F-11 letter with a fee | `issueLetter`, `feeFor`, `ChargeRegistry` | DOC-T-02's fee line |
+| DOC-F-12 lab request | `issueLabRequest` | Shares the letter template and its own series |
+| DOC-F-15 deterministic templates | Pure functions of the payload | 20 unit tests |
+| DOC-F-16 doctor signature | `uploadSignature`, `signatureFor` | Both paths: image embedded, typed block otherwise |
+| DOC-F-18 print count and reprints | `markPrinted` | "the first print is not a reprint; the second is audited" |
+| DOC-F-19 cancel with a reason | `cancel` | DOC-T-05 |
+| DOC-R-01 only from a signed record | `signedConsultation` | DOC-T-01 |
+| DOC-R-02 immutable once issued | Two triggers | "an issued document cannot be edited or deleted", by direct SQL |
+| DOC-R-03 gapless numbering | `nextNumber` under `UPDATE … RETURNING` | DOC-T-04: twenty at once, consecutive |
+| DOC-R-04 a cancelled number stays spent | `cancel` leaves `document_no` | DOC-T-05 |
+| DOC-R-05 issuer or administrator | `signedConsultation`, `cancel` | "another doctor cannot issue on the signing doctor's name" |
+| DOC-R-06 stored files still match | `verifyIntegrity`, `DocumentIntegrityJob` | DOC-T-08 |
+| DOC-R-07 render outside the transaction | `@NoRequestTransaction`, `finish()` | The slow-work lint, and `assertOutsideScope` in `storage.put` |
+| DOC-R-08 identity on paper | `issueMc`, `issueRxPrint`, `maskIdentity` | "a certificate carries the full identity number, a referral does not" |
+| DOC §14 backdating | `issueMc` | Bounded at 7 days, refuses without a reason, records the reason |
+| DOC §15 who may read | `mayRead` | DOC-T-07, in the list as well as the detail |
+
+## 22. Notes worth keeping
+
+1. **The order of operations is the whole design.** DOC-R-07 asks for
+   render-then-number, and the reason only shows up in the failure case.
+   Read the payload in a short transaction; render and write the file
+   with nothing open; allocate the number and write the row in a second
+   short transaction. If the renderer throws or the disk is full,
+   nothing has been written and — the part that matters — no number has
+   been consumed, so a retry is safe and the series stays gapless. The
+   obvious order, row first, is exactly the dangling-row failure
+   `PAT-OPEN-05` records for uploads. These routes opt out of the
+   request transaction to get it, which is why they carry
+   `@NoRequestTransaction` with the reason written on them.
+
+2. **The watermark is not in the file.** DOC-T-03 wants a reprint to be
+   byte-identical to the original, and a COPY stamp baked into the
+   stored HTML would make the hash describe the copy rather than the
+   document. So `withOverlay` adds it when the document is served. The
+   same reasoning applies to the document number, which is not known at
+   render time and is stamped into an empty slot on the way out — the
+   stored bytes stay equal to what was rendered, and the paper still
+   carries a serial number.
+
+3. **The fee is a billable item, not a setting.** A clinic that charges
+   for a certificate creates a billable item coded `DOC_MC`; one that
+   does not, does not. There is no separate "charge for MCs" switch to
+   forget to turn on, because the priced item *is* the switch. The cost
+   is discoverability — `DOC-OPEN-17` — and it belongs in the
+   administration screen billing still owes.
+
+4. **A signature is sniffed, not trusted.** The uploaded image ends up
+   base64'd into a data URI inside a document the clinic prints and a
+   patient's employer reads. The browser's `Content-Type` is a claim; an
+   SVG is a script host. What counts is the first eight bytes, so PNG
+   and JPEG are accepted by magic number and everything else is refused.
+
+5. **Two things called "documents".** `PAT` already owned
+   `/patients/:id/documents` — the files brought in and scanned. These
+   are the ones the clinic issued: numbered, immutable, reprintable. The
+   API keeps them apart (`/issued-documents`) and the patient screen
+   shows both in separate cards, because the distinction is real and
+   nobody at a front desk will ever think about it. `DOC-OPEN-14`.
+
+6. **The thing that is missing is the thing the spec put first.**
+   DOC-F-01 makes the printing spike blocking. It was not done, and
+   every paper-shaped decision below it is therefore provisional. The
+   code is honest about this — the templates are pure functions with a
+   version number, and a PDF renderer slots in behind the same seam
+   because what a reprint serves is the stored artefact either way — but
+   an afternoon with their printers would settle more than another week
+   here would.

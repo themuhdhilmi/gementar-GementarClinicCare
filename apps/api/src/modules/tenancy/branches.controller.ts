@@ -14,6 +14,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import type { Response } from 'express';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';
@@ -50,6 +52,7 @@ export class BranchesController {
   }
 
   @Post()
+  @Audited(AuditAction.BranchCreated)
   @RequirePermission('admin.settings')
   @HttpCode(201)
   async create(@Ctx() ctx: TenantContext, @Body() dto: CreateBranchDto) {
@@ -67,12 +70,14 @@ export class BranchesController {
   }
 
   @Patch(':id')
+  @Audited(AuditAction.BranchUpdated)
   @RequirePermission('admin.settings')
   async update(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: UpdateBranchDto) {
     return this.branches.update(ctx, id, dto);
   }
 
   @Patch(':id/settings')
+  @Audited(AuditAction.BranchSettingsChanged)
   @RequirePermission('admin.settings')
   async patchSettings(
     @Ctx() ctx: TenantContext,
@@ -84,6 +89,7 @@ export class BranchesController {
 
   /** TEN-F-10: the text around a printed document. */
   @Patch(':id/letterhead')
+  @Audited(AuditAction.BranchLetterheadChanged)
   @RequirePermission('admin.settings')
   async letterhead(
     @Ctx() ctx: TenantContext,
@@ -102,6 +108,7 @@ export class BranchesController {
    * and checked by its bytes rather than by what the browser claims.
    */
   @Put(':id/letterhead/logo')
+  @Audited(AuditAction.BranchLetterheadChanged)
   @RequirePermission('admin.settings')
   @UseInterceptors(
     FileInterceptor('logo', { limits: { fileSize: MAX_LOGO_BYTES, files: 1 } }),
@@ -115,6 +122,7 @@ export class BranchesController {
   }
 
   @Delete(':id/letterhead/logo')
+  @Audited(AuditAction.BranchLetterheadChanged)
   @RequirePermission('admin.settings')
   async deleteLogo(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.branches.removeLogo(ctx, id);
@@ -140,6 +148,7 @@ export class BranchesController {
   }
 
   @Post(':id/deactivate')
+  @Audited(AuditAction.BranchDeactivated)
   @RequirePermission('admin.settings')
   @HttpCode(200)
   async deactivate(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -147,6 +156,7 @@ export class BranchesController {
   }
 
   @Post(':id/activate')
+  @Audited(AuditAction.BranchActivated)
   @RequirePermission('admin.settings')
   @HttpCode(200)
   async activate(@Ctx() ctx: TenantContext, @Param('id') id: string) {

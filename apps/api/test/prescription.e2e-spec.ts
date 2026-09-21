@@ -594,12 +594,19 @@ describe('RX — prescribing', () => {
         .get(`${API}/audit/events?action=prescription.warning_overridden&pageSize=50`)
         .set('Cookie', admin)
         .expect(200);
-      const entry = audit.body.items.find(
-        (row: { entityId: string }) => row.entityId === added.body.id,
+      const row = audit.body.items.find(
+        (item: { entityId: string }) => item.entityId === added.body.id,
       );
-      expect(entry).toBeTruthy();
-      expect(entry.after.reason).toBe('Tolerated previously, mild rash only');
-      expect(entry.after.warnings[0]).toMatchObject({ type: 'ALLERGY', level: 'EXACT' });
+      expect(row).toBeTruthy();
+
+      // The list carries what changed; the snapshots are on the entry,
+      // because a page of fifty of them would be megabytes (AUD-N-05).
+      const entry = await request(harness.server)
+        .get(`${API}/audit/${row.id}`)
+        .set('Cookie', admin)
+        .expect(200);
+      expect(entry.body.after.reason).toBe('Tolerated previously, mild rash only');
+      expect(entry.body.after.warnings[0]).toMatchObject({ type: 'ALLERGY', level: 'EXACT' });
     });
 
     it('wants more than a shrug for a reason', async () => {

@@ -147,6 +147,12 @@ export const AuditAction = {
   ControlledRegisterViewed: 'controlled_register.viewed',
   ControlledDispensed: 'controlled.dispensed',
 
+  // Documents (DOC, v0-13).
+  DocumentIssued: 'document.issued',
+  DocumentReprinted: 'document.reprinted',
+  DocumentCancelled: 'document.cancelled',
+  DoctorSignatureUploaded: 'document.signature_uploaded',
+
   // Billing (BIL, v0-11).
   InvoiceDraftCreated: 'invoice.draft_created',
   InvoiceLineAdded: 'invoice.manual_line_added',
@@ -159,6 +165,54 @@ export const AuditAction = {
   InvoiceReprinted: 'invoice.reprinted',
   FeeScheduleChanged: 'billing.fee_schedule_changed',
   BillableItemChanged: 'billing.billable_item_changed',
+  CatalogueChanged: 'catalogue.changed',
+  TemplateChanged: 'template.changed',
+  EncounterFollowUpSet: 'encounter.follow_up_set',
+  StockCountImported: 'stock.count_imported',
+  StockReconciled: 'stock.reconciled',
+  AuditExported: 'audit.exported',
+  ReportExported: 'report.exported',
+  EodPackGenerated: 'eod_pack.generated',
+  CashSessionOpened: 'cash_session.opened',
+  CashSessionClosed: 'eod.closed',
+  CashSessionReopened: 'cash_session.reopened',
+  CashMovementRecorded: 'cash_session.movement',
+  PaymentReceived: 'payment.received',
+  PaymentVoided: 'payment.voided',
+  PaymentRefunded: 'payment.refunded',
+  ReceiptReprinted: 'receipt.reprinted',
+  PaymentMethodsChanged: 'payment.methods_changed',
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];
+
+/**
+ * AUD §12: an action is valid only if it is in this catalogue.
+ *
+ * Used by the audit search to reject a filter for an action nobody
+ * emits — which would otherwise return nothing and read as "it never
+ * happened" rather than "you asked for something that does not exist" —
+ * and by `npm run lint:audited` to check what routes declare.
+ */
+export const AUDIT_ACTION_SET: ReadonlySet<string> = new Set(
+  Object.values(AuditAction),
+);
+
+/** The groups the audit screen filters by (AUD §10). */
+export const AUDIT_ACTION_GROUPS: Record<string, readonly string[]> = {
+  access: ['auth.', 'session.', 'mfa.'],
+  users: ['user.'],
+  tenant: ['branch.', 'tenant.', 'admin.'],
+  clinical: [
+    'clinical.',
+    'consultation.',
+    'prescription.',
+    'triage.',
+    'procedure.',
+  ],
+  patient: ['patient.'],
+  stock: ['stock.', 'catalogue.', 'dispense.', 'count.'],
+  money: ['invoice.', 'payment.', 'billing.', 'eod.'],
+  documents: ['document.', 'doctor_signature.'],
+  meta: ['audit.'],
+};

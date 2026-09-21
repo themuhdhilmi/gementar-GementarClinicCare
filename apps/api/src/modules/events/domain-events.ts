@@ -97,6 +97,11 @@ export const DomainEvent = {
   DispenseSessionCompleted: 'dispense.session_completed',
   ControlledDispensed: 'controlled.dispensed',
 
+  // Documents (DOC, v0-13).
+  DocumentIssued: 'document.issued',
+  DocumentPrinted: 'document.printed',
+  DocumentCancelled: 'document.cancelled',
+
   // Billing (BIL, v0-11).
   InvoiceDraftCreated: 'invoice.draft_created',
   InvoiceLineAdded: 'invoice.line_added',
@@ -106,6 +111,17 @@ export const DomainEvent = {
   InvoiceVoided: 'invoice.voided',
   InvoiceReissued: 'invoice.reissued',
   InvoiceStatusChanged: 'invoice.status_changed',
+
+  // Payment (PAY, v0-12-payment.md)
+  CashSessionOpened: 'cash_session.opened',
+  CashSessionReopened: 'cash_session.reopened',
+  /// The same event under the name the rest of the system knows it by.
+  EodClosed: 'eod.closed',
+  PaymentReceived: 'payment.received',
+  PaymentVoided: 'payment.voided',
+  PaymentRefunded: 'payment.refunded',
+  ReceiptIssued: 'receipt.issued',
+  ReceiptReprinted: 'receipt.reprinted',
 } as const;
 
 export type DomainEventName = (typeof DomainEvent)[keyof typeof DomainEvent];

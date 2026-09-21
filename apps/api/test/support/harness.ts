@@ -275,6 +275,10 @@ export class Harness {
       // Immutable once issued.
       'invoice',
       'invoice_line',
+      'document',
+      'mc_detail',
+      'payment',
+      'cash_session_movement',
     ];
     let disabled = false;
     try {
@@ -294,6 +298,17 @@ export class Harness {
           // of an item points at the one it superseded, and that key is
           // RESTRICT rather than NO ACTION, so it cannot be deferred to
           // the end of the statement: the replacements go first.
+          // Payment, children before their parents.
+          'payment',
+          'cash_session_movement',
+          'cash_session',
+          'receipt_series',
+          'payment_method_config',
+          // Documents, children before their parents.
+          'mc_detail',
+          'document',
+          'document_series',
+          'doctor_signature',
           // Billing, children before their parents.
           'invoice_line',
           'invoice',

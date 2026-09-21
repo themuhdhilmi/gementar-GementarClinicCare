@@ -1,4 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { AuditAction } from '../../audit/audit.actions.js';
+import { Audited, NotAudited } from '../../audit/audit.decorators.js';
 import {
   AllowDuringMfaEnrolment,
   AllowPreMfa,
@@ -16,6 +18,7 @@ export class MeController {
   constructor(private readonly auth: AuthService) {}
 
   @Put('branch')
+  @Audited(AuditAction.AuthBranchSwitched)
   @NoPermission('Switching your own active branch is validated against your roles.')
   @HttpCode(200)
   async switchBranch(@Ctx() ctx: TenantContext, @Body() dto: SwitchBranchDto) {
@@ -28,6 +31,7 @@ export class MeController {
   }
 
   @Delete('sessions/:id')
+  @Audited(AuditAction.SessionRevoked)
   @NoPermission('Revoking your own session needs no permission.')
   @HttpCode(204)
   async revokeSession(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -35,6 +39,7 @@ export class MeController {
   }
 
   @Post('mfa/enrol')
+  @NotAudited('enrolment only hands back a secret to scan; mfa.enrolled is written when it is confirmed')
   @AllowDuringMfaEnrolment()
   @AllowPreMfa()
   @RequireReauth()
@@ -45,6 +50,7 @@ export class MeController {
   }
 
   @Post('mfa/confirm')
+  @Audited(AuditAction.MfaEnrolled)
   @AllowDuringMfaEnrolment()
   @AllowPreMfa()
   @NoPermission('Completes enrolment for your own account.')
@@ -54,6 +60,7 @@ export class MeController {
   }
 
   @Delete('mfa')
+  @Audited(AuditAction.MfaDisabled)
   @RequireReauth()
   @NoPermission('Managing your own second factor needs no permission, only re-authentication.')
   @HttpCode(204)
@@ -62,6 +69,7 @@ export class MeController {
   }
 
   @Put('password')
+  @Audited(AuditAction.AuthPasswordChanged)
   @RequireReauth()
   @NoPermission('Changing your own password needs no permission, only re-authentication.')
   @HttpCode(204)

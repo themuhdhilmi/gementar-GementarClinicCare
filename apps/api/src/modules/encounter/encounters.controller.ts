@@ -10,6 +10,8 @@ import {
   Sse,
 } from '@nestjs/common';
 import type { Observable } from 'rxjs';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { EncounterStatus } from '../../generated/prisma/enums.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/domain-errors.js';
 import { DbService } from '../../shared/prisma/db.service.js';
@@ -55,6 +57,7 @@ export class EncountersController {
   // ------------------------------------------------------------ check in
 
   @Post('branches/:branchId/encounters')
+  @Audited(AuditAction.EncounterCreated)
   @RequirePermission('encounter.create')
   @HttpCode(201)
   async checkIn(
@@ -143,6 +146,7 @@ export class EncountersController {
   }
 
   @Post('encounters/:id/transition')
+  @Audited(AuditAction.EncounterStatusChanged)
   @RequirePermission('encounter.transition')
   @HttpCode(200)
   async transition(
@@ -154,6 +158,7 @@ export class EncountersController {
   }
 
   @Post('encounters/:id/call')
+  @Audited(AuditAction.EncounterCalled)
   @RequirePermission('encounter.transition')
   @HttpCode(200)
   async callAgain(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -161,6 +166,7 @@ export class EncountersController {
   }
 
   @Post('branches/:branchId/queues/:station/call-next')
+  @Audited(AuditAction.EncounterCalled)
   @RequirePermission('encounter.transition')
   @HttpCode(200)
   async callNext(
@@ -175,6 +181,7 @@ export class EncountersController {
   }
 
   @Post('encounters/:id/skip')
+  @Audited(AuditAction.EncounterSkipped)
   @RequirePermission('encounter.transition')
   @HttpCode(200)
   async skip(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -182,6 +189,7 @@ export class EncountersController {
   }
 
   @Post('encounters/:id/no-show')
+  @Audited(AuditAction.EncounterNoShow)
   @RequirePermission('encounter.cancel')
   @HttpCode(200)
   async noShow(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -192,6 +200,7 @@ export class EncountersController {
   }
 
   @Post('encounters/:id/cancel')
+  @Audited(AuditAction.EncounterCancelled)
   @RequirePermission('encounter.cancel')
   @HttpCode(200)
   async cancel(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -203,6 +212,7 @@ export class EncountersController {
 
   /** ENC-F-09: the patient came back. Same day only, and recorded. */
   @Post('encounters/:id/revert-no-show')
+  @Audited(AuditAction.EncounterReopened)
   @RequirePermission('encounter.cancel')
   @HttpCode(200)
   async revertNoShow(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -235,6 +245,7 @@ export class EncountersController {
   }
 
   @Patch('encounters/:id/assignment')
+  @Audited(AuditAction.EncounterReassigned)
   @RequirePermission('encounter.transition')
   async assign(
     @Ctx() ctx: TenantContext,
@@ -245,6 +256,7 @@ export class EncountersController {
   }
 
   @Patch('encounters/:id/priority')
+  @Audited(AuditAction.EncounterPriorityChanged)
   @RequirePermission('encounter.priority')
   async priority(
     @Ctx() ctx: TenantContext,
@@ -255,6 +267,7 @@ export class EncountersController {
   }
 
   @Patch('encounters/:id/follow-up')
+  @Audited(AuditAction.EncounterFollowUpSet)
   @RequirePermission('encounter.transition')
   async followUp(
     @Ctx() ctx: TenantContext,
@@ -281,6 +294,7 @@ export class EncountersController {
    * only which target is asked for.
    */
   @Post('encounters/:id/force-transition')
+  @Audited(AuditAction.EncounterForced)
   @RequirePermission('admin.settings')
   @RequireReauth()
   @HttpCode(200)

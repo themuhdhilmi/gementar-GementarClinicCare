@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import type { TenantContext } from './tenant-context.js';
@@ -19,12 +21,14 @@ export class TenancyController {
   }
 
   @Patch()
+  @Audited(AuditAction.TenantUpdated)
   @RequirePermission('admin.settings')
   async update(@Ctx() ctx: TenantContext, @Body() dto: UpdateTenantDto) {
     return this.tenants.updateProfile(ctx, dto);
   }
 
   @Patch('settings')
+  @Audited(AuditAction.TenantSettingsChanged)
   @RequirePermission('admin.settings')
   async patchSettings(@Ctx() ctx: TenantContext, @Body() dto: PatchSettingsDto) {
     return { settings: await this.tenants.patchSettings(ctx, dto.settings) };

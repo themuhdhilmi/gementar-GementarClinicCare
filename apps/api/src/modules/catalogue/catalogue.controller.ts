@@ -12,6 +12,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { ProductType } from '../../generated/prisma/enums.js';
 import { newId } from '../../shared/ids/uuid.js';
 import { BadRequestError, NotFoundError } from '../../shared/errors/domain-errors.js';
@@ -92,6 +94,7 @@ export class CatalogueController {
   }
 
   @Post('products')
+  @Audited(AuditAction.ProductCreated)
   @RequirePermission('catalogue.write')
   @HttpCode(201)
   async create(@Ctx() ctx: TenantContext, @Body() dto: ProductDto) {
@@ -99,6 +102,7 @@ export class CatalogueController {
   }
 
   @Patch('products/:id')
+  @Audited(AuditAction.ProductUpdated)
   @RequirePermission('catalogue.write')
   async update(
     @Ctx() ctx: TenantContext,
@@ -109,6 +113,7 @@ export class CatalogueController {
   }
 
   @Post('products/:id/retire')
+  @Audited(AuditAction.ProductRetired)
   @RequirePermission('catalogue.write')
   @HttpCode(200)
   async retire(
@@ -120,6 +125,7 @@ export class CatalogueController {
   }
 
   @Post('products/:id/reinstate')
+  @Audited(AuditAction.ProductUpdated)
   @RequirePermission('catalogue.write')
   @HttpCode(200)
   async reinstate(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -140,6 +146,7 @@ export class CatalogueController {
   }
 
   @Post('product-categories')
+  @Audited(AuditAction.CatalogueChanged)
   @RequirePermission('catalogue.write')
   @HttpCode(201)
   async createCategory(@Ctx() ctx: TenantContext, @Body() dto: CategoryDto) {
@@ -174,6 +181,7 @@ export class CatalogueController {
   // -------------------------------------------------- per-branch settings
 
   @Put('products/:id/branches/:branchId')
+  @Audited(AuditAction.CatalogueChanged)
   @RequirePermission('catalogue.write')
   async setBranchStock(
     @Ctx() ctx: TenantContext,
@@ -212,6 +220,7 @@ export class CatalogueController {
 
   /** INV-F-04. Nothing is written unless the run says so in so many words. */
   @Post('products/import')
+  @Audited(AuditAction.ProductImported)
   @RequirePermission('catalogue.write')
   @HttpCode(200)
   @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: 20_000_000 } }))

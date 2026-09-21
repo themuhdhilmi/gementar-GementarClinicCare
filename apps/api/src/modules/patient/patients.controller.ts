@@ -15,6 +15,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import type { Response } from 'express';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import { DbService } from '../../shared/prisma/db.service.js';
@@ -70,6 +71,7 @@ export class PatientsController {
    * compliance requirement wins.
    */
   @Post('search')
+  @NotAudited('a search writes nothing; it is a POST because the query is too long and too private for a URL')
   @RequirePermission('patient.read')
   @HttpCode(200)
   async runSearch(@Ctx() ctx: TenantContext, @Body() dto: SearchDto) {
@@ -86,6 +88,7 @@ export class PatientsController {
   // ------------------------------------------------------------ the record
 
   @Post('check-duplicates')
+  @NotAudited('compares a half-typed form against existing records and writes nothing')
   @RequirePermission('patient.write')
   @HttpCode(200)
   async checkDuplicates(@Ctx() ctx: TenantContext, @Body() dto: PatientBodyDto) {
@@ -94,6 +97,7 @@ export class PatientsController {
   }
 
   @Post()
+  @Audited(AuditAction.PatientRegistered)
   @RequirePermission('patient.write')
   @HttpCode(201)
   async register(
@@ -120,6 +124,7 @@ export class PatientsController {
   }
 
   @Patch(':id')
+  @Audited(AuditAction.PatientUpdated)
   @RequirePermission('patient.write')
   async update(
     @Ctx() ctx: TenantContext,
@@ -131,6 +136,7 @@ export class PatientsController {
   }
 
   @Post(':id/delete')
+  @Audited(AuditAction.PatientDeleted)
   @RequirePermission('patient.merge')
   @HttpCode(200)
   async remove(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonBodyDto) {
@@ -161,6 +167,7 @@ export class PatientsController {
   }
 
   @Post(':id/allergies')
+  @Audited(AuditAction.PatientAllergyAdded)
   @RequirePermission('triage.write')
   @HttpCode(201)
   async addAllergy(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: AllergyDto) {
@@ -168,6 +175,7 @@ export class PatientsController {
   }
 
   @Post(':id/allergies/:allergyId/verify')
+  @Audited(AuditAction.PatientAllergyVerified)
   @RequirePermission('clinical.write')
   @HttpCode(200)
   async verifyAllergy(
@@ -179,6 +187,7 @@ export class PatientsController {
   }
 
   @Post(':id/allergies/:allergyId/refute')
+  @Audited(AuditAction.PatientAllergyRefuted)
   @RequirePermission('clinical.write')
   @HttpCode(200)
   async refuteAllergy(
@@ -191,12 +200,14 @@ export class PatientsController {
   }
 
   @Put(':id/nkda')
+  @Audited(AuditAction.PatientNkdaRecorded)
   @RequirePermission('triage.write')
   async setNkda(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: NkdaDto) {
     return this.clinical.recordNkda(ctx, id, dto.nkda);
   }
 
   @Post(':id/conditions')
+  @Audited(AuditAction.PatientConditionChanged)
   @RequirePermission('triage.write')
   @HttpCode(201)
   async addCondition(
@@ -208,6 +219,7 @@ export class PatientsController {
   }
 
   @Patch(':id/conditions/:conditionId')
+  @Audited(AuditAction.PatientConditionChanged)
   @RequirePermission('triage.write')
   async updateCondition(
     @Ctx() ctx: TenantContext,
@@ -228,6 +240,7 @@ export class PatientsController {
   }
 
   @Post(':id/contacts')
+  @Audited(AuditAction.PatientContactChanged)
   @RequirePermission('patient.write')
   @HttpCode(201)
   async addContact(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ContactDto) {
@@ -235,6 +248,7 @@ export class PatientsController {
   }
 
   @Patch(':id/contacts/:contactId')
+  @Audited(AuditAction.PatientContactChanged)
   @RequirePermission('patient.write')
   async updateContact(
     @Ctx() ctx: TenantContext,
@@ -246,6 +260,7 @@ export class PatientsController {
   }
 
   @Delete(':id/contacts/:contactId')
+  @Audited(AuditAction.PatientContactChanged)
   @RequirePermission('patient.write')
   async removeContact(
     @Ctx() ctx: TenantContext,
@@ -263,6 +278,7 @@ export class PatientsController {
   }
 
   @Put(':id/consents')
+  @Audited(AuditAction.PatientConsentChanged)
   @RequirePermission('patient.write')
   async setConsents(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ConsentsDto) {
     return { items: await this.records.setConsents(ctx, id, dto.consents) };
@@ -293,6 +309,7 @@ export class PatientsController {
    * Re-uploading the document is the fix, and the clinic still has the paper.
    */
   @Post(':id/documents')
+  @Audited(AuditAction.PatientDocumentAdded)
   @RequirePermission('patient.write')
   @HttpCode(201)
   @UseInterceptors(FileInterceptor('file', { limits: { files: 1 } }))
@@ -351,6 +368,7 @@ export class PatientsController {
   }
 
   @Delete(':id/documents/:documentId')
+  @Audited(AuditAction.PatientDocumentDeleted)
   @RequirePermission('patient.write')
   async deleteDocument(
     @Ctx() ctx: TenantContext,
@@ -363,6 +381,7 @@ export class PatientsController {
   // ----------------------------------------------------------------- merge
 
   @Post(':id/merge')
+  @Audited(AuditAction.PatientMerged)
   @RequirePermission('patient.merge')
   @HttpCode(200)
   async merge(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: MergeDto) {
@@ -377,6 +396,7 @@ export class PatientsController {
    * `patient.export`, and every export is recorded.
    */
   @Post(':id/export')
+  @Audited(AuditAction.PatientExported)
   @RequirePermission('patient.export')
   @HttpCode(200)
   async exportPatient(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -393,6 +413,7 @@ export class PatientsController {
    * the real run boring.
    */
   @Post('import')
+  @Audited(AuditAction.PatientImported)
   @RequirePermission('admin.settings')
   @HttpCode(200)
   @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: 50_000_000 } }))
@@ -423,6 +444,7 @@ export class PatientsController {
   }
 
   @Post(':id/unmerge')
+  @Audited(AuditAction.PatientUnmerged)
   @RequirePermission('patient.merge')
   @HttpCode(200)
   async unmerge(@Ctx() ctx: TenantContext, @Param('id') id: string) {

@@ -32,6 +32,10 @@ desk; En Kamal and Cik Rina hold one each, which is the larger clinic.
 
 Start with the doctor if you only want to look around.
 
+> This file is the **quick tour**. For a module-by-module walkthrough —
+> what to click, what to expect, and what to try to break — see
+> [`documents/modules/V0/`](documents/modules/V0/README.md).
+
 ## The administrator needs an authenticator app
 
 Administrators can read every clinical record, so a second factor is mandatory
@@ -472,8 +476,81 @@ blocked on being unpaid: nothing can take payment yet, and a guard nothing
 can clear would make every visit impossible to close. That half arrives
 with `v0-12-payment.md` (`BIL-OPEN-16`).
 
-Nothing prints — no invoice, no receipt (`BIL-OPEN-09`, waiting on
-documents).
+An issued invoice now prints: **Print** on the bill opens it as a stored,
+numbered document. There is still no receipt, because nothing takes
+payment yet (`DOC-OPEN-10`).
+
+## Paperwork the patient takes away
+
+Certificates, referrals and letters are issued from a **signed**
+consultation and nowhere else — there is nothing to make a document out
+of until the record exists (DOC-R-01), so all of this is invisible while
+the note is still a draft.
+
+Tick **They need a certificate, referral or letter** in the sign dialog
+and the screen stays on the consultation after signing instead of
+returning to the queue. A **Documents** card appears under the note with
+three buttons.
+
+Try the certificate. Pick two days and read the line under the dates: it
+says *Covers 21 Sep 2026 — 22 Sep 2026*, because two days means today and
+tomorrow, not today and the next two. That is the thing everybody gets
+wrong, so the screen says it out loud rather than leaving it to be
+discovered by an employer.
+
+Then try these:
+
+- **Issue it twice and print the second one.** The reprint carries a grey
+  COPY watermark. The stored file is untouched — the watermark is added
+  on the way out, so the fingerprint taken at issue still describes the
+  document.
+- **Cancel one.** It asks why, in a sentence, and keeps its number: a
+  cancelled certificate is not a returned number, it is a spent one, and
+  a gap in a certificate series is a question nobody can answer later.
+  Reprint it and it comes out stamped CANCELLED in red.
+- **Backdate one.** Set the start date to yesterday and the dialog asks
+  why. The reason goes into the audit trail with the certificate.
+  More than seven days back is refused outright.
+- **Sign in as the front desk and open the patient's record.** The
+  Documents tab shows the certificate but not the referral — a referral
+  carries clinical detail, so it is invisible to a role without
+  `clinical.read`, in the list as well as in the document.
+- **Tick "Print the diagnosis".** Off by default, because the person who
+  reads a certificate is usually an employer.
+
+The patient's record has both kinds of paperwork under **Documents**:
+*Issued by this clinic* on top, *Attachments* — what was brought in and
+scanned — underneath. They are different things that share a word.
+
+To charge for a certificate, create a billable item coded `DOC_MC`:
+
+```bash
+curl -sb cookies.txt -X POST -H 'Content-Type: application/json' \
+  -d '{"code":"DOC_MC","name":"Sijil Cuti Sakit","defaultPrice":5}' \
+  http://localhost:3001/api/v1/billable-items
+```
+
+From then on every certificate puts a RM 5 line on the visit's bill.
+`DOC_REFERRAL`, `DOC_LETTER` and `DOC_LAB_REQUEST` work the same way, and
+no item means the document is free. There is no separate switch —
+`DOC-OPEN-17`.
+
+A doctor's signature is uploaded with `curl`, because the screen for it
+is not built (`DOC-OPEN-07`):
+
+```bash
+curl -sb cookies.txt -X PUT -F file=@signature.png \
+  http://localhost:3001/api/v1/me/signature
+```
+
+PNG or JPEG only, and the file is checked by its first bytes rather than
+by what the browser claims it is. With nothing uploaded a certificate
+prints a typed name block, which is a supported outcome rather than a
+failure.
+
+**Everything above prints from the browser, and no printer has ever been
+tried** (`DOC-OPEN-01`). The A4 margins, the 80 mm receipt and the 50×30
+mm label are all assumptions until somebody prints one.
 
 ## Counting the shelves
 
@@ -527,7 +604,7 @@ adjustments are a box of gauze.
 ## The waiting-room screen
 
 ```bash
-# As the administrator, from the Branches screen, or:
+# As the administrator. There is no screen for this yet (ENC-OPEN-16).
 curl -sb cookies.txt -X POST -H 'Content-Type: application/json' \
   -d '{"label":"Waiting room television"}' \
   http://localhost:3001/api/v1/branches/<branchId>/display-tokens
@@ -541,6 +618,178 @@ screen.
 
 Revoking the token stops that address working immediately, which is what to
 do when a screen is replaced or photographed.
+
+## Taking money
+
+**Drawer** in the header, first. Nothing can be taken until somebody
+opens it with a float — try paying without one and the panel says so
+rather than failing at the last step.
+
+Open it with RM 200, then go to **Billing**, open a bill and issue it.
+The payment panel appears underneath.
+
+The thing to try first is the rounding:
+
+- **Make a bill of RM 77.43 and pay it in cash.** The panel says
+  **RM 77.45** and *"Rounded up by RM 0.02 — five-sen coins."* Bank
+  Negara's mechanism, and the receipt shows the adjustment as its own
+  line.
+- **Make another for RM 77.42.** It rounds *down* to RM 77.40.
+- **Now pay a RM 77.43 bill by card instead.** Exactly RM 77.43. The
+  rounding belongs to the coins, not to the bill.
+- **Split one.** Card RM 50.00 first, then cash for the rest. The card
+  leg is exact; only the final cash leg rounds. The clinic collects two
+  sen more than it billed, once — not twice.
+
+Then the till itself:
+
+- **Type an amount tendered** and the change appears as you type. The
+  quick buttons offer the exact amount and the notes somebody is likely
+  to be holding.
+- **Take some cash out** — "to the safe at lunchtime" — and watch what
+  is expected in the drawer drop by that much.
+- **Count and close.** Type a figure and the variance appears *before*
+  you commit to it, so a cashier who is short can recount. Inside RM 10
+  it closes with a note; beyond it, only an administrator can, and only
+  with an explanation. The expected figure is never adjusted to match
+  the count — that is the whole point.
+- **Print the Z-report.** Totals by method, every movement, the
+  variance and the note.
+
+And the things that go wrong:
+
+- **Void a payment** (administrator, same day, asks for your password
+  again). The invoice goes back to unpaid, the rounding goes back with
+  it, and the drawer records a `VOID_OUT`.
+- **Try to void one from yesterday.** Refused — use a refund, which is
+  recorded as a negative payment pointing at the original. The trail
+  reads as two events, because that is what happened.
+- **Try to finish a visit with an unpaid bill.** Refused, naming what is
+  owed. Pay it and the visit completes. This is the guard billing wrote
+  and deliberately left switched off until something could clear it.
+
+Receipts print from the browser at 80 mm. Ask for the same receipt
+twice and you get the same document — not a second one claiming the
+same money was taken. The first print is the handover; every one after
+is stamped COPY.
+
+**No receipt has ever come out of a printer** (`PAY-OPEN-01`). The
+width, the font and whether their printer even wants HTML are all
+assumptions.
+
+## The dashboard and the reports
+
+**Dashboard** in the header. Nine tiles, each one a link to the report
+behind it.
+
+Sign in as the doctor and then as the administrator and compare them.
+The doctor sees patients, waiting, wait times, stock and unsigned notes.
+The administrator sees those plus what was billed today, what was voided
+and how many bills were started and never issued. The money tiles are not
+greyed out for the doctor — the API never sends them, so there is nothing
+on the page to reveal.
+
+The dashboard refreshes itself. Check a patient in on another tab and
+watch the counts move, at most once every five seconds however busy the
+morning gets.
+
+**Reports** lists everything this role may run.
+
+Everything V0 promises is there now, including **Collections**, the
+**End-of-day pack** and **Sales versus collections** — the three that
+used to say they were waiting for payment.
+
+Worth trying:
+
+- **Sales versus collections.** Billed, collected, still owed, voided.
+  Billed must equal collected plus outstanding, to the sen, and the
+  screen says so in green when it does. It also checks the two ways of
+  knowing what was collected against each other — the invoices' own
+  figure and the payments themselves — which is the assertion that
+  would catch a payment an invoice never heard of.
+- **Collections**, grouped by method, cashier, drawer session or day.
+- **Daily sales, then export it.** The CSV has every amount twice: once
+  in sen, which adds up, and once as ringgit, which reads. Open it in
+  Excel — the byte order mark is there so the Malay names are not
+  mojibake.
+- **Then look at the Audit page for `report.exported`.** It records which
+  report, which dates, and whether the report names patients.
+- **Discounts.** Every discount with the reason somebody typed and the
+  name of whoever allowed it. Give one on a bill and watch it appear.
+- **Queue performance.** Median and ninetieth-percentile waits, taken
+  from the event log rather than from a column — so a patient only counts
+  once somebody has actually called them.
+- **Prescribing.** The antibiotic rate is shown next to the number of
+  items with no drug class recorded, and the screen warns when there are
+  any. With the pilot's catalogue there will be a lot: the rate is a
+  floor, not a figure (`RX-OPEN-01`).
+- **Stock valuation.** What is on the shelves, at cost.
+- **A date range.** Everything is bucketed in the branch's own day, so a
+  patient seen at 11 p.m. is on that day's report and not the next. Ask
+  for more than a year and it is refused rather than run.
+
+## The audit trail
+
+**Audit** in the admin sidebar. Six tiles across the top, and each one is
+a link rather than a statistic — click a number and the list below
+filters to the entries behind it.
+
+Things worth doing:
+
+- **Open a patient's clinical tab as the administrator, then look at
+  Break-glass access.** The count goes up. Do the same as the doctor and
+  it does not: reading a record you are responsible for is routine, and
+  flagging it would make the flag worthless.
+- **Click a row.** It opens with the before and after side by side, with
+  the changed fields picked out — the old value struck through in red,
+  the new one in green — and the request id, which is the string that
+  ties this entry to the application log.
+- **Change a patient's telephone number, then find the entry.** The diff
+  shows `phone` and nothing else, because that is all that changed.
+- **Open a patient's record and look at Access history.** Every view and
+  every change, in plain English, with the name of whoever made it. This
+  is the view a PDPA request turns into. Only an administrator sees the
+  tab at all.
+- **Try to change history.** You cannot, from the application — there is
+  no endpoint. From `psql`, as the database owner:
+
+  ```sql
+  UPDATE audit_log SET action = 'nothing.happened' WHERE id = '…';
+  -- ERROR: AUDIT_IMMUTABLE: audit_log rows cannot be update
+  ```
+
+  The same happens for a `DELETE`, and for a write aimed straight at a
+  monthly partition.
+- **Export a range.** It asks for your password again, downloads a CSV
+  and then records the export — filter and all — as an entry you can
+  find in the list you just exported.
+
+The table is partitioned by month, so `audit_log` is really
+`audit_log_2026_09` and its neighbours:
+
+```sql
+\dt audit_log*
+```
+
+A nightly job keeps three months ahead. There is also an
+`audit_log_unclaimed` partition that should always be empty; anything in
+it means a month went by with no maintenance, and the job says so in the
+morning log.
+
+### Every route says whether it is audited
+
+156 mutating routes, each carrying `@Audited('…')` or
+`@NotAudited('why not')`. The build fails if a new one says neither:
+
+```bash
+npm run lint:audited --workspace @gementar/api
+```
+
+Eight routes are deliberately not audited — consultation autosave,
+prescription notes, patient search, duplicate checking, MFA enrolment
+before it is confirmed, blind count entry, and two personal shortcut
+lists. Each reason is written in the decorator and each is a judgement
+somebody could argue with.
 
 ## Bringing patients across from another system
 

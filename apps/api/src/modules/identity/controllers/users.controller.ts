@@ -10,6 +10,8 @@ import {
   Query,
 } from '@nestjs/common';
 import { Ctx, RequirePermission } from '../decorators/auth.decorators.js';
+import { AuditAction } from '../../audit/audit.actions.js';
+import { Audited, NotAudited } from '../../audit/audit.decorators.js';
 import { DbService } from '../../../shared/prisma/db.service.js';
 import type { TenantContext } from '../../tenancy/tenant-context.js';
 import { UserService } from '../services/user.service.js';
@@ -46,6 +48,7 @@ export class UsersController {
   }
 
   @Post()
+  @Audited(AuditAction.UserCreated)
   @RequirePermission('admin.users')
   @HttpCode(201)
   async create(@Ctx() ctx: TenantContext, @Body() dto: CreateUserDto) {
@@ -83,12 +86,14 @@ export class UsersController {
   }
 
   @Patch(':id')
+  @Audited(AuditAction.UserUpdated)
   @RequirePermission('admin.users')
   async update(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.users.update(ctx, id, dto);
   }
 
   @Put(':id/roles')
+  @Audited(AuditAction.UserRoleChanged)
   @RequirePermission('admin.users')
   async replaceRoles(
     @Ctx() ctx: TenantContext,
@@ -99,6 +104,7 @@ export class UsersController {
   }
 
   @Post(':id/disable')
+  @Audited(AuditAction.UserDisabled)
   @RequirePermission('admin.users')
   @HttpCode(200)
   async disable(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -106,6 +112,7 @@ export class UsersController {
   }
 
   @Post(':id/enable')
+  @Audited(AuditAction.UserEnabled)
   @RequirePermission('admin.users')
   @HttpCode(200)
   async enable(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -113,6 +120,7 @@ export class UsersController {
   }
 
   @Post(':id/unlock')
+  @Audited(AuditAction.UserUnlocked)
   @RequirePermission('admin.users')
   @HttpCode(200)
   async unlock(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -120,6 +128,7 @@ export class UsersController {
   }
 
   @Post(':id/sessions/revoke-all')
+  @Audited(AuditAction.SessionRevoked)
   @RequirePermission('admin.users')
   @HttpCode(200)
   async revokeSessions(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -128,6 +137,7 @@ export class UsersController {
   }
 
   @Post(':id/password/force-reset')
+  @Audited(AuditAction.UserPasswordForceReset)
   @RequirePermission('admin.users')
   @HttpCode(200)
   async forceReset(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -140,6 +150,7 @@ export class UsersController {
 
   /** §14: lost device, no recovery codes. Identity is verified out of band. */
   @Post(':id/mfa/reset')
+  @Audited(AuditAction.UserMfaReset)
   @RequirePermission('admin.users')
   @HttpCode(204)
   async resetMfa(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() dto: ReasonDto) {

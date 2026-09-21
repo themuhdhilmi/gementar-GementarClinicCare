@@ -35,7 +35,7 @@ list and what each one uses. `PRC-OPEN-01`.
 |---|---|---|
 | ~~**PRC-OPEN-07**~~ | ~~**Nothing is charged.**~~ **Closed 2026-09-21.** A performed procedure becomes an invoice line at its snapshot price, inside the performing transaction; voiding it takes the line off. Collecting the money is `v0-12-payment.md`. | Done. |
 | **PRC-OPEN-08** | **Voiding after an invoice is issued is not handled (§14).** Today a void inside 24 hours always succeeds, because there are no invoices for it to contradict. When there are, a void against an issued invoice has to become a credit note. | `v0-11-billing.md`. The 24-hour window is the placeholder that keeps this from mattering yet, and it should be revisited at the same time. |
-| **PRC-OPEN-09** | **No printable immunisation record (PRC-F-11).** The data is complete — vaccine, batch, expiry, site, who gave it, when — and shows on the patient's record. There is no certificate. | `v0-13-documents.md`, and V1 for the schedule and reminders. |
+| **PRC-OPEN-09** | **No printable immunisation record (PRC-F-11).** The data is complete — vaccine, batch, expiry, site, who gave it, when — and shows on the patient's record. There is no certificate. `v0-13-documents.md` is built and did not include one; the card a parent carries deserves its own template rather than being squeezed into the generic letter. | A template and a route, the same shape as the letter — tracked as `DOC-OPEN-12`. V1 for the schedule and reminders. |
 
 ## D. Smaller things, honestly listed
 

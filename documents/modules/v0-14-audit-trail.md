@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-14-audit-trail-end-item-OPEN.md](v0-14-audit-trail-end-item-OPEN.md) |
 | **Delivery phase** | Phase 0 |
 | **Spec sections** | 30 |
 | **Depends on** | IAM, TEN |
@@ -134,11 +134,11 @@ None. Entries are immutable facts.
 
 | Method | Path | Permission | Notes |
 |---|---|---|---|
-| GET | `/audit` | `audit.read` | Filters: `from,to,actorId,action,entityType,entityId,patientId,branchId`; cursor pagination |
-| GET | `/audit/:id` | `audit.read` | Full entry with diff |
+| GET | `/audit` | `audit.read` | Filters: `from,to,actorId,action,actionGroup,entityType,entityId,patientId,branchId`. **Page numbers, not a cursor** — the screen has Previous and Next and a total, which a cursor cannot give. A range is mandatory in effect: it defaults to 30 days and is capped at 366, because that is what lets Postgres skip partitions. |
+| GET | `/audit/:id` | `audit.read` | Full entry with diff **and both snapshots**. The list carries neither: a page of fifty 64 KB snapshots is megabytes nobody reads. |
 | GET | `/patients/:id/access-history` | `audit.read` | AUD-F-11 |
 | GET | `/audit/dashboard` | `audit.read` | AUD-F-12 aggregates |
-| POST | `/audit/export` | `audit.read` + reauth | CSV of a filtered range; itself audited |
+| POST | `/audit/export` | `audit.read` + reauth | CSV of a filtered range, at most 92 days and 50,000 rows; itself audited, with the filter that produced it. |
 
 No write endpoints.
 
@@ -186,6 +186,27 @@ This module *is* the audit log. The minimum set that must be present by end of P
 | AUD-N-03 | Audit storage is included in the nightly backup and restore rehearsal. |
 | AUD-N-04 | Partition maintenance is automated; a missing future partition alerts 7 days ahead. |
 | AUD-N-05 | Snapshots are capped at 64 KB per side; larger entities store a reference and a diff only. |
+
+### The redaction deny-list (AUD-F-09, AUD-R-05)
+
+Applied **before persistence**, to every key at every depth, in
+`audit.service.ts`. A key is redacted when its name matches any of:
+
+`pass` · `secret` · `token` · `hash` · `recovery` · `kek` · `pepper` ·
+`otp` · `credential` · `cookie`
+
+Also redacted regardless of key name: any `Buffer` or `Uint8Array`
+(a logo, a signature image, a scanned card), and anything nested more
+than six levels deep. Dates become ISO strings and `bigint` becomes a
+string, so an entry is JSON somebody can read in five years.
+
+It is a **deny-list by key**, not an allow-list by entity, which is the
+weaker of the two choices and the one that survives contact with new
+modules: an allow-list per entity is a list somebody forgets to extend,
+and the failure mode of forgetting is a secret in the log. The failure
+mode here is a field called something unexpected, which is why the names
+are broad — `hash` catches `passwordHash`, `contentHash` and
+`fileHash`, and losing the last two from an audit entry costs nothing.
 
 ## 14. Edge cases & failure modes
 
@@ -241,17 +262,107 @@ This module *is* the audit log. The minimum set that must be present by end of P
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| AUD-Q-01 | Should staff be shown "your record views are logged" on the clinical screens? (Recommended: yes, small footer note.) | You / clinic |
-| AUD-Q-02 | Does the clinic want a monthly audit summary emailed to the owner? (V1 NTF, cheap.) | Pilot clinic |
+| ID | Question | Who | Answer, or what was built without one |
+|---|---|---|---|
+| AUD-Q-01 | Should staff be shown "your record views are logged" on the clinical screens? (Recommended: yes, small footer note.) | You / clinic | **Not answered, and nothing says so on any screen.** Every clinical read is recorded with the reader's name; nobody who works there has been told. A log staff do not know about is a trap; one they do know about is mostly a deterrent, which is the point. `AUD-OPEN-02`. |
+| AUD-Q-02 | Does the clinic want a monthly audit summary emailed to the owner? (V1 NTF, cheap.) | Pilot clinic | **Not answered.** Worth asking alongside `AUD-OPEN-01`, which is the ten-minute version of the same thing and is worth doing whatever they say. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] AUD-T-01 … T-09 green
-- [ ] Grants + trigger verified by attempting a direct SQL update as the app role
-- [ ] `@Audited`/`@NotAudited` lint rule enforced
-- [ ] Redaction deny-list documented in code and here
-- [ ] Partitioning in place with automated maintenance
-- [ ] Every V0 module's §10 audit events cross-checked against this catalogue at Phase 4
+- [x] **All Must requirements implemented** — `AUD-F-03` and `AUD-F-08` by a different mechanism from the one described; see §22 and `AUD-OPEN-07`/`AUD-OPEN-08`. Everything else as written.
+- [x] **AUD-T-01 … T-09 green** — all nine, inside 19 tests in `test/audit.e2e-spec.ts`, except `AUD-T-08`, which is a load test that is off by default (`AUD-OPEN-05`).
+- [x] **Grants + trigger verified by attempting a direct SQL update as the app role** — AUD-T-01, three ways: through the parent, through a partition reached directly, and as the owner. The grants themselves are `IAM-OPEN-05`, which is the unprivileged role nobody has created yet; the trigger holds regardless, which is why it is there.
+- [x] **`@Audited`/`@NotAudited` lint rule enforced** — `npm run lint:audited`, in `npm run lint`, across all 156 mutating routes. It also refuses an action that is not in the catalogue, and an exemption with no real reason.
+- [x] **Redaction deny-list documented in code and here** — `audit.service.ts`, by key at any depth, plus a 64 KB cap per snapshot side. See §13 below.
+- [x] **Partitioning in place with automated maintenance** — monthly, with a default partition so a missed job cannot stop the clinic, a daily job three months ahead, and a `SECURITY DEFINER` count that reports anything stranded.
+- [ ] **Every V0 module's §10 audit events cross-checked against this catalogue at Phase 4** — done for the 88 domain events by `event-coverage.spec.ts`, which fails if a new one is neither recorded nor documented as derived. The per-module §10 lists have not been walked by hand.
+- [x] **Open questions answered** — §20, two of two as "asked, not answered".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| AUD-F-01 append-only | Trigger on the partitioned parent | AUD-T-01 |
+| AUD-F-02 what an entry holds | `audit_log`, `AuditService.record` | AUD-T-02 |
+| AUD-F-03 interceptor from route metadata | `@Audited`, `AuditInterceptor` | A backstop, not the mechanism — §22, `AUD-OPEN-07` |
+| AUD-F-04 explicit service entries | `record(tx, …)` everywhere | Most of the trail; the interceptor rarely fires |
+| AUD-F-05 clinical reads audited | PAT, CON, TRI controllers | AUD-T-04 |
+| AUD-F-06 unmasking audited | `patients.controller` | "unmasking an identity number is recorded" |
+| AUD-F-07 break-glass | `PermissionGuard` | AUD-T-07, including that a doctor doing the same is not flagged |
+| AUD-F-08 events are the log | `event-coverage.ts` | 88 events, each recorded, aliased or documented as derived |
+| AUD-F-09 redaction | `redact`, by key at any depth | AUD-T-05 |
+| AUD-F-10 search | `AuditQueryService.search` | Filters by actor, group, entity and patient |
+| AUD-F-11 access history | `accessHistory` | Its own test, and a tab on the patient record |
+| AUD-F-12 dashboard | `dashboard` | Six tiles, each linking to the entries behind it |
+| AUD-F-13 export | `exportCsv` | AUD-T-09, including the spreadsheet-formula defence |
+| AUD-F-14 partitioning | `20260921200000_audit_partitioning` | Writes land in the right month; the job keeps ahead |
+| AUD-F-15 retention | Nothing deletes | True by default, not by policy — `AUD-OPEN-03` |
+| AUD-R-01 no rewrite | Trigger | AUD-T-01 |
+| AUD-R-02 shares the transaction | `record(tx, …)` has no other form | AUD-T-03: the entry fails, the patient is not created. Proved below the route — `AUD-OPEN-15` |
+| AUD-R-03 every route declares | `check-audited-routes.ts` | AUD-T-06, all three failure modes |
+| AUD-R-04 audited at the API | Controllers, not the UI | AUD-T-04 goes straight to the API |
+| AUD-R-05 redact before persistence | `record` | AUD-T-05 |
+| AUD-R-06 actor name snapshotted | `record` | "the actor name is a snapshot, not a join" |
+| AUD-R-07 tenant-scoped by RLS | Parent **and** every partition | The direct-partition read is scoped too |
+| AUD-N-01 ≤ 3 ms | One insert in an open transaction | **Not measured** — `AUD-OPEN-06` |
+| AUD-N-02 < 500 ms at 10 M | Five indexes, partition pruning | **Not measured at that size** — `AUD-OPEN-05` |
+| AUD-N-03 in the backup | — | `IAM-OPEN-09`, `AUD-OPEN-04` |
+| AUD-N-04 partition maintenance | `AuditPartitionJob` | Three months ahead; idempotent; reports stranded rows |
+| AUD-N-05 64 KB cap | `cap()` | An 80 KB snapshot becomes a note saying it was 80 KB |
+
+## 22. Notes worth keeping
+
+1. **`@Audited` is a declaration, not the mechanism.** The specification
+   imagines an interceptor that audits every mutating request by itself,
+   reconstructing `before` and `after` from the route. An interceptor
+   cannot see that a discount was applied inside an invoice update, or
+   that a prescriber overrode an interaction warning, or which of four
+   rows a transition touched. The services record all of that, inside
+   the transaction, where AUD-R-02 requires it. So the decorator names
+   the action, the lint rule makes the declaration mandatory on all 156
+   mutating routes, and the interceptor writes a plain entry **only if
+   the handler wrote nothing itself**. "Every mutating route is audited"
+   becomes true by construction rather than by everyone having
+   remembered, and the detail is not traded for uniformity.
+
+2. **No subscriber persists domain events, deliberately.** AUD-F-08 asks
+   for one. The bus publishes *after* commit and only logs a failing
+   subscriber, so an entry written from there could not share the fate of
+   its change — which is the one rule this module cannot bend — and it
+   would double-log almost everything. Instead `event-coverage.spec.ts`
+   asserts that each of the 88 domain events either has an audit action
+   recording the same act, is an alias for one, or is on a written list
+   of derived signals: a low-stock alert, an abnormal vital, a warning
+   raised. Nobody *did* those, and an entry whose actor is a cron job
+   buries the ones where somebody chose something.
+
+3. **The default partition exists because audit is not best-effort.** A
+   write with no partition for its month fails; a failed audit write
+   rolls back the change it describes; so a cron that did not run would
+   stop a doctor signing a note. The default partition means that
+   failure mode becomes "some rows are in the wrong file and a job
+   shouts about it every morning", which is recoverable in a change
+   window. The trade is deliberate: the log has to be reliable, and the
+   clinic has to keep working.
+
+4. **Each partition carries its own row-level security, and that bit us
+   once.** A partition reached directly bypasses the parent's policies,
+   so every one gets the same `tenant_isolation` policy when it is
+   created. The consequence is easy to miss: a *platform*-scope query
+   has no tenant, so `SELECT count(*) FROM audit_log_unclaimed` returns
+   zero however many rows are stranded — the check that was meant to
+   shout would have been silent forever. It goes through a
+   `SECURITY DEFINER` function that returns a number and never a row.
+
+5. **The CSV export defuses spreadsheet formulas.** A cell beginning
+   `=`, `+`, `-` or `@` is a formula to Excel, and this file is full of
+   strings a user chose — an actor's name, a cancellation reason.
+   `=cmd|'/c calc'!A1` typed into a reason field is an attack on
+   whoever opens the export, not on this system. A leading apostrophe
+   makes it text, and there is a test that types exactly that.
+
+6. **The gap is not the trail, it is the reading of it.** Everything
+   here is recorded, immutable, searchable and fast. Nothing tells
+   anybody that a break-glass access happened at 11 p.m.
+   `AUD-OPEN-01` is an hour of work and closes the same gap in three
+   other modules.

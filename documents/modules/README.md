@@ -179,31 +179,40 @@ Events are emitted after the owning transaction commits, carry `{ tenantId, bran
 
 The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — entirely in the system?* Everything here is required for that sentence to be true.
 
+**All fifteen V0 modules are built.** That sentence is true end to end:
+a patient can be registered, queued, triaged, seen, prescribed for,
+dispensed to, billed, and can pay — and walk out with a certificate and
+a receipt. What remains is not code. It is the clinic's own numbers,
+their printers, and somebody using it for a day.
+
+> To **use** it rather than read about it, start at
+> [`V0/`](V0/README.md) — one folder per module, each with a
+> walkthrough of what is actually built and a `notes.md` to scribble in.
+>
 > Before go-live, read [`../planning/10-production-readiness.md`](../planning/10-production-readiness.md). It cuts every register below one way — what blocks real patients, and what does not — because that question is not answerable module by module.
 
 | Module | Code | Phase | Est. | Status |
 |---|---|---|---|---|
 | [Identity & Access](v0-01-identity-access.md) · [open items](v0-01-identity-access-end-item-OPEN.md) | IAM | 0 | ~20 h | Built; open items before go-live |
 | [Tenancy & Branch](v0-02-tenancy-branch.md) · [open items](v0-02-tenancy-branch-end-item-OPEN.md) | TEN | 0 | ~20 h | Built; open items before go-live |
-| [Audit Trail](v0-14-audit-trail.md) | AUD | 0 | ~15 h | Part-built by IAM |
+| [Audit Trail](v0-14-audit-trail.md) · [open items](v0-14-audit-trail-end-item-OPEN.md) | AUD | 0 | ~15 h | Built; nothing tells anybody what it found |
 | [Patient Registry](v0-03-patient.md) · [open items](v0-03-patient-end-item-OPEN.md) | PAT | 1 | ~35 h | Built; open items before go-live |
 | [Encounter & Queue](v0-04-encounter-queue.md) · [open items](v0-04-encounter-queue-end-item-OPEN.md) | ENC | 1 | ~40 h | Built; open items before go-live |
 | [Triage](v0-05-triage.md) · [open items](v0-05-triage-end-item-OPEN.md) | TRI | 2 | ~10 h | Built; thresholds need the clinic's doctor |
 | [Consultation / EMR](v0-06-consultation.md) · [open items](v0-06-consultation-end-item-OPEN.md) | CON | 2 | ~45 h | Built; templates need the clinic's doctor |
 | [Prescription](v0-07-prescription.md) · [open items](v0-07-prescription-end-item-OPEN.md) | RX | 2 | ~20 h | Built; the catalogue behind it needs the clinic's doctor |
-| [Documents](v0-13-documents.md) | DOC | 2 | ~10 h | Not started |
+| [Documents](v0-13-documents.md) · [open items](v0-13-documents-end-item-OPEN.md) | DOC | 2 | ~10 h | Built; nothing has met a printer |
 | [Inventory](v0-09-inventory.md) · [open items](v0-09-inventory-end-item-OPEN.md) | INV | 3 | ~45 h | Built; the clinic still has to count its own shelves |
 | [Dispensing](v0-08-dispensing.md) · [open items](v0-08-dispensing-end-item-OPEN.md) | DSP | 3 | ~35 h | Built; needs a label printer before a counter can use it |
 | [Procedures](v0-10-procedures.md) · [open items](v0-10-procedures-end-item-OPEN.md) | PRC | 3 | ~15 h | Built; the catalogue and mappings need the clinic's nurse |
 | [Billing](v0-11-billing.md) · [open items](v0-11-billing-end-item-OPEN.md) | BIL | 4 | ~40 h | Built; the fee schedule needs the clinic's owner |
-| [Payment](v0-12-payment.md) | PAY | 4 | ~25 h | Not started |
-| [Reporting & Dashboard](v0-15-reporting-dashboard.md) | RPT | 4 | ~20 h | Not started |
+| [Payment](v0-12-payment.md) · [open items](v0-12-payment-end-item-OPEN.md) | PAY | 4 | ~25 h | Built; nothing has met a printer or a real till |
+| [Reporting & Dashboard](v0-15-reporting-dashboard.md) · [open items](v0-15-reporting-dashboard-end-item-OPEN.md) | RPT | 4 | ~20 h | Built; nobody has read it for a week yet |
 
 **Part-built by IAM** means the parts identity needed exist and are tested — for
-`TEN`, the tenant and branch tables, request scoping and branch switching; for
-`AUD`, the append-only table, the write path with redaction, and the two read
-endpoints behind the admin dashboard. Each module's own specification still
-stands; picking it up means finishing it, not starting it.
+`TEN`, the tenant and branch tables, request scoping and branch switching. Each
+module's own specification still stands; picking it up means finishing it, not
+starting it. `AUD` was part-built this way and is now finished in its own right.
 
 The database is PostgreSQL 16, as the planning documents assume. It went via
 MySQL for a day; [`../decisions/adr-0002-postgres.md`](../decisions/adr-0002-postgres.md)

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built, less the payment half. Open items in [v0-15-reporting-dashboard-end-item-OPEN.md](v0-15-reporting-dashboard-end-item-OPEN.md) |
 | **Delivery phase** | Phase 4 |
 | **Spec sections** | 32, 33 |
 | **Depends on** | Every V0 module (read-only) |
@@ -120,7 +120,7 @@ None.
 
 | Method | Path | Permission | Notes |
 |---|---|---|---|
-| GET | `/branches/:b/dashboard` | `report.operational` (financial tiles gated) | |
+| GET | `/branches/:b/dashboard` | `report.operational` | Financial tiles are **absent** without `report.financial`, not blank (§22). |
 | GET | `/branches/:b/dashboard/stream` | same | SSE coalesced |
 | GET | `/branches/:b/reports/patient-register?from&to` | `report.operational` | |
 | GET | `/branches/:b/reports/patients-summary?from&to&groupBy=hour|day|doctor` | `report.operational` | |
@@ -128,13 +128,15 @@ None.
 | GET | `/branches/:b/reports/diagnoses?from&to&top=` | `clinical.read` / ADMIN counts | |
 | GET | `/branches/:b/reports/prescribing?from&to&doctorId=` | DOCTOR own / ADMIN | |
 | GET | `/branches/:b/reports/stock/valuation` · `/alerts` · `/movements?from&to` | `stock.read` | |
+| GET | `/branches/:b/reports/attendance?from&to` | `report.operational` | No-shows and cancellations (RPT-F-07). |
+| GET | `/reports` | `report.operational` | The catalogue this caller may run, and what is not available yet and why. |
 | GET | `/branches/:b/reports/mc?from&to` | ADMIN / own | |
-| GET | `/branches/:b/reports/daily-sales?from&to&by=lineType|doctor` | `report.financial` | |
-| GET | `/branches/:b/reports/collections?from&to&by=method|cashier|session` | `report.financial` | |
+| GET | `/branches/:b/reports/daily-sales?from&to` · `/sales-breakdown?by=lineType\|doctor` | `report.financial` | The breakdown is its own path rather than a parameter, because it returns a different shape. |
+| GET | `/branches/:b/reports/collections?from&to&by=method\|cashier\|session` | `report.financial` | **Not built** — `RPT-OPEN-01`. Listed under `unavailable` by `GET /reports`. |
 | GET | `/branches/:b/reports/discounts?from&to` · `/voids?from&to` · `/outstanding` · `/reconciliation?from&to` | `report.financial` | |
-| POST | `/branches/:b/reports/eod-pack?date=` | `report.financial` | Generates PDF |
-| POST | `/reports/:key/export` | per report | CSV/PDF; audited |
-| GET | `/me/stats?from&to` | DOCTOR | Own |
+| POST | `/branches/:b/reports/eod-pack?date=` | `report.financial` | **Not built** — `RPT-OPEN-02`. |
+| POST | `/reports/:key/export` | per report | CSV only; audited with the report, the dates and whether it names patients. PDF is `RPT-OPEN-08`. |
+| GET | `/me/stats?from&to` | `clinical.write` | Own consultations, prescribing and certificates. |
 
 ## 9. Domain events
 
@@ -223,16 +225,104 @@ This module *is* the outputs. Cross-module figures come from the owning module's
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| RPT-Q-01 | What does the owner look at daily today (their current end-of-day routine)? | Pilot clinic owner |
-| RPT-Q-02 | Accountant's preferred export format / columns. | Pilot clinic owner |
-| RPT-Q-03 | Should doctors see each other's volumes? (Default: no.) | Pilot clinic owner |
+| ID | Question | Who | Answer, or what was built without one |
+|---|---|---|---|
+| RPT-Q-01 | What does the owner look at daily today (their current end-of-day routine)? | Pilot clinic owner | **Not answered.** Nine tiles were chosen from the specification, not from watching anybody. The cheapest way to find out is to show them this dashboard and see which number they look for first and cannot find. |
+| RPT-Q-02 | Accountant's preferred export format / columns. | Pilot clinic owner | **Not answered.** Every export is CSV with a BOM, every money column appears twice — as sen that sum and as ringgit that read — and no accountant has seen one. Columns are a five-minute change. |
+| RPT-Q-03 | Should doctors see each other's volumes? (Default: no.) | Pilot clinic owner | **Built to the stated default.** A doctor sees their own prescribing and their own certificates; the owner sees everybody's. `RPT-OPEN-18`. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] RPT-T-01 … T-07 green; reconciliation suite in CI
-- [ ] EOD pack reviewed by the owner
-- [ ] Dashboard p95 measured and recorded
-- [ ] Open questions answered
+- [ ] **All Must requirements implemented** — everything except the three that are sums of payments: collections (`RPT-F-13`), the end-of-day pack (`RPT-F-14`) and the full reconciliation (`RPT-F-18`). `v0-12-payment.md` is unbuilt. `RPT-F-20`'s PDF half is also missing (`RPT-OPEN-08`).
+- [ ] **RPT-T-01 … T-07 green; reconciliation suite in CI** — T-01 (in its buildable part), T-03, T-04, T-05 and T-07 are green inside 18 tests in `test/reports.e2e-spec.ts`. **T-02 cannot be written** without payments (`RPT-OPEN-04`). **T-06 has not been run** (`RPT-OPEN-05`).
+- [ ] **EOD pack reviewed by the owner** — there is no pack. `RPT-OPEN-02`.
+- [ ] **Dashboard p95 measured and recorded** — `RPT-OPEN-05`.
+- [x] **Open questions answered** — §20, three of three as "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| RPT-F-01 tiles | `DashboardService` | RPT-T-03, and the money tile equalling the hand-computed total |
+| RPT-F-02 coalesced refresh | `DashboardStreamService`, `auditTime(5s)` | Trailing edge, not leading — see §22 |
+| RPT-F-03 all-branches row | **Not built.** `RPT-OPEN-11` | — |
+| RPT-F-04 patient register | `patientRegister` | "the register lists every visit" |
+| RPT-F-05 by hour/day/doctor, new vs returning | `patientsSummary` | RPT-T-05, both directions |
+| RPT-F-06 queue performance | `queuePerformance` | RPT-T-04, from `encounter_event` |
+| RPT-F-07 no-show and cancellation | `attendance` | Its own test |
+| RPT-F-08 diagnoses | `diagnoses` | Grouped on lowercased free text (§14) |
+| RPT-F-09 prescribing | `prescribing` | Reports `unclassified` beside the rate — `RPT-OPEN-13` |
+| RPT-F-10 stock | `StockReportService` | Valuation, alerts, movements with shrinkage |
+| RPT-F-11 MCs per doctor | `medicalCertificates` | From `DOC`'s `mc_detail` |
+| RPT-F-12 daily sales | `dailySales` | RPT-T-01 |
+| RPT-F-13 collections | **Not built.** `RPT-OPEN-01` | — |
+| RPT-F-14 EOD pack | **Not built.** `RPT-OPEN-02` | — |
+| RPT-F-15 discounts | `discounts` | RPT-T-01: the stored amount, not a recomputed percentage |
+| RPT-F-16 voids | `voids` | RPT-T-01 |
+| RPT-F-17 outstanding with ageing | `outstanding` | RPT-T-01; everything is in the newest bucket because nothing pays |
+| RPT-F-18 reconciliation | `reconciliation` | Two terms of four agree exactly; the third is declared missing |
+| RPT-F-19 branch, range, timezone | `resolveRange` | 9 unit tests, including half-hour and daylight-saving zones |
+| RPT-F-20 CSV export, audited | `POST /reports/:key/export` | RPT-T-07. PDF is `RPT-OPEN-08` |
+| RPT-F-21 typed SQL, not a builder | Three service files | Every query is readable SQL with the requirement beside it |
+| RPT-F-22 saved filters | **Not built.** `RPT-OPEN-12` | — |
+| RPT-R-01 no write path | Module boundary | No `INSERT` in the module; the DB grant is `RPT-OPEN-16` |
+| RPT-R-02 sums of stored sen | Every financial query | RPT-T-01 to the sen; nothing is recomputed from a percentage |
+| RPT-R-03 sales exclude voided | `dailySales` | "voids are not sales" |
+| RPT-R-04 collections = Z-report | **Not testable yet.** `RPT-OPEN-04` | — |
+| RPT-R-05 branch-timezone buckets | `resolveRange`, `AT TIME ZONE` | "the branch day starts at 16:00 UTC the afternoon before" |
+| RPT-R-06 live for money | No materialised views at all | `RPT-OPEN-07` |
+| RPT-R-07 permission per report | `report.catalogue.ts`, `assertMayRun` | RPT-T-03, on the reports, the dashboard and the catalogue |
+
+## 22. Notes worth keeping
+
+1. **Financial tiles are absent, not hidden.** §11 says hidden rather
+   than disabled, and the only way to mean it is for the API not to
+   compute them. A number the browser was told and chose not to draw has
+   been disclosed. So `dashboard.build` takes `{ financial }` and
+   returns `money: null` — and the test asserts `null`, not zero.
+
+2. **`auditTime`, not `throttleTime`.** The dashboard stream coalesces to
+   one nudge per five seconds. A leading-edge throttle would emit on the
+   *first* event of a burst, which is the least interesting one: on a
+   busy morning it would show the state before six patients arrived and
+   then say nothing for five seconds. `auditTime` emits at the end of the
+   window, so what the browser fetches is the state after everything that
+   happened.
+
+3. **The stream carries a nudge, not the numbers.** Sending tiles would
+   mean recomputing them once per connected browser per event. Sending
+   "something changed" means each browser re-reads when it is ready, and
+   a screen nobody is looking at costs nothing.
+
+4. **`SUM(bigint)` is `numeric` in Postgres.** Every money sum is cast
+   back with `::bigint`. Without the cast the driver returns a `Decimal`,
+   which then meets a `bigint` in TypeScript and throws *Cannot mix
+   BigInt and other types* — at request time, in front of the owner,
+   rather than at compile time. Worth knowing before adding a query.
+
+5. **Money crosses the wire as a string of sen.** Not a number: 2^53 is
+   not a limit anybody wants to discover through a clinic's takings, and
+   a string cannot be accidentally added to a price. The browser formats
+   it. CSV carries both — sen that sum and ringgit that read.
+
+6. **The export is returned, not sent.** Calling `response.send()` in the
+   handler puts the file on the wire *before* the request transaction
+   commits, and the audit entry recording the export is in that
+   transaction. A caller must not be able to hold a copy of the patient
+   register that the audit trail does not know about. `@Res({ passthrough:
+   true })` and a returned string fixes the ordering; the same change was
+   made to the audit trail's own export.
+
+7. **Views were not built, and the seam is kept clean.** §5 names ten
+   views and two materialised ones. Everything here is computed live from
+   typed SQL, because `RPT-R-06` requires live figures for money anyway
+   and because a materialised view refreshed nightly reports yesterday's
+   diagnoses. At pilot volume the difference is single-digit
+   milliseconds. It will not hold at fifty clinics, and each query
+   becomes a view definition without a caller changing — `RPT-OPEN-07`.
+
+8. **Half of this module is waiting on `PAY`, and it says so out loud.**
+   `GET /reports` lists collections, the end-of-day pack and the
+   reconciliation under `unavailable`, each with the reason. The
+   alternative — three reports that quietly return zero — is how an
+   owner learns that the reporting cannot be trusted.

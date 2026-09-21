@@ -837,7 +837,7 @@ describe('BIL — billing', () => {
   });
 
   describe('Completion and boundaries', () => {
-    it('BIL-F-17: an issued bill lets the visit finish; the balance is PAY’s guard', async () => {
+    it('BIL-F-17: an issued bill is not enough — it has to be paid', async () => {
       const { encounterId } = await visit();
       const draft = await invoiceFor(encounterId);
       await request(harness.server)
@@ -852,15 +852,17 @@ describe('BIL — billing', () => {
         .send({ to: 'PAYMENT_WAITING' })
         .expect(200);
 
-      // Once issued the visit can close. The outstanding-balance half
-      // of BIL-F-17 is deliberately not registered until something can
-      // pay an invoice — otherwise no visit with a charge on it could
-      // ever be completed. See BIL-OPEN-16.
-      await request(harness.server)
+      // Billing's half of BIL-F-17 is satisfied: the bill is issued.
+      // The other half is `PAY`'s, and it is registered now — so an
+      // issued bill that nobody has paid still blocks the visit.
+      // `BIL-OPEN-16` tracked this gap until payment could close it.
+      const blocked = await request(harness.server)
         .post(`${API}/encounters/${encounterId}/transition`)
         .set('Cookie', doctor)
         .send({ to: 'COMPLETED' })
-        .expect(200);
+        .expect(422);
+      expect(JSON.stringify(blocked.body)).toContain('balance_outstanding');
+      expect(JSON.stringify(blocked.body)).not.toContain('invoice_not_issued');
     });
 
     it('blocks completion when the invoice was never issued', async () => {

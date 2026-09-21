@@ -112,13 +112,20 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async readRlsStatus(): Promise<RlsStatus> {
+    // `p` as well as `r`: `audit_log` is partitioned by month (AUD-F-14)
+    // and a partitioned parent is relkind `p`. Its own partitions are
+    // excluded — they are storage for a table that is already on this
+    // list, they each carry the same policy, and listing them would mean
+    // this check grew a new row every month forever.
     const tables = await this.client.$queryRawUnsafe<
       Array<{ relname: string; rls: boolean; forced: boolean }>
     >(
       `SELECT c.relname, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced
          FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema() AND c.relkind = 'r'`,
+        WHERE n.nspname = current_schema()
+          AND c.relkind IN ('r', 'p')
+          AND NOT c.relispartition`,
     );
     const [role] = await this.client.$queryRawUnsafe<
       Array<{ rolname: string; rolsuper: boolean; rolbypassrls: boolean }>

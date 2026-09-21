@@ -20,6 +20,9 @@ import { StockModule } from './modules/stock/stock.module.js';
 import { ProcedureModule } from './modules/procedure/procedure.module.js';
 import { DispensingModule } from './modules/dispensing/dispensing.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
+import { DocumentsModule } from './modules/documents/documents.module.js';
+import { PaymentModule } from './modules/payment/payment.module.js';
+import { ReportsModule } from './modules/reports/reports.module.js';
 
 @Module({
   imports: [
@@ -27,9 +30,14 @@ import { BillingModule } from './modules/billing/billing.module.js';
     CryptoModule,
     PrismaModule,
     EventsModule,
-    AuditModule,
     TenancyModule,
+    // IdentityModule registers the interceptor that opens the per-request
+    // transaction, and AuditModule registers one that must run *inside*
+    // it. Global interceptors fire in module-import order, outermost
+    // first, so this pair is ordered deliberately rather than
+    // alphabetically. `audit.e2e-spec.ts` fails if they are swapped.
     IdentityModule,
+    AuditModule,
     PatientModule,
     EncounterModule,
     TriageModule,
@@ -39,6 +47,9 @@ import { BillingModule } from './modules/billing/billing.module.js';
     ProcedureModule,
     DispensingModule,
     BillingModule,
+    DocumentsModule,
+    PaymentModule,
+    ReportsModule,
     ConsultationModule,
     ScheduleModule.forRoot(),
   ],

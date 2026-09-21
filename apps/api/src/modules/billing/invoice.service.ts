@@ -3,6 +3,7 @@ import {
   InvoiceKind,
   InvoiceLineType,
   InvoiceStatus,
+  PaymentStatus,
   ProductStatus,
   TaxMode,
 } from '../../generated/prisma/enums.js';
@@ -874,14 +875,25 @@ export class InvoiceService {
       throw new ConflictError('This invoice is already void.', 'already_void');
     }
 
-    // BIL-R-07. Payment does not exist yet, so this reads what has been
-    // recorded on the invoice itself; PAY will make it a real check
-    // against its own rows.
-    if (invoice.amountPaid > 0n) {
+    // BIL-R-07, against the payments themselves rather than the column
+    // that summarises them.
+    //
+    // `amount_paid` is maintained by PAY and should always agree —
+    // `PaymentReconciliationJob` checks nightly that it does. Reading
+    // the rows here anyway costs one indexed query and means that if
+    // the two ever disagree, the answer to "may this be voided" comes
+    // from the money rather than from the summary of it.
+    const posted = await tx.payment.aggregate({
+      where: { invoiceId, status: PaymentStatus.POSTED },
+      _sum: { amount: true },
+    });
+    const paid = posted._sum.amount ?? 0n;
+    if (paid !== 0n || invoice.amountPaid !== 0n) {
+      const shown = paid !== 0n ? paid : invoice.amountPaid;
       throw new ConflictError(
-        `${formatSen(invoice.amountPaid)} has been paid against this invoice. ` +
-          'Void the payment first.',
+        `${formatSen(shown)} has been paid against this invoice. Void the payment first.`,
         'payments_outstanding',
+        { paidSen: Number(paid), recordedSen: Number(invoice.amountPaid) },
       );
     }
 

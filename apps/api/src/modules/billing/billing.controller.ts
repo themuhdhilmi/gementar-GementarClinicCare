@@ -1,4 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { InvoiceStatus } from '../../generated/prisma/enums.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
@@ -43,6 +45,7 @@ export class BillingController {
 
   /** BIL-F-01: the cashier opening billing is what usually creates it. */
   @Post('encounters/:id/invoice')
+  @Audited(AuditAction.InvoiceDraftCreated)
   @RequirePermission('invoice.issue')
   ensureDraft(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.invoices.ensureDraft(ctx, id);
@@ -72,12 +75,14 @@ export class BillingController {
   // ------------------------------------------------------------ lines
 
   @Post('invoices/:id/lines')
+  @Audited(AuditAction.InvoiceLineAdded)
   @RequirePermission('invoice.issue')
   addLine(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: ManualLineDto) {
     return this.invoices.addManualLine(ctx, id, body);
   }
 
   @Patch('invoices/:id/lines/:lineId')
+  @Audited(AuditAction.InvoiceLineEdited)
   @RequirePermission('invoice.issue')
   updateLine(
     @Ctx() ctx: TenantContext,
@@ -89,6 +94,7 @@ export class BillingController {
   }
 
   @Delete('invoices/:id/lines/:lineId')
+  @Audited(AuditAction.InvoiceLineRemoved)
   @RequirePermission('invoice.issue')
   removeLine(
     @Ctx() ctx: TenantContext,
@@ -101,6 +107,7 @@ export class BillingController {
   // -------------------------------------------------------- discounts
 
   @Put('invoices/:id/lines/:lineId/discount')
+  @Audited(AuditAction.InvoiceDiscounted)
   @HttpCode(200)
   @RequirePermission('invoice.discount')
   discountLine(
@@ -119,6 +126,7 @@ export class BillingController {
   }
 
   @Put('invoices/:id/discount')
+  @Audited(AuditAction.InvoiceDiscounted)
   @HttpCode(200)
   @RequirePermission('invoice.discount')
   discountInvoice(
@@ -136,6 +144,7 @@ export class BillingController {
   }
 
   @Delete('invoices/:id/discount')
+  @Audited(AuditAction.InvoiceDiscounted)
   @RequirePermission('invoice.discount')
   clearDiscount(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.invoices.clearInvoiceDiscount(ctx, id);
@@ -144,6 +153,7 @@ export class BillingController {
   // ------------------------------------------------- issue and after
 
   @Post('invoices/:id/issue')
+  @Audited(AuditAction.InvoiceIssued)
   @HttpCode(200)
   @RequirePermission('invoice.issue')
   issue(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: IssueInvoiceDto) {
@@ -152,6 +162,7 @@ export class BillingController {
 
   /** BIL-F-15. Reverses a document somebody may already hold. */
   @Post('invoices/:id/void')
+  @Audited(AuditAction.InvoiceVoided)
   @HttpCode(200)
   @RequirePermission('invoice.void')
   voidInvoice(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: VoidInvoiceDto) {
@@ -159,12 +170,14 @@ export class BillingController {
   }
 
   @Post('invoices/:id/reissue')
+  @Audited(AuditAction.InvoiceReissued)
   @RequirePermission('invoice.issue')
   reissue(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.invoices.reissue(ctx, id);
   }
 
   @Post('branches/:branchId/invoices/standalone')
+  @Audited(AuditAction.InvoiceIssued)
   @RequirePermission('invoice.issue')
   standalone(
     @Ctx() ctx: TenantContext,
@@ -183,12 +196,14 @@ export class BillingController {
   }
 
   @Post('billable-items')
+  @Audited(AuditAction.BillableItemChanged)
   @RequirePermission('admin.settings')
   createItem(@Ctx() ctx: TenantContext, @Body() body: BillableItemDto) {
     return this.items.create(ctx, body);
   }
 
   @Patch('billable-items/:id')
+  @Audited(AuditAction.BillableItemChanged)
   @RequirePermission('admin.settings')
   updateItem(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: BillableItemDto) {
     return this.items.update(ctx, id, body);
@@ -201,12 +216,14 @@ export class BillingController {
   }
 
   @Post('fee-schedule')
+  @Audited(AuditAction.FeeScheduleChanged)
   @RequirePermission('admin.settings')
   createFee(@Ctx() ctx: TenantContext, @Body() body: FeeScheduleDto) {
     return this.fees.create(ctx, body);
   }
 
   @Delete('fee-schedule/:id')
+  @Audited(AuditAction.FeeScheduleChanged)
   @RequirePermission('admin.settings')
   removeFee(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.fees.remove(ctx, id);

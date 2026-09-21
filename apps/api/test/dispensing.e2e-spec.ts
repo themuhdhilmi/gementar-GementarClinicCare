@@ -1010,9 +1010,10 @@ describe('DSP — dispensing', () => {
         .send({})
         .expect(200);
 
-      // Dispensing put a medicine line on the bill, so the visit
-      // cannot close until the cashier has issued it — which is what
-      // happens at a counter, and is BIL's guard rather than DSP's.
+      // Dispensing put a medicine line on the bill, so the visit cannot
+      // close until the cashier has issued it *and taken the money* —
+      // which is what happens at a counter. Neither guard is DSP's: the
+      // first is BIL's, the second is PAY's.
       const bill = await request(harness.server)
         .post(`${API}/encounters/${encounterId}/invoice`)
         .set('Cookie', cashier)
@@ -1023,6 +1024,17 @@ describe('DSP — dispensing', () => {
         .set('Cookie', cashier)
         .send({})
         .expect(200);
+
+      await request(harness.server)
+        .post(`${API}/branches/${branch}/cash-sessions`)
+        .set('Cookie', cashier)
+        .send({ float: 100 })
+        .expect(201);
+      await request(harness.server)
+        .post(`${API}/invoices/${bill.body.invoice.id}/payments`)
+        .set('Cookie', cashier)
+        .send({ method: 'CASH', idempotencyKey: `dsp-${encounterId}` })
+        .expect(201);
 
       await request(harness.server)
         .post(`${API}/encounters/${encounterId}/transition`)

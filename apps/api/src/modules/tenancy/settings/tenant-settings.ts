@@ -44,6 +44,23 @@ const billing = z
         'Whether listed prices already contain tax. Most GP work is not SST-taxable, ' +
           'so this rarely matters; when it does, inclusive pricing never changes what the patient pays.',
       ),
+    allowPartialPayment: z
+      .boolean()
+      .default(true)
+      .describe(
+        'Let a patient pay part of a bill and owe the rest (PAY-F-08). ' +
+          'Turn off and every bill must be settled in full before the visit can finish.',
+      ),
+    varianceApprovalSen: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000)
+      .default(1_000)
+      .describe(
+        'How far the counted drawer may be from what was expected before an administrator ' +
+          'has to approve the close, in sen. RM 10 by default (PAY-F-03).',
+      ),
   })
   .strict();
 

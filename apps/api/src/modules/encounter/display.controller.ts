@@ -9,6 +9,7 @@ import {
   Sse,
 } from '@nestjs/common';
 import { map, type Observable } from 'rxjs';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { newId } from '../../shared/ids/uuid.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { Clock } from '../../shared/time/clock.js';
@@ -53,6 +54,7 @@ export class DisplayController {
   }
 
   @Post('branches/:branchId/display-tokens')
+  @Audited(AuditAction.DisplayTokenIssued)
   @RequirePermission('admin.settings')
   @HttpCode(201)
   async issueToken(
@@ -72,6 +74,7 @@ export class DisplayController {
   }
 
   @Delete('display-tokens/:id')
+  @Audited(AuditAction.DisplayTokenRevoked)
   @RequirePermission('admin.settings')
   async revokeToken(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.display.revoke(ctx, id);
@@ -137,6 +140,7 @@ export class DisplayController {
   }
 
   @Post('branches/:branchId/rooms')
+  @Audited(AuditAction.BranchRoomChanged)
   @RequirePermission('admin.settings')
   @HttpCode(201)
   async createRoom(
@@ -167,6 +171,7 @@ export class DisplayController {
   }
 
   @Post('rooms/:id/retire')
+  @Audited(AuditAction.BranchRoomChanged)
   @RequirePermission('admin.settings')
   @HttpCode(200)
   async retireRoom(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -185,6 +190,7 @@ export class DisplayController {
   }
 
   @Post('rooms/:id/reinstate')
+  @Audited(AuditAction.BranchRoomChanged)
   @RequirePermission('admin.settings')
   @HttpCode(200)
   async reinstateRoom(@Ctx() ctx: TenantContext, @Param('id') id: string) {

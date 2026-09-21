@@ -76,6 +76,15 @@ export const TENANT_SCOPED_MODELS = new Set([
   'InvoiceSeries',
   'BillableItem',
   'FeeSchedule',
+  'Document',
+  'DocumentSeries',
+  'McDetail',
+  'DoctorSignature',
+  'CashSession',
+  'CashSessionMovement',
+  'Payment',
+  'ReceiptSeries',
+  'PaymentMethodConfig',
 ]);
 
 /**

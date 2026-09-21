@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
-import { api, ROLE_LABEL } from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { Logo, LogoMark } from './logo';
-import { Button, Select } from './ui';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { api, ROLE_LABEL } from "@/lib/api";
+import { useSession } from "@/lib/session";
+import { Logo, LogoMark } from "./logo";
+import { Button, Select } from "./ui";
 
 /**
  * The header a clinic sees all day: who is signed in, which branch they are
@@ -21,25 +21,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!me) return null;
 
   const links = [
-    { href: '/workspace', label: 'Workspace', show: true },
-    { href: '/queue', label: 'Today', show: can('patient.read') },
-    { href: '/patients', label: 'Patients', show: can('patient.read') },
-    { href: '/pharmacy', label: 'Pharmacy', show: can('dispense.perform') },
-    { href: '/billing', label: 'Billing', show: can('invoice.read') },
-    { href: '/procedures', label: 'Procedures', show: can('procedure.perform') },
-    { href: '/stock', label: 'Stock', show: can('stock.read') },
-    { href: '/stock/counts', label: 'Counts', show: can('stock.read') },
-    { href: '/admin/users', label: 'Staff', show: can('admin.users') },
-    { href: '/admin/branches', label: 'Branches', show: can('admin.settings') },
-    { href: '/admin/clinic', label: 'Clinic', show: can('admin.settings') },
-    { href: '/admin/audit', label: 'Audit', show: can('audit.read') },
-    { href: '/account', label: 'My account', show: true },
+    { href: "/workspace", label: "Workspace", show: true },
+    { href: "/dashboard", label: "Dashboard", show: can("report.operational") },
+    { href: "/queue", label: "Today", show: can("patient.read") },
+    { href: "/patients", label: "Patients", show: can("patient.read") },
+    { href: "/pharmacy", label: "Pharmacy", show: can("dispense.perform") },
+    { href: "/billing", label: "Billing", show: can("invoice.read") },
+    {
+      href: "/procedures",
+      label: "Procedures",
+      show: can("procedure.perform"),
+    },
+    { href: "/stock", label: "Stock", show: can("stock.read") },
+    { href: "/stock/counts", label: "Counts", show: can("stock.read") },
+    { href: "/reports", label: "Reports", show: can("report.operational") },
+    { href: "/admin/users", label: "Staff", show: can("admin.users") },
+    { href: "/admin/branches", label: "Branches", show: can("admin.settings") },
+    { href: "/admin/clinic", label: "Clinic", show: can("admin.settings") },
+    { href: "/admin/audit", label: "Audit", show: can("audit.read") },
+    { href: "/account", label: "My account", show: true },
   ].filter((link) => link.show);
 
   async function switchBranch(branchId: string) {
     setSwitching(true);
     try {
-      await api('/auth/me/branch', { method: 'PUT', body: { branchId } });
+      await api("/auth/me/branch", { method: "PUT", body: { branchId } });
       await refresh();
     } finally {
       setSwitching(false);
@@ -52,7 +58,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
           {/* The breakpoint lives on the wrapper: Logo already uses display
               classes of its own to pick the light or dark artwork. */}
-          <Link href="/workspace" aria-label="ClinicCare" className="flex items-center">
+          <Link
+            href="/workspace"
+            aria-label="ClinicCare"
+            className="flex items-center"
+          >
             <span className="hidden sm:block">
               <Logo className="h-10 w-auto" priority />
             </span>
@@ -66,11 +76,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={link.href}
                 href={link.href}
-                aria-current={pathname.startsWith(link.href) ? 'page' : undefined}
+                aria-current={
+                  pathname.startsWith(link.href) ? "page" : undefined
+                }
                 className={`rounded-md px-3 py-1.5 text-sm ${
                   pathname.startsWith(link.href)
-                    ? 'bg-primary-soft font-medium text-primary-ink'
-                    : 'text-muted hover:bg-surface-muted hover:text-foreground'
+                    ? "bg-primary-soft font-medium text-primary-ink"
+                    : "text-muted hover:bg-surface-muted hover:text-foreground"
                 }`}
               >
                 {link.label}
@@ -97,14 +109,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </label>
             ) : (
               <span className="text-sm text-muted">
-                {me.branches[0]?.name ?? 'No branch'}
+                {me.branches[0]?.name ?? "No branch"}
               </span>
             )}
 
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium leading-tight">{me.user.name}</p>
+              <p className="text-sm font-medium leading-tight">
+                {me.user.name}
+              </p>
               <p className="text-xs text-muted leading-tight">
-                {me.roles.map((role) => ROLE_LABEL[role]).join(', ') || 'No role here'}
+                {me.roles.map((role) => ROLE_LABEL[role]).join(", ") ||
+                  "No role here"}
               </p>
             </div>
             <Button variant="secondary" size="sm" onClick={() => void logout()}>

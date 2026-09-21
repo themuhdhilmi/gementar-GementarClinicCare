@@ -1,4 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { AuditAction } from '../audit/audit.actions.js';
+import { Audited, NotAudited } from '../audit/audit.decorators.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { DispenseService } from './dispense.service.js';
@@ -26,6 +28,7 @@ export class DispenseController {
   }
 
   @Post('encounters/:id/dispense')
+  @Audited(AuditAction.DispenseOpened)
   @RequirePermission('dispense.perform')
   open(@Ctx() ctx: TenantContext, @Param('id') id: string) {
     return this.dispensing.open(ctx, id);
@@ -38,6 +41,7 @@ export class DispenseController {
   }
 
   @Post('dispenses/:id/items/:rxItemId/dispense')
+  @Audited(AuditAction.DispenseItemDispensed)
   @HttpCode(200)
   @RequirePermission('dispense.perform')
   dispenseItem(
@@ -56,6 +60,7 @@ export class DispenseController {
    * which is a prescribing decision.
    */
   @Post('dispenses/:id/items/:rxItemId/substitute')
+  @Audited(AuditAction.DispenseItemSubstituted)
   @HttpCode(200)
   @RequirePermission('dispense.perform')
   substitute(
@@ -68,6 +73,7 @@ export class DispenseController {
   }
 
   @Post('dispense-items/:id/undo')
+  @Audited(AuditAction.DispenseUndone)
   @HttpCode(200)
   @RequirePermission('dispense.cancel')
   undo(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: DispenseReasonDto) {
@@ -75,6 +81,7 @@ export class DispenseController {
   }
 
   @Post('dispense-items/:id/return')
+  @Audited(AuditAction.DispenseReturned)
   @HttpCode(200)
   @RequirePermission('dispense.cancel')
   recordReturn(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: ReturnDto) {
@@ -83,6 +90,7 @@ export class DispenseController {
 
   /** DSP-F-12. A reprint is counted, and audited past the first. */
   @Post('dispense-items/:id/label')
+  @Audited(AuditAction.LabelReprinted)
   @HttpCode(200)
   @RequirePermission('dispense.perform')
   label(@Ctx() ctx: TenantContext, @Param('id') id: string) {
@@ -90,6 +98,7 @@ export class DispenseController {
   }
 
   @Post('dispenses/:id/complete')
+  @Audited(AuditAction.DispenseCompleted)
   @HttpCode(200)
   @RequirePermission('dispense.perform')
   complete(
@@ -101,6 +110,7 @@ export class DispenseController {
   }
 
   @Post('dispenses/:id/cancel')
+  @Audited(AuditAction.DispenseCancelled)
   @HttpCode(200)
   @RequirePermission('dispense.perform')
   cancel(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: CancelDispenseDto) {

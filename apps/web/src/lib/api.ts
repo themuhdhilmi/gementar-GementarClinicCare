@@ -18,7 +18,7 @@ export type Problem = {
 export class ApiError extends Error {
   constructor(readonly problem: Problem) {
     super(problem.detail || problem.title);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 
   get code(): string {
@@ -31,7 +31,7 @@ export class ApiError extends Error {
 }
 
 type Options = {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   query?: Record<string, string | number | undefined>;
 };
@@ -39,13 +39,14 @@ type Options = {
 export async function api<T>(path: string, options: Options = {}): Promise<T> {
   const url = new URL(`/api/v1${path}`, window.location.origin);
   for (const [key, value] of Object.entries(options.query ?? {})) {
-    if (value !== undefined && value !== '') url.searchParams.set(key, String(value));
+    if (value !== undefined && value !== "")
+      url.searchParams.set(key, String(value));
   }
 
   const response = await fetch(url, {
-    method: options.method ?? 'GET',
-    credentials: 'same-origin',
-    headers: options.body ? { 'Content-Type': 'application/json' } : {},
+    method: options.method ?? "GET",
+    credentials: "same-origin",
+    headers: options.body ? { "Content-Type": "application/json" } : {},
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
@@ -57,12 +58,12 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   if (!response.ok) {
     throw new ApiError(
       payload ?? {
-        type: 'about:blank',
-        title: 'Request failed',
+        type: "about:blank",
+        title: "Request failed",
         status: response.status,
-        detail: 'Something went wrong.',
-        code: 'unknown',
-        traceId: '',
+        detail: "Something went wrong.",
+        code: "unknown",
+        traceId: "",
       },
     );
   }
@@ -75,12 +76,13 @@ export type Branch = {
   id: string;
   code: string;
   name: string;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: "ACTIVE" | "INACTIVE";
   roles: Role[];
 };
 
-export type Role = 'ADMIN' | 'DOCTOR' | 'NURSE' | 'RECEPTION' | 'DISPENSER' | 'CASHIER';
-export type UserStatus = 'INVITED' | 'ACTIVE' | 'DISABLED' | 'LOCKED';
+export type Role =
+  "ADMIN" | "DOCTOR" | "NURSE" | "RECEPTION" | "DISPENSER" | "CASHIER";
+export type UserStatus = "INVITED" | "ACTIVE" | "DISABLED" | "LOCKED";
 
 export type Me = {
   user: { id: string; name: string; email: string; lastLoginAt: string | null };
@@ -89,7 +91,12 @@ export type Me = {
   roles: Role[];
   permissions: string[];
   branches: Branch[];
-  mfa: { enabled: boolean; required: boolean; verified: boolean; recoveryCodesRemaining: number };
+  mfa: {
+    enabled: boolean;
+    required: boolean;
+    verified: boolean;
+    recoveryCodesRemaining: number;
+  };
   reauthValidUntil: string | null;
 };
 
@@ -136,26 +143,61 @@ export type StaffStatistics = {
   }>;
 };
 
+export type AuditDiff = Record<string, { from: unknown; to: unknown }>;
+
 export type AuditRow = {
   id: string;
   action: string;
+  actorId: string | null;
   actorName: string;
   actorRole: string | null;
   entityType: string;
   entityId: string | null;
+  subjectPatientId: string | null;
+  branchId: string | null;
   reason: string | null;
   ip: string | null;
-  after: unknown;
+  userAgent: string | null;
+  requestId: string | null;
+  /** What changed. The snapshots themselves are only on the detail. */
+  diff: AuditDiff | null;
   occurredAt: string;
 };
 
+/** AUD-F-10: one entry, with both sides. */
+export type AuditEntry = AuditRow & { before: unknown; after: unknown };
+
+export type AuditTile = { last24h: number; last7d: number };
+
+export type AuditDashboard = {
+  breakGlass: AuditTile;
+  failedLogins: AuditTile;
+  voids: AuditTile;
+  adjustments: AuditTile;
+  discounts: AuditTile;
+  unmasks: AuditTile;
+};
+
+/** AUD §10, mirrored from the API so the filter bar is not a second list. */
+export const AUDIT_GROUP_LABEL: Record<string, string> = {
+  access: "Sign-in and sessions",
+  users: "Staff accounts",
+  tenant: "Clinic and branches",
+  clinical: "Clinical records",
+  patient: "Patients",
+  stock: "Stock and catalogue",
+  money: "Money",
+  documents: "Documents",
+  meta: "The audit trail itself",
+};
+
 export const ROLE_LABEL: Record<Role, string> = {
-  ADMIN: 'Administrator',
-  DOCTOR: 'Doctor',
-  NURSE: 'Nurse',
-  RECEPTION: 'Reception',
-  DISPENSER: 'Dispenser',
-  CASHIER: 'Cashier',
+  ADMIN: "Administrator",
+  DOCTOR: "Doctor",
+  NURSE: "Nurse",
+  RECEPTION: "Reception",
+  DISPENSER: "Dispenser",
+  CASHIER: "Cashier",
 };
 
 /**
@@ -163,12 +205,13 @@ export const ROLE_LABEL: Record<Role, string> = {
  * clinic where one person does all three ticks all three.
  */
 export const ROLE_DESCRIPTION: Record<Role, string> = {
-  ADMIN: 'Manages staff and settings. Reads clinical records as break-glass, which is recorded.',
-  DOCTOR: 'Consults, prescribes, signs and amends clinical records.',
-  NURSE: 'Triage and vitals, assists with procedures, reads clinical records.',
-  RECEPTION: 'Registers patients and runs the queue.',
-  DISPENSER: 'Dispenses medicine and receives stock.',
-  CASHIER: 'Issues invoices, takes payment and closes the day.',
+  ADMIN:
+    "Manages staff and settings. Reads clinical records as break-glass, which is recorded.",
+  DOCTOR: "Consults, prescribes, signs and amends clinical records.",
+  NURSE: "Triage and vitals, assists with procedures, reads clinical records.",
+  RECEPTION: "Registers patients and runs the queue.",
+  DISPENSER: "Dispenses medicine and receives stock.",
+  CASHIER: "Issues invoices, takes payment and closes the day.",
 };
 
 // ------------------------------------------------------- tenancy (TEN, v0-02)
@@ -177,15 +220,18 @@ export type SettingValue = number | boolean | string;
 
 /** One row of the settings form, generated from the schema the API serves. */
 export type SettingField = {
-  group: 'billing' | 'queue' | 'clinical';
+  group: "billing" | "queue" | "clinical";
   key: string;
-  type: 'number' | 'boolean' | 'string';
+  type: "number" | "boolean" | "string";
   help: string;
   default: SettingValue;
 };
 
 /** `null` in a patch means "stop overriding this", never a stored value. */
-export type SettingsDocument = Record<string, Record<string, SettingValue | null>>;
+export type SettingsDocument = Record<
+  string,
+  Record<string, SettingValue | null>
+>;
 
 export type ModuleDescriptor = { key: string; label: string };
 
@@ -194,7 +240,7 @@ export type TenantOverview = {
     id: string;
     name: string;
     slug: string;
-    status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
+    status: "ACTIVE" | "SUSPENDED" | "CLOSED";
     plan: string;
     timezone: string;
     currency: string;
@@ -202,30 +248,34 @@ export type TenantOverview = {
     businessRegNo: string | null;
   };
   settings: SettingsDocument;
-  schema: { version: number; fields: SettingField[]; modules: ModuleDescriptor[] };
+  schema: {
+    version: number;
+    fields: SettingField[];
+    modules: ModuleDescriptor[];
+  };
   modules: Record<string, boolean>;
 };
 
 /** `HH:MM` pairs, per weekday. A day the clinic is shut is simply absent. */
 export type OperatingHours = Partial<Record<Weekday, Array<[string, string]>>>;
 
-export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 export const WEEKDAYS: Array<{ key: Weekday; label: string }> = [
-  { key: 'mon', label: 'Monday' },
-  { key: 'tue', label: 'Tuesday' },
-  { key: 'wed', label: 'Wednesday' },
-  { key: 'thu', label: 'Thursday' },
-  { key: 'fri', label: 'Friday' },
-  { key: 'sat', label: 'Saturday' },
-  { key: 'sun', label: 'Sunday' },
+  { key: "mon", label: "Monday" },
+  { key: "tue", label: "Tuesday" },
+  { key: "wed", label: "Wednesday" },
+  { key: "thu", label: "Thursday" },
+  { key: "fri", label: "Friday" },
+  { key: "sat", label: "Saturday" },
+  { key: "sun", label: "Sunday" },
 ];
 
 export type BranchDetail = {
   id: string;
   code: string;
   name: string;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: "ACTIVE" | "INACTIVE";
   addressLine1: string | null;
   addressLine2: string | null;
   city: string | null;
@@ -247,49 +297,56 @@ export type BranchDetail = {
  * written a label for yet.
  */
 const SETTING_LABEL: Record<string, string> = {
-  maxDiscountPctFrontdesk: 'Largest discount the front desk may give',
-  roundCashTo5Sen: 'Round cash totals to 5 sen',
-  numberPrefix: 'Queue number prefix',
-  resetDaily: 'Restart queue numbers each day',
-  requireDiagnosisToSign: 'Require a diagnosis before signing',
+  maxDiscountPctFrontdesk: "Largest discount the front desk may give",
+  roundCashTo5Sen: "Round cash totals to 5 sen",
+  numberPrefix: "Queue number prefix",
+  resetDaily: "Restart queue numbers each day",
+  requireDiagnosisToSign: "Require a diagnosis before signing",
 };
 
 export function settingLabel(key: string): string {
   const known = SETTING_LABEL[key];
   if (known) return known;
-  const spaced = key.replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  const spaced = key.replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export const SETTINGS_GROUP_LABEL: Record<string, string> = {
-  billing: 'Billing',
-  queue: 'Queue',
-  clinical: 'Clinical',
+  billing: "Billing",
+  queue: "Queue",
+  clinical: "Clinical",
 };
 
 /**
  * Uploads go as multipart, which the JSON wrapper above cannot express, so
  * this is the one other way out of the browser.
  */
-export async function upload<T>(path: string, field: string, file: File): Promise<T> {
+export async function upload<T>(
+  path: string,
+  field: string,
+  file: File,
+): Promise<T> {
   const body = new FormData();
   body.append(field, file);
-  const response = await fetch(new URL(`/api/v1${path}`, window.location.origin), {
-    method: 'PUT',
-    credentials: 'same-origin',
-    body,
-  });
+  const response = await fetch(
+    new URL(`/api/v1${path}`, window.location.origin),
+    {
+      method: "PUT",
+      credentials: "same-origin",
+      body,
+    },
+  );
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {
     throw new ApiError(
       payload ?? {
-        type: 'about:blank',
-        title: 'Upload failed',
+        type: "about:blank",
+        title: "Upload failed",
         status: response.status,
-        detail: 'The image could not be uploaded.',
-        code: 'unknown',
-        traceId: '',
+        detail: "The image could not be uploaded.",
+        code: "unknown",
+        traceId: "",
       },
     );
   }
@@ -298,18 +355,20 @@ export async function upload<T>(path: string, field: string, file: File): Promis
 
 // ------------------------------------------------ patient registry (PAT, v0-03)
 
-export type IdType = 'MYKAD' | 'MYKID' | 'PASSPORT' | 'ARMY' | 'POLICE' | 'OTHER' | 'NONE';
-export type Sex = 'MALE' | 'FEMALE' | 'OTHER' | 'UNKNOWN';
-export type PatientStatus = 'ACTIVE' | 'DECEASED' | 'MERGED' | 'DELETED';
-export type AllergyStatus = 'UNVERIFIED' | 'VERIFIED' | 'REFUTED';
-export type AllergySeverity = 'MILD' | 'MODERATE' | 'SEVERE' | 'LIFE_THREATENING';
+export type IdType =
+  "MYKAD" | "MYKID" | "PASSPORT" | "ARMY" | "POLICE" | "OTHER" | "NONE";
+export type Sex = "MALE" | "FEMALE" | "OTHER" | "UNKNOWN";
+export type PatientStatus = "ACTIVE" | "DECEASED" | "MERGED" | "DELETED";
+export type AllergyStatus = "UNVERIFIED" | "VERIFIED" | "REFUTED";
+export type AllergySeverity =
+  "MILD" | "MODERATE" | "SEVERE" | "LIFE_THREATENING";
 
 /**
  * The three states of "what do we know about this patient's allergies".
  * `NOT_RECORDED` is the one that matters: nobody has asked, which is not the
  * same as there being none, and every clinical screen shows it in amber.
  */
-export type AllergyState = 'NOT_RECORDED' | 'NKDA' | 'SOME' | 'SEVERE';
+export type AllergyState = "NOT_RECORDED" | "NKDA" | "SOME" | "SEVERE";
 
 export type SearchHit = {
   id: string;
@@ -325,7 +384,7 @@ export type SearchHit = {
   status: PatientStatus;
   allergyState: AllergyState;
   allergyCount: number;
-  matchedOn: 'mrn' | 'id' | 'phone' | 'name';
+  matchedOn: "mrn" | "id" | "phone" | "name";
 };
 
 export type PatientRecord = {
@@ -367,7 +426,7 @@ export type PatientRecord = {
 
 export type Allergy = {
   id: string;
-  type: 'DRUG' | 'FOOD' | 'ENVIRONMENT' | 'OTHER';
+  type: "DRUG" | "FOOD" | "ENVIRONMENT" | "OTHER";
   substance: string;
   reaction: string | null;
   severity: AllergySeverity | null;
@@ -384,7 +443,7 @@ export type Condition = {
   condition: string;
   icd10Code: string | null;
   onsetDate: string | null;
-  status: 'ACTIVE' | 'RESOLVED';
+  status: "ACTIVE" | "RESOLVED";
   resolvedAt: string | null;
   notes: string | null;
 };
@@ -408,15 +467,16 @@ export type PatientContact = {
 
 export type PatientConsent = {
   id: string;
-  channel: 'SMS' | 'WHATSAPP' | 'EMAIL';
-  purpose: 'REMINDERS' | 'MARKETING';
+  channel: "SMS" | "WHATSAPP" | "EMAIL";
+  purpose: "REMINDERS" | "MARKETING";
   granted: boolean;
   recordedAt: string;
 };
 
 export type PatientDocument = {
   id: string;
-  type: 'ID_COPY' | 'REFERRAL_IN' | 'LAB_RESULT' | 'CONSENT' | 'PHOTO' | 'OTHER';
+  type:
+    "ID_COPY" | "REFERRAL_IN" | "LAB_RESULT" | "CONSENT" | "PHOTO" | "OTHER";
   filename: string;
   mime: string;
   sizeBytes: number;
@@ -435,48 +495,57 @@ export type DuplicateCandidate = {
 };
 
 export const ID_TYPE_LABEL: Record<IdType, string> = {
-  MYKAD: 'MyKad',
-  MYKID: 'MyKid',
-  PASSPORT: 'Passport',
-  ARMY: 'Army',
-  POLICE: 'Police',
-  OTHER: 'Other',
-  NONE: 'No document',
+  MYKAD: "MyKad",
+  MYKID: "MyKid",
+  PASSPORT: "Passport",
+  ARMY: "Army",
+  POLICE: "Police",
+  OTHER: "Other",
+  NONE: "No document",
 };
 
 export const SEX_LABEL: Record<Sex, string> = {
-  MALE: 'M',
-  FEMALE: 'F',
-  OTHER: 'Other',
-  UNKNOWN: '?',
+  MALE: "M",
+  FEMALE: "F",
+  OTHER: "Other",
+  UNKNOWN: "?",
 };
 
 /** What the allergy badge says, and how loudly. */
-export const ALLERGY_BADGE: Record<AllergyState, { label: string; tone: string }> = {
-  SEVERE: { label: 'Severe allergy', tone: 'bg-danger-soft text-danger' },
-  SOME: { label: 'Allergies', tone: 'bg-warning-soft text-warning' },
-  NKDA: { label: 'No known allergies', tone: 'bg-success-soft text-success' },
-  NOT_RECORDED: { label: 'Allergies not recorded', tone: 'bg-warning-soft text-warning' },
+export const ALLERGY_BADGE: Record<
+  AllergyState,
+  { label: string; tone: string }
+> = {
+  SEVERE: { label: "Severe allergy", tone: "bg-danger-soft text-danger" },
+  SOME: { label: "Allergies", tone: "bg-warning-soft text-warning" },
+  NKDA: { label: "No known allergies", tone: "bg-success-soft text-success" },
+  NOT_RECORDED: {
+    label: "Allergies not recorded",
+    tone: "bg-warning-soft text-warning",
+  },
 };
 
 /** Multipart POST, for uploads that are not a whole-file replacement. */
 export async function postForm<T>(path: string, form: FormData): Promise<T> {
-  const response = await fetch(new URL(`/api/v1${path}`, window.location.origin), {
-    method: 'POST',
-    credentials: 'same-origin',
-    body: form,
-  });
+  const response = await fetch(
+    new URL(`/api/v1${path}`, window.location.origin),
+    {
+      method: "POST",
+      credentials: "same-origin",
+      body: form,
+    },
+  );
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {
     throw new ApiError(
       payload ?? {
-        type: 'about:blank',
-        title: 'Upload failed',
+        type: "about:blank",
+        title: "Upload failed",
         status: response.status,
-        detail: 'The file could not be uploaded.',
-        code: 'unknown',
-        traceId: '',
+        detail: "The file could not be uploaded.",
+        code: "unknown",
+        traceId: "",
       },
     );
   }
@@ -486,22 +555,23 @@ export async function postForm<T>(path: string, form: FormData): Promise<T> {
 // ------------------------------------------- encounters and queue (ENC, v0-04)
 
 export type EncounterStatus =
-  | 'REGISTERED'
-  | 'TRIAGE_WAITING'
-  | 'TRIAGE_IN_PROGRESS'
-  | 'DOCTOR_WAITING'
-  | 'IN_CONSULTATION'
-  | 'PROCEDURE_WAITING'
-  | 'PROCEDURE_DONE'
-  | 'PHARMACY_WAITING'
-  | 'DISPENSING'
-  | 'PAYMENT_WAITING'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'NO_SHOW';
+  | "REGISTERED"
+  | "TRIAGE_WAITING"
+  | "TRIAGE_IN_PROGRESS"
+  | "DOCTOR_WAITING"
+  | "IN_CONSULTATION"
+  | "PROCEDURE_WAITING"
+  | "PROCEDURE_DONE"
+  | "PHARMACY_WAITING"
+  | "DISPENSING"
+  | "PAYMENT_WAITING"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "NO_SHOW";
 
-export type EncounterPriority = 'NORMAL' | 'URGENT' | 'EMERGENCY';
-export type Station = 'reception' | 'triage' | 'doctor' | 'pharmacy' | 'cashier' | 'procedure';
+export type EncounterPriority = "NORMAL" | "URGENT" | "EMERGENCY";
+export type Station =
+  "reception" | "triage" | "doctor" | "pharmacy" | "cashier" | "procedure";
 
 export type QueueRow = {
   id: string;
@@ -516,7 +586,7 @@ export type QueueRow = {
   roomName: string | null;
   statusSince: string;
   waitingMinutes: number;
-  waitTone: 'normal' | 'amber' | 'red';
+  waitTone: "normal" | "amber" | "red";
   callCount: number;
   skipCount: number;
   calledAt: string | null;
@@ -541,7 +611,11 @@ export type Encounter = {
   waitingMinutes: number;
   station: Station | null;
   open: boolean;
-  allowedNext: Array<{ to: EncounterStatus; label: string; note: string | null }>;
+  allowedNext: Array<{
+    to: EncounterStatus;
+    label: string;
+    note: string | null;
+  }>;
   followUpDue: string | null;
   followUpNote: string | null;
 };
@@ -582,57 +656,62 @@ export type DisplayView = {
   branch: { name: string; code: string };
   nowServing: Array<{ queueNo: string; label: string | null; where: string }>;
   waiting: Array<{ queueNo: string; label: string | null }>;
-  recentlyCalled: Array<{ queueNo: string; label: string | null; where: string; at: string }>;
+  recentlyCalled: Array<{
+    queueNo: string;
+    label: string | null;
+    where: string;
+    at: string;
+  }>;
   waitingCount: number;
   at: string;
 };
 
 /** What each status is called on a screen a receptionist reads. */
 export const STATUS_LABEL: Record<EncounterStatus, string> = {
-  REGISTERED: 'Just arrived',
-  TRIAGE_WAITING: 'Waiting for triage',
-  TRIAGE_IN_PROGRESS: 'In triage',
-  DOCTOR_WAITING: 'Waiting for the doctor',
-  IN_CONSULTATION: 'With the doctor',
-  PROCEDURE_WAITING: 'Waiting for a procedure',
-  PROCEDURE_DONE: 'Procedure done',
-  PHARMACY_WAITING: 'Waiting for medicine',
-  DISPENSING: 'At the pharmacy',
-  PAYMENT_WAITING: 'Waiting to pay',
-  COMPLETED: 'Finished',
-  CANCELLED: 'Cancelled',
-  NO_SHOW: 'Did not answer',
+  REGISTERED: "Just arrived",
+  TRIAGE_WAITING: "Waiting for triage",
+  TRIAGE_IN_PROGRESS: "In triage",
+  DOCTOR_WAITING: "Waiting for the doctor",
+  IN_CONSULTATION: "With the doctor",
+  PROCEDURE_WAITING: "Waiting for a procedure",
+  PROCEDURE_DONE: "Procedure done",
+  PHARMACY_WAITING: "Waiting for medicine",
+  DISPENSING: "At the pharmacy",
+  PAYMENT_WAITING: "Waiting to pay",
+  COMPLETED: "Finished",
+  CANCELLED: "Cancelled",
+  NO_SHOW: "Did not answer",
 };
 
 export const STATION_LABEL: Record<Station, string> = {
-  reception: 'Reception',
-  triage: 'Triage',
-  doctor: 'Doctor',
-  procedure: 'Procedures',
-  pharmacy: 'Pharmacy',
-  cashier: 'Payment',
+  reception: "Reception",
+  triage: "Triage",
+  doctor: "Doctor",
+  procedure: "Procedures",
+  pharmacy: "Pharmacy",
+  cashier: "Payment",
 };
 
 export const PRIORITY_TONE: Record<EncounterPriority, string> = {
-  EMERGENCY: 'bg-danger-soft text-danger',
-  URGENT: 'bg-warning-soft text-warning',
-  NORMAL: 'bg-surface-muted text-muted',
+  EMERGENCY: "bg-danger-soft text-danger",
+  URGENT: "bg-warning-soft text-warning",
+  NORMAL: "bg-surface-muted text-muted",
 };
 
 /** The colour a row turns as somebody waits (ENC-F-22). */
-export const WAIT_TONE: Record<'normal' | 'amber' | 'red', string> = {
-  normal: 'text-muted',
-  amber: 'text-warning font-medium',
-  red: 'text-danger font-semibold',
+export const WAIT_TONE: Record<"normal" | "amber" | "red", string> = {
+  normal: "text-muted",
+  amber: "text-warning font-medium",
+  red: "text-danger font-semibold",
 };
 
 // ---------------------------------------------------- triage (TRI, v0-05)
 
-export type FlagLevel = 'NONE' | 'ABNORMAL' | 'CRITICAL';
+export type FlagLevel = "NONE" | "ABNORMAL" | "CRITICAL";
 
 export type VitalFlag = {
   param: string;
-  level: 'ABNORMAL' | 'CRITICAL';
+  level: "ABNORMAL" | "CRITICAL";
   value: number;
   threshold: string;
   label: string;
@@ -687,19 +766,89 @@ export type TriageForm = {
  * colour a value with the same numbers the server will use.
  */
 export const VITAL_FIELDS = [
-  { key: 'systolic', stored: 'systolic', label: 'Systolic', unit: 'mmHg', scale: 1, step: 1 },
-  { key: 'diastolic', stored: 'diastolic', label: 'Diastolic', unit: 'mmHg', scale: 1, step: 1 },
-  { key: 'heartRate', stored: 'heartRate', label: 'Pulse', unit: 'bpm', scale: 1, step: 1 },
-  { key: 'temperature', stored: 'temperatureDc', label: 'Temperature', unit: '°C', scale: 10, step: 0.1 },
-  { key: 'spo2', stored: 'spo2', label: 'Oxygen saturation', unit: '%', scale: 1, step: 1 },
-  { key: 'respRate', stored: 'respRate', label: 'Breathing rate', unit: '/min', scale: 1, step: 1 },
-  { key: 'weightKg', stored: 'weightG', label: 'Weight', unit: 'kg', scale: 1000, step: 0.1 },
-  { key: 'heightCm', stored: 'heightMm', label: 'Height', unit: 'cm', scale: 10, step: 0.1 },
-  { key: 'glucose', stored: 'glucoseX10', label: 'Blood glucose', unit: 'mmol/L', scale: 10, step: 0.1 },
-  { key: 'painScore', stored: 'painScore', label: 'Pain', unit: 'of 10', scale: 1, step: 1 },
+  {
+    key: "systolic",
+    stored: "systolic",
+    label: "Systolic",
+    unit: "mmHg",
+    scale: 1,
+    step: 1,
+  },
+  {
+    key: "diastolic",
+    stored: "diastolic",
+    label: "Diastolic",
+    unit: "mmHg",
+    scale: 1,
+    step: 1,
+  },
+  {
+    key: "heartRate",
+    stored: "heartRate",
+    label: "Pulse",
+    unit: "bpm",
+    scale: 1,
+    step: 1,
+  },
+  {
+    key: "temperature",
+    stored: "temperatureDc",
+    label: "Temperature",
+    unit: "°C",
+    scale: 10,
+    step: 0.1,
+  },
+  {
+    key: "spo2",
+    stored: "spo2",
+    label: "Oxygen saturation",
+    unit: "%",
+    scale: 1,
+    step: 1,
+  },
+  {
+    key: "respRate",
+    stored: "respRate",
+    label: "Breathing rate",
+    unit: "/min",
+    scale: 1,
+    step: 1,
+  },
+  {
+    key: "weightKg",
+    stored: "weightG",
+    label: "Weight",
+    unit: "kg",
+    scale: 1000,
+    step: 0.1,
+  },
+  {
+    key: "heightCm",
+    stored: "heightMm",
+    label: "Height",
+    unit: "cm",
+    scale: 10,
+    step: 0.1,
+  },
+  {
+    key: "glucose",
+    stored: "glucoseX10",
+    label: "Blood glucose",
+    unit: "mmol/L",
+    scale: 10,
+    step: 0.1,
+  },
+  {
+    key: "painScore",
+    stored: "painScore",
+    label: "Pain",
+    unit: "of 10",
+    scale: 1,
+    step: 1,
+  },
 ] as const;
 
-export type VitalFieldKey = (typeof VITAL_FIELDS)[number]['key'];
+export type VitalFieldKey = (typeof VITAL_FIELDS)[number]["key"];
 
 /**
  * Colours a value as it is typed, against the same bands the server holds.
@@ -711,39 +860,41 @@ export function levelFor(
   value: number | null,
   band: Band | undefined,
   scale: number,
-): 'NONE' | 'ABNORMAL' | 'CRITICAL' {
-  if (value === null || !band) return 'NONE';
+): "NONE" | "ABNORMAL" | "CRITICAL" {
+  if (value === null || !band) return "NONE";
   const stored = Math.round(value * scale);
-  if (band.criticalLow !== undefined && stored < band.criticalLow) return 'CRITICAL';
-  if (band.criticalHigh !== undefined && stored > band.criticalHigh) return 'CRITICAL';
-  if (band.low !== undefined && stored < band.low) return 'ABNORMAL';
-  if (band.high !== undefined && stored > band.high) return 'ABNORMAL';
-  return 'NONE';
+  if (band.criticalLow !== undefined && stored < band.criticalLow)
+    return "CRITICAL";
+  if (band.criticalHigh !== undefined && stored > band.criticalHigh)
+    return "CRITICAL";
+  if (band.low !== undefined && stored < band.low) return "ABNORMAL";
+  if (band.high !== undefined && stored > band.high) return "ABNORMAL";
+  return "NONE";
 }
 
-export const FLAG_TONE: Record<'NONE' | 'ABNORMAL' | 'CRITICAL', string> = {
-  NONE: '',
-  ABNORMAL: 'border-warning text-warning',
-  CRITICAL: 'border-danger text-danger',
+export const FLAG_TONE: Record<"NONE" | "ABNORMAL" | "CRITICAL", string> = {
+  NONE: "",
+  ABNORMAL: "border-warning text-warning",
+  CRITICAL: "border-danger text-danger",
 };
 
 // ---------------------------------------------- consultation (CON, v0-06)
 
-export type ConsultationStatus = 'DRAFT' | 'SIGNED' | 'CANCELLED';
-export type DiagnosisRank = 'PRIMARY' | 'SECONDARY';
-export type DiagnosisCertainty = 'PROVISIONAL' | 'CONFIRMED';
-export type AmendmentType = 'ADDENDUM' | 'CORRECTION';
+export type ConsultationStatus = "DRAFT" | "SIGNED" | "CANCELLED";
+export type DiagnosisRank = "PRIMARY" | "SECONDARY";
+export type DiagnosisCertainty = "PROVISIONAL" | "CONFIRMED";
+export type AmendmentType = "ADDENDUM" | "CORRECTION";
 
 /** The sections a doctor writes, and the only fields a correction can name. */
 export const CLINICAL_SECTIONS = [
-  { key: 'chiefComplaint', label: 'What brought them in', soap: 'S', rows: 2 },
-  { key: 'hpi', label: 'History of the present illness', soap: 'S', rows: 5 },
-  { key: 'history', label: 'Relevant history', soap: 'S', rows: 4 },
-  { key: 'examination', label: 'Examination', soap: 'O', rows: 5 },
-  { key: 'planText', label: 'Plan', soap: 'P', rows: 4 },
+  { key: "chiefComplaint", label: "What brought them in", soap: "S", rows: 2 },
+  { key: "hpi", label: "History of the present illness", soap: "S", rows: 5 },
+  { key: "history", label: "Relevant history", soap: "S", rows: 4 },
+  { key: "examination", label: "Examination", soap: "O", rows: 5 },
+  { key: "planText", label: "Plan", soap: "P", rows: 4 },
 ] as const;
 
-export type ClinicalSection = (typeof CLINICAL_SECTIONS)[number]['key'];
+export type ClinicalSection = (typeof CLINICAL_SECTIONS)[number]["key"];
 
 export type Consultation = {
   id: string;
@@ -812,7 +963,7 @@ export type ConsultationSummary = {
 
 export type ClinicalTemplate = {
   id: string;
-  scope: 'TENANT' | 'USER';
+  scope: "TENANT" | "USER";
   ownerId: string | null;
   name: string;
   keywords: string[];
@@ -846,40 +997,43 @@ export function expandPhrases(text: string, phrases: QuickPhrase[]): string {
   if (phrases.length === 0) return text;
   let out = text;
   for (const phrase of phrases) {
-    const escaped = phrase.trigger.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replaceAll(new RegExp(`${escaped}(?=\\s|$)`, 'g'), phrase.expansion);
+    const escaped = phrase.trigger.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replaceAll(
+      new RegExp(`${escaped}(?=\\s|$)`, "g"),
+      phrase.expansion,
+    );
   }
   return out;
 }
 
 // ---------------------------------------------- prescription (RX, v0-07)
 
-export type PrescriptionStatus = 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+export type PrescriptionStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "CANCELLED";
 
 export type PrescriptionItemStatus =
-  | 'DRAFT'
-  | 'ACTIVE'
-  | 'PARTIAL'
-  | 'DISPENSED'
-  | 'DECLINED'
-  | 'CANCELLED'
-  | 'SUPERSEDED';
+  | "DRAFT"
+  | "ACTIVE"
+  | "PARTIAL"
+  | "DISPENSED"
+  | "DECLINED"
+  | "CANCELLED"
+  | "SUPERSEDED";
 
-export type AllergyMatchLevel = 'EXACT' | 'CLASS' | 'UNLINKED';
+export type AllergyMatchLevel = "EXACT" | "CLASS" | "UNLINKED";
 
 export type RxWarning =
   | {
-      type: 'ALLERGY';
+      type: "ALLERGY";
       level: AllergyMatchLevel;
-      severity: 'MILD' | 'MODERATE' | 'SEVERE' | 'LIFE_THREATENING' | null;
-      status: 'UNVERIFIED' | 'VERIFIED' | 'REFUTED';
+      severity: "MILD" | "MODERATE" | "SEVERE" | "LIFE_THREATENING" | null;
+      status: "UNVERIFIED" | "VERIFIED" | "REFUTED";
       allergyId: string;
       substance: string;
       reaction: string | null;
       message: string;
     }
   | {
-      type: 'DUPLICATE';
+      type: "DUPLICATE";
       itemId: string;
       genericName: string;
       prescribedAt: string;
@@ -888,9 +1042,15 @@ export type RxWarning =
       sameVisit: boolean;
       message: string;
     }
-  | { type: 'NO_ALLERGY_RECORD'; message: string }
-  | { type: 'MAX_DOSE'; dailyDose: number; maxDailyDose: number; unit: string; message: string }
-  | { type: 'OUT_OF_STOCK'; onHand: number; message: string };
+  | { type: "NO_ALLERGY_RECORD"; message: string }
+  | {
+      type: "MAX_DOSE";
+      dailyDose: number;
+      maxDailyDose: number;
+      unit: string;
+      message: string;
+    }
+  | { type: "OUT_OF_STOCK"; onHand: number; message: string };
 
 export type PrescriptionItem = {
   id: string;
@@ -945,7 +1105,11 @@ export type PrescriptionView = {
   patient: {
     id: string;
     nkdaRecorded: boolean | null;
-    allergies: Array<{ id: string; substance: string; severity: string | null }>;
+    allergies: Array<{
+      id: string;
+      substance: string;
+      severity: string | null;
+    }>;
     allergiesUnknown: boolean;
   };
 };
@@ -969,7 +1133,12 @@ export type PrescriptionItemInput = {
 export type RxOptions = {
   doseUnits: string[];
   routes: string[];
-  frequencies: Array<{ code: string; perDay: number | null; ms: string; en: string }>;
+  frequencies: Array<{
+    code: string;
+    perDay: number | null;
+    ms: string;
+    en: string;
+  }>;
 };
 
 export type RxFavourite = {
@@ -999,35 +1168,37 @@ export type RxFavourite = {
  * else is amber, because a screen where everything is red is a screen
  * where nothing is.
  */
-export function warningTone(warning: RxWarning): 'danger' | 'warning' | 'info' {
-  if (warning.type === 'ALLERGY') {
-    if (warning.level === 'UNLINKED') return 'warning';
-    return warning.level === 'EXACT' ? 'danger' : 'warning';
+export function warningTone(warning: RxWarning): "danger" | "warning" | "info" {
+  if (warning.type === "ALLERGY") {
+    if (warning.level === "UNLINKED") return "warning";
+    return warning.level === "EXACT" ? "danger" : "warning";
   }
-  if (warning.type === 'NO_ALLERGY_RECORD') return 'warning';
+  if (warning.type === "NO_ALLERGY_RECORD") return "warning";
   // RX-F-04: the shelf is a logistics problem, not a safety one.
-  if (warning.type === 'OUT_OF_STOCK') return 'warning';
-  return 'info';
+  if (warning.type === "OUT_OF_STOCK") return "warning";
+  return "info";
 }
 
 /** RX-R-04: the one that needs a second, explicit yes at signing. */
 export function needsSignConfirmation(item: PrescriptionItem): boolean {
   return item.warnings.some(
     (w) =>
-      w.type === 'ALLERGY' &&
-      w.level === 'EXACT' &&
-      (w.severity === 'SEVERE' || w.severity === 'LIFE_THREATENING'),
+      w.type === "ALLERGY" &&
+      w.level === "EXACT" &&
+      (w.severity === "SEVERE" || w.severity === "LIFE_THREATENING"),
   );
 }
 
 /** Whether the item cannot be signed until a reason has been given. */
 export function needsOverride(item: PrescriptionItem): boolean {
-  return item.warnings.some((w) => w.type === 'ALLERGY' && w.level !== 'UNLINKED');
+  return item.warnings.some(
+    (w) => w.type === "ALLERGY" && w.level !== "UNLINKED",
+  );
 }
 
 // ------------------------------------- product catalogue (INV, v0-09 §1)
 
-export type ProductType = 'MEDICINE' | 'CONSUMABLE' | 'SUPPLY' | 'SERVICE_ITEM';
+export type ProductType = "MEDICINE" | "CONSUMABLE" | "SUPPLY" | "SERVICE_ITEM";
 
 export type Product = {
   id: string;
@@ -1051,7 +1222,7 @@ export type Product = {
   defaultRoute: string | null;
   defaultFrequency: string | null;
   sellingPrice: number;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: "ACTIVE" | "INACTIVE";
   /** Name, strength and form together — what a prescription line calls it. */
   label: string;
   /** On hand at the caller's branch. Null when stock is not known at all. */
@@ -1061,7 +1232,7 @@ export type Product = {
 
 // ------------------------------------------------ stock (INV, v0-09 §2)
 
-export type BatchStatus = 'ACTIVE' | 'DEPLETED' | 'EXPIRED' | 'BLOCKED';
+export type BatchStatus = "ACTIVE" | "DEPLETED" | "EXPIRED" | "BLOCKED";
 
 export type ProductBatch = {
   id: string;
@@ -1130,38 +1301,38 @@ export type StockOptions = {
 export function expiryTone(
   expiry: string | null,
   status?: BatchStatus,
-): 'danger' | 'warning' | null {
-  if (status === 'BLOCKED' || status === 'EXPIRED') return 'danger';
+): "danger" | "warning" | null {
+  if (status === "BLOCKED" || status === "EXPIRED") return "danger";
   if (!expiry) return null;
   const days = (new Date(expiry).getTime() - Date.now()) / 86_400_000;
-  if (days < 0) return 'danger';
-  if (days <= 90) return 'warning';
+  if (days < 0) return "danger";
+  if (days <= 90) return "warning";
   return null;
 }
 
 // ------------------------------------------- procedures (PRC, v0-10)
 
 export type ProcedureCategory =
-  | 'INJECTION'
-  | 'NEBULISER'
-  | 'DRESSING'
-  | 'MINOR_SURGERY'
-  | 'VACCINATION'
-  | 'SCREENING'
-  | 'OTHER';
+  | "INJECTION"
+  | "NEBULISER"
+  | "DRESSING"
+  | "MINOR_SURGERY"
+  | "VACCINATION"
+  | "SCREENING"
+  | "OTHER";
 
 export const PROCEDURE_CATEGORY_LABEL: Record<ProcedureCategory, string> = {
-  INJECTION: 'Injection',
-  NEBULISER: 'Nebuliser',
-  DRESSING: 'Dressing',
-  MINOR_SURGERY: 'Minor surgery',
-  VACCINATION: 'Vaccination',
-  SCREENING: 'Screening',
-  OTHER: 'Other',
+  INJECTION: "Injection",
+  NEBULISER: "Nebuliser",
+  DRESSING: "Dressing",
+  MINOR_SURGERY: "Minor surgery",
+  VACCINATION: "Vaccination",
+  SCREENING: "Screening",
+  OTHER: "Other",
 };
 
-export type ProcedureStatus = 'ORDERED' | 'PERFORMED' | 'CANCELLED' | 'VOIDED';
-export type Laterality = 'LEFT' | 'RIGHT' | 'BILATERAL' | 'NA';
+export type ProcedureStatus = "ORDERED" | "PERFORMED" | "CANCELLED" | "VOIDED";
+export type Laterality = "LEFT" | "RIGHT" | "BILATERAL" | "NA";
 
 export type ProcedureCatalogItem = {
   id: string;
@@ -1175,13 +1346,18 @@ export type ProcedureCatalogItem = {
   vaccineProductId: string | null;
   defaultDurationMin: number | null;
   protocol: string | null;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: "ACTIVE" | "INACTIVE";
   consumables: Array<{
     id: string;
     productId: string;
     quantity: number;
     optional: boolean;
-    product: { id: string; name: string; dispenseUnit: string; isBatched: boolean } | null;
+    product: {
+      id: string;
+      name: string;
+      dispenseUnit: string;
+      isBatched: boolean;
+    } | null;
   }>;
 };
 
@@ -1215,7 +1391,13 @@ export type EncounterProcedure = {
     productId: string;
     quantity: number;
     optional: boolean;
-    product: { id: string; name: string; dispenseUnit: string; isBatched: boolean; isColdChain: boolean } | null;
+    product: {
+      id: string;
+      name: string;
+      dispenseUnit: string;
+      isBatched: boolean;
+      isColdChain: boolean;
+    } | null;
     onHand: number;
   }>;
   used: Array<{
@@ -1231,7 +1413,12 @@ export type EncounterProcedure = {
 export type ProcedureQueueRow = {
   encounterId: string;
   queueNo: string | null;
-  patient: { id: string; name: string; mrn: string; dateOfBirth: string } | null;
+  patient: {
+    id: string;
+    name: string;
+    mrn: string;
+    dateOfBirth: string;
+  } | null;
   items: Array<{
     id: string;
     name: string;
@@ -1258,19 +1445,19 @@ export type VaccinationRow = {
 
 /** Which procedures have to say where on the body (PRC §12). */
 export function siteRequired(category: ProcedureCategory): boolean {
-  return category === 'INJECTION' || category === 'VACCINATION' || category === 'DRESSING';
+  return (
+    category === "INJECTION" ||
+    category === "VACCINATION" ||
+    category === "DRESSING"
+  );
 }
 
 // ---------------------------------------------- dispensing (DSP, v0-08)
 
-export type DispenseStatus = 'OPEN' | 'COMPLETED' | 'CANCELLED';
+export type DispenseStatus = "OPEN" | "COMPLETED" | "CANCELLED";
 
 export type DispenseOutcome =
-  | 'DISPENSED'
-  | 'PARTIAL'
-  | 'EXTERNAL'
-  | 'DECLINED'
-  | 'SUBSTITUTED_OUT';
+  "DISPENSED" | "PARTIAL" | "EXTERNAL" | "DECLINED" | "SUBSTITUTED_OUT";
 
 export type PharmacyQueueRow = {
   encounterId: string;
@@ -1278,7 +1465,12 @@ export type PharmacyQueueRow = {
   dispenseId: string | null;
   queueNo: string | null;
   status: string;
-  patient: { id: string; name: string; mrn: string; dateOfBirth: string } | null;
+  patient: {
+    id: string;
+    name: string;
+    mrn: string;
+    dateOfBirth: string;
+  } | null;
   items: number;
   hasControlled: boolean;
   amended: boolean;
@@ -1343,7 +1535,12 @@ export type DispenseSession = {
   completedAt: string | null;
   counselled: boolean | null;
   notes: string | null;
-  patient: { id: string; name: string; mrn: string; dateOfBirth: string } | null;
+  patient: {
+    id: string;
+    name: string;
+    mrn: string;
+    dateOfBirth: string;
+  } | null;
   allergies: Array<{
     id: string;
     substance: string;
@@ -1377,7 +1574,12 @@ export type ControlledRegisterRow = {
   id: string;
   occurredAt: string;
   entryType: string;
-  product: { id: string; name: string; strengthText: string | null; dispenseUnit: string } | null;
+  product: {
+    id: string;
+    name: string;
+    strengthText: string | null;
+    dispenseUnit: string;
+  } | null;
   patientName: string | null;
   patientIc: string | null;
   prescriberName: string | null;
@@ -1402,23 +1604,18 @@ export function idempotencyKey(): string {
 
 // ------------------------------------------------- billing (BIL, v0-11)
 
-export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIAL' | 'PAID' | 'VOID';
-export type InvoiceKind = 'ENCOUNTER' | 'STANDALONE';
+export type InvoiceStatus = "DRAFT" | "ISSUED" | "PARTIAL" | "PAID" | "VOID";
+export type InvoiceKind = "ENCOUNTER" | "STANDALONE";
 export type InvoiceLineType =
-  | 'CONSULTATION'
-  | 'MEDICINE'
-  | 'PROCEDURE'
-  | 'DOCUMENT'
-  | 'ITEM'
-  | 'MANUAL';
+  "CONSULTATION" | "MEDICINE" | "PROCEDURE" | "DOCUMENT" | "ITEM" | "MANUAL";
 
 export const LINE_TYPE_LABEL: Record<InvoiceLineType, string> = {
-  CONSULTATION: 'Consultation',
-  MEDICINE: 'Medicine',
-  PROCEDURE: 'Procedure',
-  DOCUMENT: 'Document',
-  ITEM: 'Item',
-  MANUAL: 'Added',
+  CONSULTATION: "Consultation",
+  MEDICINE: "Medicine",
+  PROCEDURE: "Procedure",
+  DOCUMENT: "Document",
+  ITEM: "Item",
+  MANUAL: "Added",
 };
 
 export type InvoiceLine = {
@@ -1455,7 +1652,7 @@ export type Invoice = {
   encounterId: string | null;
   patientId: string | null;
   walkupName: string | null;
-  taxMode: 'INCLUSIVE' | 'EXCLUSIVE';
+  taxMode: "INCLUSIVE" | "EXCLUSIVE";
   subtotal: string;
   discountTotal: string;
   taxTotal: string;
@@ -1485,7 +1682,7 @@ export type BillableItemRow = {
   defaultPrice: string;
   taxCode: string;
   category: string | null;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: "ACTIVE" | "INACTIVE";
 };
 
 export type InvoiceSummary = {
@@ -1503,49 +1700,56 @@ export type InvoiceSummary = {
 };
 
 /** What a cashier's row should look like at a glance. */
-export function invoiceTone(status: InvoiceStatus): 'success' | 'warning' | 'danger' | 'info' {
+export function invoiceTone(
+  status: InvoiceStatus,
+): "success" | "warning" | "danger" | "info" {
   switch (status) {
-    case 'PAID':
-      return 'success';
-    case 'VOID':
-      return 'danger';
-    case 'DRAFT':
-      return 'info';
+    case "PAID":
+      return "success";
+    case "VOID":
+      return "danger";
+    case "DRAFT":
+      return "info";
     default:
-      return 'warning';
+      return "warning";
   }
 }
 
 // ------------------------------ counts, alerts and reordering (INV §2)
 
-export type StockCountType = 'OPENING' | 'FULL' | 'CYCLE' | 'ADHOC';
-export type StockCountStatus = 'OPEN' | 'SUBMITTED' | 'APPROVED' | 'CANCELLED';
+export type StockCountType = "OPENING" | "FULL" | "CYCLE" | "ADHOC";
+export type StockCountStatus = "OPEN" | "SUBMITTED" | "APPROVED" | "CANCELLED";
 export type StockAlertKind =
-  | 'LOW'
-  | 'CRITICAL'
-  | 'EXPIRING_90'
-  | 'EXPIRING_60'
-  | 'EXPIRING_30'
-  | 'EXPIRED';
+  | "LOW"
+  | "CRITICAL"
+  | "EXPIRING_90"
+  | "EXPIRING_60"
+  | "EXPIRING_30"
+  | "EXPIRED";
 
 export const ALERT_LABEL: Record<StockAlertKind, string> = {
-  CRITICAL: 'Below the minimum',
-  LOW: 'Running low',
-  EXPIRED: 'Expired stock on the shelf',
-  EXPIRING_30: 'Expires within a month',
-  EXPIRING_60: 'Expires within two months',
-  EXPIRING_90: 'Expires within three months',
+  CRITICAL: "Below the minimum",
+  LOW: "Running low",
+  EXPIRED: "Expired stock on the shelf",
+  EXPIRING_30: "Expires within a month",
+  EXPIRING_60: "Expires within two months",
+  EXPIRING_90: "Expires within three months",
 };
 
 /** Red is for stock that is gone or unusable; amber for what is coming. */
-export function alertTone(kind: StockAlertKind): 'danger' | 'warning' {
-  return kind === 'EXPIRED' || kind === 'CRITICAL' ? 'danger' : 'warning';
+export function alertTone(kind: StockAlertKind): "danger" | "warning" {
+  return kind === "EXPIRED" || kind === "CRITICAL" ? "danger" : "warning";
 }
 
 export type StockAlertRow = {
   kind: StockAlertKind;
   productId: string;
-  product: { id: string; sku: string; name: string; dispenseUnit: string } | null;
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    dispenseUnit: string;
+  } | null;
   observed: number | null;
   firstSeen: string;
   lastSeen: string;
@@ -1564,8 +1768,19 @@ export type StockCountLine = {
   id: string;
   batchId: string | null;
   productId: string;
-  product: { id: string; sku: string; name: string; strengthText: string | null; dispenseUnit: string } | null;
-  batch: { id: string; batchNo: string; expiryDate: string | null; status: string } | null;
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    strengthText: string | null;
+    dispenseUnit: string;
+  } | null;
+  batch: {
+    id: string;
+    batchNo: string;
+    expiryDate: string | null;
+    status: string;
+  } | null;
   newBatchNo: string | null;
   newExpiry: string | null;
   newCost: string | null;
@@ -1621,5 +1836,241 @@ export type ReorderRow = {
 };
 
 export type QuarantineRow = ProductBatch & {
-  product: { id: string; sku: string; name: string; dispenseUnit: string } | null;
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    dispenseUnit: string;
+  } | null;
+};
+
+// ------------------------------------------------------- documents (DOC)
+
+export type DocumentType =
+  | "MC"
+  | "REFERRAL"
+  | "MEDICAL_LETTER"
+  | "LAB_REQUEST"
+  | "RX_PRINT"
+  | "INVOICE"
+  | "RECEIPT"
+  | "LABEL";
+
+export type ClinicDocument = {
+  id: string;
+  type: DocumentType;
+  status: "ISSUED" | "CANCELLED";
+  documentNo: string | null;
+  patientId: string | null;
+  encounterId: string | null;
+  sourceType: string | null;
+  sourceId: string | null;
+  target: string;
+  language: string;
+  issuedAt: string;
+  issuedByName: string | null;
+  printCount: number;
+  lastPrintedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  replacedById: string | null;
+  verificationCode: string | null;
+  contentHash: string;
+};
+
+export const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
+  MC: "Medical certificate",
+  REFERRAL: "Referral",
+  MEDICAL_LETTER: "Letter",
+  LAB_REQUEST: "Lab request",
+  RX_PRINT: "Prescription",
+  INVOICE: "Invoice",
+  RECEIPT: "Receipt",
+  LABEL: "Label",
+};
+
+/**
+ * Where the browser fetches the document itself.
+ *
+ * Not through `api()`: this is HTML the browser prints, not JSON it
+ * parses, and printing means handing the URL to a window.
+ */
+export function documentFileUrl(
+  id: string,
+  options: { copy?: boolean } = {},
+): string {
+  return `/api/v1/documents/${id}/file${options.copy === false ? "?copy=false" : ""}`;
+}
+
+// ------------------------------------------------------- reporting (RPT)
+
+/** Every money figure crosses the wire as a string of sen. */
+export type Sen = string;
+
+export type DashboardTiles = {
+  day: string;
+  timezone: string;
+  patients: {
+    registered: number;
+    completed: number;
+    inProgress: number;
+    cancelled: number;
+    noShow: number;
+  };
+  queue: Array<{ status: string; waiting: number }>;
+  waitToDoctor: { seen: number; meanSeconds: number | null };
+  unsignedDraftsOver24h: number;
+  stock: { low: number; critical: number; expiring: number; expired: number };
+  /** Null when the caller may not see money — not zero, and not hidden. */
+  money: {
+    issued: number;
+    billedSen: Sen;
+    discountedSen: Sen;
+    voided: number;
+    voidedSen: Sen;
+    openDrafts: number;
+  } | null;
+  /** Null when the caller may not see money (RPT-T-03). */
+  collections: {
+    totalSen: Sen;
+    byMethod: Record<string, Sen>;
+    payments: number;
+  } | null;
+  cashSession:
+    | { open: false }
+    | {
+        open: true;
+        sessionId: string;
+        drawerCode: string;
+        status: string;
+        openedAt: string;
+        expectedCashSen: Sen;
+      };
+};
+
+export type ReportRange = {
+  from: string;
+  until: string;
+  fromDate: string;
+  toDate: string;
+  timezone: string;
+};
+
+export type ReportResult<T = unknown> = {
+  key: string;
+  range: ReportRange;
+  data: T;
+};
+
+export type ReportCatalogue = {
+  items: Array<{ key: string; title: string; patientLevel: boolean }>;
+  unavailable: Array<{ key: string; title: string; because: string }>;
+};
+
+/** Sen as a string, to ringgit for a human. */
+export function senToRinggit(sen: Sen | null | undefined): string {
+  if (sen === null || sen === undefined || sen === "") return "—";
+  const negative = sen.startsWith("-");
+  const digits = (negative ? sen.slice(1) : sen).padStart(3, "0");
+  const ringgit = `${digits.slice(0, -2)}.${digits.slice(-2)}`;
+  const grouped = ringgit.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${negative ? "−" : ""}RM ${grouped}`;
+}
+
+export function minutes(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  return `${Math.round(seconds / 60)} min`;
+}
+
+// --------------------------------------------------------- payment (PAY)
+
+export type PaymentMethod =
+  "CASH" | "CARD" | "DUITNOW_QR" | "BANK_TRANSFER" | "EWALLET" | "CHEQUE";
+
+export const METHOD_LABEL: Record<PaymentMethod, string> = {
+  CASH: "Cash",
+  CARD: "Card",
+  DUITNOW_QR: "DuitNow QR",
+  BANK_TRANSFER: "Transfer",
+  EWALLET: "E-wallet",
+  CHEQUE: "Cheque",
+};
+
+export type CashSession = {
+  id: string;
+  branchId: string;
+  drawerCode: string;
+  status: "OPEN" | "SUSPENDED" | "CLOSED";
+  openedAt: string;
+  floatSen: Sen;
+  float: string;
+  closedAt: string | null;
+  expectedCashSen: Sen | null;
+  countedCashSen: Sen | null;
+  varianceSen: Sen | null;
+  variance: string | null;
+  varianceNote: string | null;
+  totalsByMethod: Record<string, Sen> | null;
+  approvedBy: string | null;
+  reopenedAt: string | null;
+  reopenedReason: string | null;
+};
+
+export type PaymentRow = {
+  id: string;
+  invoiceId: string;
+  receiptNo: string;
+  method: PaymentMethod;
+  amountSen: Sen;
+  amount: string;
+  tenderedSen: Sen | null;
+  changeSen: Sen | null;
+  change: string | null;
+  roundingSen: Sen;
+  rounding: string;
+  reference: string | null;
+  status: "POSTED" | "VOIDED";
+  receivedBy: string;
+  receivedAt: string;
+  voidedAt: string | null;
+  voidReason: string | null;
+  refundOfId: string | null;
+  printCount: number;
+};
+
+export type PaymentPreview = {
+  invoiceId: string;
+  outstandingSen: Sen;
+  outstanding: string;
+  method: PaymentMethod;
+  dueSen: Sen;
+  due: string;
+  roundingSen: Sen;
+  rounding: string;
+  settles: boolean;
+  balanceAfterSen: Sen;
+  tenderSuggestions: Sen[];
+};
+
+export type ClosePreview = {
+  sessionId: string;
+  status: string;
+  drawerCode: string;
+  openedAt: string;
+  floatSen: Sen;
+  expectedCashSen: Sen;
+  expectedCash: string;
+  totalsByMethod: Record<string, Sen>;
+  payments: Record<string, number>;
+  varianceApprovalSen: number;
+};
+
+export type MethodConfig = {
+  method: PaymentMethod;
+  enabled: boolean;
+  requiresReference: boolean;
+  displayName: string | null;
+  sortOrder: number;
+  qrPayload: string | null;
 };

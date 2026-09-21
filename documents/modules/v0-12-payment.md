@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-12-payment-end-item-OPEN.md](v0-12-payment-end-item-OPEN.md) |
 | **Delivery phase** | Phase 4 |
 | **Spec sections** | 13 |
 | **Depends on** | BIL, ENC, IAM, AUD |
@@ -291,20 +291,118 @@ All §9; session close with expected/counted/variance/note/approver; voids and r
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| PAY-Q-01 | Payment methods in use and rough mix; card terminal provider. | Pilot clinic |
-| PAY-Q-02 | Receipt printer model and paper width; do they want full invoice lines on the receipt? | Pilot clinic |
-| PAY-Q-03 | One drawer or several; shift changes? | Pilot clinic |
-| PAY-Q-04 | Acceptable variance before owner approval. | Pilot clinic owner |
-| PAY-Q-05 | Do they allow partial payment / credit to regular patients today? | Pilot clinic owner |
+| ID | Question | Who | Answer, or what was built without one |
+|---|---|---|---|
+| PAY-Q-01 | Payment methods in use and rough mix; card terminal provider. | Pilot clinic | **Not answered.** All six are implemented and enabled by default; a branch nobody has configured takes cash, which is what a clinic needs on its first morning. `PAY-OPEN-02`. |
+| PAY-Q-02 | Receipt printer model and paper width; do they want full invoice lines on the receipt? | Pilot clinic | **Not answered.** 80 mm, with the invoice's lines on it. Nothing has met a printer. `PAY-OPEN-01`. |
+| PAY-Q-03 | One drawer or several; shift changes? | Pilot clinic | **Not answered.** `drawer_code` supports several, defaults to one called `MAIN`, and suspend/resume covers a break. Any cashier may use any open drawer, which means a variance cannot be attributed to a person. `PAY-OPEN-18`. |
+| PAY-Q-04 | Acceptable variance before owner approval. | Pilot clinic owner | **Not answered.** RM 10, invented, as a per-branch setting. `PAY-OPEN-04`. |
+| PAY-Q-05 | Do they allow partial payment / credit to regular patients today? | Pilot clinic owner | **Not answered.** Allowed, as a setting that is on. Turn it off and a bill must be settled in full. `PAY-OPEN-05`. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] PAY-T-01 … T-11 green
-- [ ] Rounding function exhaustively tested and reviewed against real receipts from the clinic's current till
-- [ ] Receipt printed on the clinic's printer; template approved by the owner
-- [ ] Three consecutive days reconciled to the sen
-- [ ] Nightly `amount_paid` assertion running
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — every one. The Should items are done too, apart from the denomination helper's screen (`PAY-OPEN-10`) and the e-receipt's delivery, which is V1 `NTF`.
+- [x] **PAY-T-01 … T-11 green** — all eleven, inside 27 tests in `test/payment.e2e-spec.ts`, plus 30 unit tests on the rounding.
+- [ ] **Rounding function exhaustively tested and reviewed against real receipts from the clinic's current till** — exhaustively tested, yes: all ten last-digit cases at five magnitudes, both signs, and every split of a bill. **Not reviewed against their receipts**, which is the half that needs the clinic.
+- [ ] **Receipt printed on the clinic's printer; template approved by the owner** — `PAY-OPEN-01`.
+- [ ] **Three consecutive days reconciled to the sen** — `PAY-OPEN-06`, at R4.
+- [x] **Nightly `amount_paid` assertion running** — `PaymentReconciliationJob`, 04:15 daily, reporting and never repairing. Proved non-vacuous by planting a drift that the invoice's own CHECK constraint cannot catch.
+- [x] **Open questions answered** — §20, five of five as "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| PAY-F-01 cash session | `CashSessionService.open`, partial unique index | PAY-T-04, and a direct SQL insert refused |
+| PAY-F-02 several sessions, suspend/resume | `suspend`, `resume`, `drawer_code` | "one drawer is open at a time" |
+| PAY-F-03 close with variance and approval | `close` | PAY-T-08, both directions and the missing note |
+| PAY-F-04 drops and petty cash | `recordMovement` | PAY-T-07 |
+| PAY-F-05 Z-report | `zReport` | "a Z-report says what was taken, and freezes at close" |
+| PAY-F-06 six methods, per branch | `assertMethodAllowed` | An unconfigured branch still takes cash (§14) |
+| PAY-F-07 split payment | `planLeg` | PAY-T-02 |
+| PAY-F-08 partial payment | `allowPartialPayment` setting | Refused when the clinic says no |
+| PAY-F-09 5-sen rounding | `rounding.ts` | PAY-T-01, 30 unit tests |
+| PAY-F-10 tendered and change | `changeFrom` | PAY-T-01, and a short tender refused |
+| PAY-F-11 idempotency | `idempotency_key` unique, checked first | PAY-T-05 |
+| PAY-F-12 no overpayment | `take` | "refuses more than is owed" |
+| PAY-F-13 invoice updated, event emitted | `resettle` | Status walks ISSUED → PARTIAL → PAID and back on void |
+| PAY-F-14 receipt, numbered per branch | `nextReceiptNumber`, `ReceiptService` | PAY-T-06, and the receipt's own test |
+| PAY-F-15 reprint audited and marked COPY | `markPrinted`, `DOC`'s overlay | "the first print is the handover, the second is a copy" |
+| PAY-F-16 e-receipt stored | `DOC` stores every receipt | Sending it is V1 `NTF` |
+| PAY-F-17 void, same day, open session | `void` | PAY-T-09, PAY-T-10 |
+| PAY-F-18 refund as a negative payment | `refund` | PAY-T-10 |
+| PAY-R-01 `amount_paid` = Σ posted | `resettle`, recomputed | PAY-N-04's job, proved non-vacuous |
+| PAY-R-02 rounding once, ±4, on the invoice | `planLeg` + CHECK | Unit tests, and the CHECK constraint |
+| PAY-R-03 the BNM table | `roundToFiveSen` | All ten cases |
+| PAY-R-04 no payment without a session | `requireOpenForBranch` | PAY-T-04 |
+| PAY-R-05 gapless receipts | `receipt_series` under lock | PAY-T-06: thirty at once |
+| PAY-R-06 a void leaves its number | `void` | The receipt number stays, marked |
+| PAY-R-07 same day, session open | `void` | PAY-T-10 |
+| PAY-R-08 expected cash | One `SUM` over movements | PAY-T-07, the specification's own example |
+| PAY-R-09 totals frozen at close | `close` writes `totals_by_method` | The Z-report says which it is showing |
+| PAY-R-10 payments immutable | Trigger | PAY-T-11, by direct SQL |
+| PAY-N-01 ≤ 150 ms | — | **Not measured.** `PAY-OPEN-07` |
+| PAY-N-02 print failure does not roll back | The receipt is a separate request | The panel opens it without awaiting |
+| PAY-N-03 exhaustive rounding tests | `rounding.spec.ts` | 30 tests |
+| PAY-N-04 nightly assertion | `PaymentReconciliationJob` | Its own test, with a planted drift |
+| PAY-N-05 Z-report ties to RPT | Both sum `payment` | `reconciliation` asserts the two agree |
+
+## 22. Notes worth keeping
+
+1. **Rounding belongs to the payment, not the invoice.** An invoice of
+   RM 77.43 is RM 77.43; it becomes RM 77.45 only because somebody is
+   paying it in coins, and it stays RM 77.43 if they pay by card. So
+   the rounding is computed per leg, recorded on the payment, and
+   accumulated onto `invoice.rounding_adjustment`. Putting it in a line
+   would make the bill disagree with itself depending on how it was
+   settled.
+
+2. **It applies once, to the leg that settles.** On a split — card
+   RM 50, then cash — the card leg is exact and only the final cash leg
+   rounds. Rounding every leg would round twice and drift by up to four
+   sen per payment. There is a unit test that splits RM 77.43 a
+   thousand different ways and asserts the total collected is the
+   invoice rounded exactly once.
+
+3. **Expected cash is a sum, never a counter.** Every reason money
+   enters or leaves the drawer is a `cash_session_movement` with a
+   signed amount, and what should be in the drawer is `SUM(amount)`. A
+   counter maintained alongside the movements is a second source of
+   truth, and the moment the two disagree neither is any use — which is
+   precisely the situation a cash reconciliation exists to detect.
+
+4. **The variance is recorded and never corrected.** A drawer two
+   ringgit light is two ringgit light. Adjusting the expected figure to
+   match the count would make every close balance and the exercise
+   pointless; the number the owner wants is the difference, over time,
+   per cashier.
+
+5. **`amount_paid` is recomputed, not incremented.** Same reasoning as
+   billing recomputing an invoice from its lines. A running total
+   adjusted in five places will one day disagree with the rows it
+   claims to summarise, and the disagreement will be found by an
+   accountant rather than by a test. The nightly job exists because an
+   invariant nothing verifies is an invariant that has quietly stopped
+   holding.
+
+6. **A void is for a mistake made minutes ago; anything older is a
+   refund.** Same day, and the session it came out of must still be
+   open — because the cash going back has to land in a drawer somebody
+   will count. A refund is a negative payment with its own receipt
+   number, so the trail reads as two events: they paid, and then we
+   gave it back. That is what happened, and it is what an auditor will
+   ask about.
+
+7. **The receipt is a `DOC` document, and it keeps `PAY`'s number.** It
+   is rendered once, stored, hashed and reprintable like a certificate.
+   It does **not** take a number from the document series: it already
+   has `receipt_no`, allocated gaplessly inside the payment
+   transaction, and two identifiers for one piece of paper is a
+   guaranteed argument about which is real.
+
+8. **This module unregistered four other modules' excuses.** Billing's
+   outstanding-balance guard is now registered (`BIL-OPEN-16`) and its
+   void check reads the payment rows rather than a column
+   (`BIL-OPEN-11`); documents issues receipts (`DOC-OPEN-10`); and
+   reporting has collections, the end-of-day pack and a reconciliation
+   with all four terms real (`RPT-OPEN-01` … `RPT-OPEN-04`).
