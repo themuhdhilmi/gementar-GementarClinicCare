@@ -265,6 +265,8 @@ export class Harness {
       'prescription_item',
       // Append-only: the ledger refuses a delete whatever asks for one.
       'stock_movement',
+      'stock_count',
+      'stock_count_line',
       'procedure_price_history',
       'vaccination_record',
       // Append-only, and immutable once dispensed.
@@ -311,6 +313,9 @@ export class Harness {
           'procedure_consumable',
           'procedure_catalog',
           // Stock, children before their parents.
+          'stock_alert_state',
+          'stock_count_line',
+          'stock_count',
           'reconciliation_run',
           'stock_movement',
           'product_batch',

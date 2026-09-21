@@ -1515,3 +1515,111 @@ export function invoiceTone(status: InvoiceStatus): 'success' | 'warning' | 'dan
       return 'warning';
   }
 }
+
+// ------------------------------ counts, alerts and reordering (INV §2)
+
+export type StockCountType = 'OPENING' | 'FULL' | 'CYCLE' | 'ADHOC';
+export type StockCountStatus = 'OPEN' | 'SUBMITTED' | 'APPROVED' | 'CANCELLED';
+export type StockAlertKind =
+  | 'LOW'
+  | 'CRITICAL'
+  | 'EXPIRING_90'
+  | 'EXPIRING_60'
+  | 'EXPIRING_30'
+  | 'EXPIRED';
+
+export const ALERT_LABEL: Record<StockAlertKind, string> = {
+  CRITICAL: 'Below the minimum',
+  LOW: 'Running low',
+  EXPIRED: 'Expired stock on the shelf',
+  EXPIRING_30: 'Expires within a month',
+  EXPIRING_60: 'Expires within two months',
+  EXPIRING_90: 'Expires within three months',
+};
+
+/** Red is for stock that is gone or unusable; amber for what is coming. */
+export function alertTone(kind: StockAlertKind): 'danger' | 'warning' {
+  return kind === 'EXPIRED' || kind === 'CRITICAL' ? 'danger' : 'warning';
+}
+
+export type StockAlertRow = {
+  kind: StockAlertKind;
+  productId: string;
+  product: { id: string; sku: string; name: string; dispenseUnit: string } | null;
+  observed: number | null;
+  firstSeen: string;
+  lastSeen: string;
+  acknowledgedAt: string | null;
+};
+
+export type StockCountSummary = {
+  lines: number;
+  agreed: number;
+  over: number;
+  under: number;
+  netUnits: number;
+};
+
+export type StockCountLine = {
+  id: string;
+  batchId: string | null;
+  productId: string;
+  product: { id: string; sku: string; name: string; strengthText: string | null; dispenseUnit: string } | null;
+  batch: { id: string; batchNo: string; expiryDate: string | null; status: string } | null;
+  newBatchNo: string | null;
+  newExpiry: string | null;
+  newCost: string | null;
+  expected: number | null;
+  counted: number | null;
+  variance: number | null;
+  note: string | null;
+  countedAt: string | null;
+};
+
+export type StockCountView = {
+  count: {
+    id: string;
+    branchId: string;
+    type: StockCountType;
+    status: StockCountStatus;
+    blind: boolean;
+    frozenAt: string | null;
+    submittedAt: string | null;
+    approvedAt: string | null;
+    notes: string | null;
+  };
+  lines: StockCountLine[];
+  summary: StockCountSummary | null;
+};
+
+export type StockCountRow = {
+  id: string;
+  type: StockCountType;
+  status: StockCountStatus;
+  blind: boolean;
+  frozenAt: string | null;
+  approvedAt: string | null;
+  notes: string | null;
+};
+
+export type ReorderRow = {
+  product: {
+    id: string;
+    sku: string;
+    name: string;
+    strengthText: string | null;
+    dispenseUnit: string;
+  };
+  onHand: number;
+  usedInWindow: number;
+  perDay: number;
+  /** Null when nothing has moved — which is not the same as "forever". */
+  daysOfCover: number | null;
+  reorderLevel: number | null;
+  suggestedQty: number | null;
+  belowReorder: boolean;
+};
+
+export type QuarantineRow = ProductBatch & {
+  product: { id: string; sku: string; name: string; dispenseUnit: string } | null;
+};

@@ -76,6 +76,7 @@ export const DomainEvent = {
   StockExpired: 'stock.expired',
   StockReconciliationMismatch: 'stock.reconciliation_mismatch',
   BatchBlocked: 'batch.blocked',
+  StockCountApproved: 'stock.count_approved',
 
   // Procedures (PRC, v0-10).
   ProcedureOrdered: 'procedure.ordered',

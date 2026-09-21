@@ -33,7 +33,7 @@ blocker if the clinic can do that job on paper the way they do today.
 
 ## 1. Production blockers
 
-Eighteen. None of them is a feature.
+Seventeen. None of them is a feature.
 
 ### 1.1 Data you cannot get back
 
@@ -63,7 +63,7 @@ Each is an hour in a room, not a sprint.
 | `TRI-OPEN-01` | **Nobody has agreed the vitals thresholds.** | The flags that tell a doctor a patient is sick are set to numbers somebody chose. The paediatric ones are not even settings. Wrong thresholds either cry wolf until they are ignored, or miss. |
 | `BIL-OPEN-01` | **The fee schedule is one invented rule.** | A flat RM 35 consultation, seeded so there is something to bill. The clinic charges differently for a follow-up and almost certainly after hours. Every invoice until this is real is correct arithmetic on a made-up number — and unlike a wrong stock figure, a wrong price is money the clinic does not get back. The same conversation settles the discount cap. |
 | `PRC-OPEN-01` | **Procedure consumable mappings are guesses.** | Softer than the two above — it is money and stock rather than harm — but it degrades in an unpleasant way. A dressing mapped to two gauze swabs when the nurse uses six drifts the count by four *every time*, and a wrong number gets believed where a known gap gets counted. |
-| `INV-OPEN-01` | **No physical count, so no true opening stock.** | Every figure in the system was typed in. Without a count everybody signed off on, later reconciliation measures drift from a guess, and the first time the shelf disagrees nobody knows which of the two to trust. |
+| `INV-OPEN-01` | **Nobody has counted the shelves.** | The count module is built — blind entry, frozen expectations, spreadsheet import, an approval that posts through the ledger. What is missing is a closed day, a clinic walking its own shelves, and somebody signing it off. Until then every figure was typed in, later reconciliation measures drift from a guess, and the first time the shelf disagrees nobody knows which of the two to trust. |
 
 ### 1.4 The clinic cannot work without it
 

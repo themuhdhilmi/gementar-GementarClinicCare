@@ -216,7 +216,21 @@ const vitals = z
   })
   .strict();
 
-const GROUPS = { billing, queue, clinical, patient, vitals } as const;
+const inventory = z
+  .object({
+    adjustReauthThresholdSen: z
+      .number()
+      .int()
+      .min(0)
+      .default(50_000)
+      .describe(
+        'A stock write-off worth this much at cost asks for the password again (INV-R-08). ' +
+          'Default RM 500.',
+      ),
+  })
+  .strict();
+
+const GROUPS = { billing, queue, clinical, patient, vitals, inventory } as const;
 
 /**
  * Settings that must not differ between branches.
@@ -258,6 +272,7 @@ export function patchGroup<T extends z.ZodObject<z.ZodRawShape>>(
 export const settingsPatchSchema = z
   .object({
     billing: patchGroup(billing).optional(),
+    inventory: patchGroup(inventory).optional(),
     queue: patchGroup(queue).optional(),
     clinical: patchGroup(clinical).optional(),
     patient: patchGroup(patient).optional(),
@@ -273,6 +288,7 @@ export type SettingsPatch = {
 
 export const DEFAULT_SETTINGS: TenantSettings = {
   billing: billing.parse({}),
+  inventory: inventory.parse({}),
   queue: queue.parse({}),
   clinical: clinical.parse({}),
   patient: patient.parse({}),

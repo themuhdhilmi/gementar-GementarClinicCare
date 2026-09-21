@@ -2338,3 +2338,135 @@ model FeeSchedule {
   @@index([tenantId, branchId, encounterType], map: "fee_schedule_match_idx")
   @@map("fee_schedule")
 }
+
+// ---------------------------------------------------------------------------
+// Stock counts and alerts (INV, the rest of v0-09-inventory.md)
+//
+// A count is how the system finds out it was wrong. Everything else in
+// inventory assumes the ledger is right; this is the one place where a
+// human walks the shelves and the system has to accept being corrected.
+//
+// So a count freezes what it expected *before* anybody starts counting,
+// keeps both numbers, and posts the difference as an ordinary movement
+// with the session as its reference. Nothing is silently overwritten,
+// and the variance is readable a year later.
+// ---------------------------------------------------------------------------
+
+enum StockCountType {
+  /// The first count, when the system has no opinion yet.
+  OPENING
+  FULL
+  CYCLE
+  ADHOC
+}
+
+enum StockCountStatus {
+  OPEN
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+enum StockAlertKind {
+  LOW
+  CRITICAL
+  EXPIRING_90
+  EXPIRING_60
+  EXPIRING_30
+  EXPIRED
+}
+
+model StockCount {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+
+  type   StockCountType
+  status StockCountStatus @default(OPEN)
+
+  /// What the count covers: category ids, product ids, or nothing for
+  /// the whole branch. Kept as written so the sheet can be reprinted.
+  scope Json? @db.JsonB
+
+  /// INV-F-16: the counter does not see what the system expects. A
+  /// number on the sheet is a number people count towards.
+  blind Boolean @default(false)
+
+  /// When expected quantities were frozen. Everything after this is
+  /// variance rather than counting error.
+  frozenAt DateTime? @map("frozen_at") @db.Timestamptz(3)
+
+  createdBy   String    @map("created_by") @db.Uuid
+  submittedBy String?   @map("submitted_by") @db.Uuid
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(3)
+  approvedBy  String?   @map("approved_by") @db.Uuid
+  approvedAt  DateTime? @map("approved_at") @db.Timestamptz(3)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(3)
+
+  notes String? @db.VarChar(1000)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lines StockCountLine[]
+
+  @@unique([id, tenantId], map: "stock_count_id_tenant_key")
+  @@index([tenantId, branchId, status], map: "stock_count_branch_idx")
+  @@map("stock_count")
+}
+
+model StockCountLine {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  countId  String @map("count_id") @db.Uuid
+
+  /// Null for a batch found on the shelf that the system did not know
+  /// about — which is the discovery a count exists to make.
+  batchId   String? @map("batch_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+
+  newBatchNo String?   @map("new_batch_no") @db.VarChar(60)
+  newExpiry  DateTime? @map("new_expiry") @db.Date
+  newCost    BigInt?   @map("new_cost")
+
+  /// Frozen when the session was opened. Null for a discovered batch.
+  expected Decimal? @db.Decimal(12, 3)
+  counted  Decimal? @db.Decimal(12, 3)
+  /// counted − expected, stored rather than derived so the approved
+  /// figure cannot drift if the definition ever changes.
+  variance Decimal? @db.Decimal(12, 3)
+
+  countedBy String?   @map("counted_by") @db.Uuid
+  countedAt DateTime? @map("counted_at") @db.Timestamptz(3)
+  note      String?   @db.VarChar(500)
+
+  count StockCount @relation(fields: [countId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([countId, batchId], map: "stock_count_line_batch_key")
+  @@unique([id, tenantId], map: "stock_count_line_id_tenant_key")
+  @@index([tenantId, countId], map: "stock_count_line_count_idx")
+  @@map("stock_count_line")
+}
+
+/// INV-F-19, F-20, INV-T-11: an alert fires once and stays until it is
+/// acknowledged or the reason for it goes away. A dashboard that
+/// recomputes is fine; an event on every movement is noise.
+model StockAlertState {
+  tenantId  String         @map("tenant_id") @db.Uuid
+  branchId  String         @map("branch_id") @db.Uuid
+  productId String         @map("product_id") @db.Uuid
+  kind      StockAlertKind
+
+  firstSeen DateTime  @default(now()) @map("first_seen") @db.Timestamptz(3)
+  lastSeen  DateTime  @default(now()) @map("last_seen") @db.Timestamptz(3)
+  /// What the number was when it last fired, so the list is readable
+  /// without a second query.
+  observed  Decimal?  @db.Decimal(12, 3)
+
+  acknowledgedBy String?   @map("acknowledged_by") @db.Uuid
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(3)
+
+  @@id([branchId, productId, kind], map: "stock_alert_state_pkey")
+  @@index([tenantId, branchId, kind], map: "stock_alert_state_branch_idx")
+  @@map("stock_alert_state")
+}

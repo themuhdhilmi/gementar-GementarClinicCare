@@ -14,6 +14,7 @@ import { EventBus } from '../events/event-bus.service.js';
 import { DomainEvent } from '../events/domain-events.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { DIRECTION, NEEDS_REASON, type ReasonCode } from './movement-kinds.js';
+import { StockAlertService } from './alert.service.js';
 
 /** INV-F-09: what a product with no lot number gets, once per branch. */
 export const NON_BATCHED = 'NB';
@@ -65,6 +66,7 @@ export class LedgerService {
   constructor(
     private readonly clock: Clock,
     private readonly events: EventBus,
+    private readonly alerts: StockAlertService,
   ) {}
 
   /**
@@ -142,6 +144,11 @@ export class LedgerService {
       where: { id: batch.id },
       data: { quantityOnHand: after },
     });
+
+    // INV-F-19, F-20: re-evaluated here, in the same transaction, because
+    // an alert that arrives a minute later is an alert that arrives
+    // after the last box has gone.
+    await this.alerts.evaluate(tx, ctx, batch.branchId, batch.productId);
 
     this.events.publish({
       name: DomainEvent.StockMoved,

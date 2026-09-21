@@ -28,6 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/billing', label: 'Billing', show: can('invoice.read') },
     { href: '/procedures', label: 'Procedures', show: can('procedure.perform') },
     { href: '/stock', label: 'Stock', show: can('stock.read') },
+    { href: '/stock/counts', label: 'Counts', show: can('stock.read') },
     { href: '/admin/users', label: 'Staff', show: can('admin.users') },
     { href: '/admin/branches', label: 'Branches', show: can('admin.settings') },
     { href: '/admin/clinic', label: 'Clinic', show: can('admin.settings') },

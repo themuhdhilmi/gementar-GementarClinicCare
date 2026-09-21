@@ -114,6 +114,12 @@ export const AuditAction = {
   StockAdjusted: 'stock.adjusted',
   StockExpiryWrittenOff: 'stock.expiry_written_off',
   BatchBlocked: 'batch.blocked',
+  StockCountOpened: 'stock.count_opened',
+  StockCountSubmitted: 'stock.count_submitted',
+  StockCountApproved: 'stock.count_approved',
+  StockCountCancelled: 'stock.count_cancelled',
+  StockQuarantineReleased: 'stock.quarantine_released',
+  StockAlertAcknowledged: 'stock.alert_acknowledged',
 
   // Procedures (PRC, v0-10).
   ProcedureCreated: 'procedure.catalogue_created',

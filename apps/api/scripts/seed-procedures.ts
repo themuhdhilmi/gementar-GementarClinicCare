@@ -36,18 +36,21 @@ type Consumable = {
   generic?: string;
   cost: number;
   opening: number;
+  /** So the alert and reorder screens have something real in them. */
+  min?: number;
+  reorder?: number;
 };
 
 const CONSUMABLES: Consumable[] = [
-  { sku: 'CON-0001', name: 'Nebuliser mask, adult', dispenseUnit: 'pcs', batched: false, cost: 3.5, opening: 60 },
+  { sku: 'CON-0001', name: 'Nebuliser mask, adult', dispenseUnit: 'pcs', batched: false, cost: 3.5, opening: 60, min: 10, reorder: 25 },
   { sku: 'CON-0002', name: 'Nebuliser mask, paediatric', dispenseUnit: 'pcs', batched: false, cost: 3.5, opening: 40 },
   { sku: 'CON-0003', name: 'Syringe 3 ml with needle', dispenseUnit: 'pcs', batched: false, cost: 0.4, opening: 300 },
   { sku: 'CON-0004', name: 'Alcohol swab', dispenseUnit: 'pcs', batched: false, cost: 0.05, opening: 1000 },
-  { sku: 'CON-0005', name: 'Gauze swab 5 x 5 cm', dispenseUnit: 'pcs', batched: false, cost: 0.2, opening: 500 },
+  { sku: 'CON-0005', name: 'Gauze swab 5 x 5 cm', dispenseUnit: 'pcs', batched: false, cost: 0.2, opening: 500, min: 100, reorder: 200 },
   { sku: 'CON-0006', name: 'Adhesive dressing', dispenseUnit: 'pcs', batched: false, cost: 0.6, opening: 300 },
   { sku: 'CON-0007', name: 'Crepe bandage 7.5 cm', dispenseUnit: 'pcs', batched: false, cost: 3.2, opening: 60 },
   { sku: 'CON-0008', name: 'Sterile gloves, pair', dispenseUnit: 'pcs', batched: false, cost: 1.1, opening: 200 },
-  { sku: 'CON-0009', name: 'Suture 3/0 nylon', dispenseUnit: 'pcs', batched: true, cost: 6.5, opening: 40 },
+  { sku: 'CON-0009', name: 'Suture 3/0 nylon', dispenseUnit: 'pcs', batched: true, cost: 6.5, opening: 40, min: 10, reorder: 20 },
   { sku: 'CON-0010', name: 'Povidone-iodine 60 ml', dispenseUnit: 'bottle', batched: true, cost: 7.0, opening: 15 },
 ];
 
@@ -55,11 +58,11 @@ const CONSUMABLES: Consumable[] = [
 const GIVEN: Consumable[] = [
   {
     sku: 'MED-0100', name: 'Salbutamol respule 2.5 mg', generic: 'Salbutamol',
-    dispenseUnit: 'pcs', batched: true, cost: 1.8, opening: 80,
+    dispenseUnit: 'pcs', batched: true, cost: 1.8, opening: 80, min: 20, reorder: 40,
   },
   {
     sku: 'MED-0101', name: 'Influenza vaccine', generic: 'Influenza vaccine',
-    dispenseUnit: 'vial', batched: true, coldChain: true, cost: 38, opening: 25,
+    dispenseUnit: 'vial', batched: true, coldChain: true, cost: 38, opening: 25, min: 5, reorder: 10,
   },
   {
     sku: 'MED-0102', name: 'Tetanus toxoid', generic: 'Tetanus toxoid',
@@ -321,6 +324,34 @@ async function main(): Promise<void> {
       }
     }
     logger.log(`${posted} opening movements across ${branches.length} branches`);
+
+    // Reorder levels, so the alert and reorder screens have something
+    // real to say rather than being empty by default.
+    let levels = 0;
+    for (const branch of branches) {
+      for (const item of [...CONSUMABLES, ...GIVEN]) {
+        if (item.min === undefined && item.reorder === undefined) continue;
+        const productId = productBySku.get(item.sku)!;
+        const data = {
+          minStock: item.min ?? null,
+          reorderLevel: item.reorder ?? null,
+          reorderQty: item.opening,
+        };
+        await tx.productBranchSetting.upsert({
+          where: {
+            tenantId_productId_branchId: {
+              tenantId: tenant.id,
+              productId,
+              branchId: branch.id,
+            },
+          },
+          update: data,
+          create: { tenantId: tenant.id, branchId: branch.id, productId, ...data },
+        });
+        levels += 1;
+      }
+    }
+    logger.log(`${levels} reorder levels set`);
 
     // ---- the procedures themselves
     let created = 0;

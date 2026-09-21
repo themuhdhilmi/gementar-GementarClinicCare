@@ -475,6 +475,55 @@ with `v0-12-payment.md` (`BIL-OPEN-16`).
 Nothing prints — no invoice, no receipt (`BIL-OPEN-09`, waiting on
 documents).
 
+## Counting the shelves
+
+**Counts** in the sidebar. Three things live there: what needs attention,
+what is worth ordering, and the counts themselves.
+
+- **Start a cycle count.** Leave "blind" ticked — the counter does not see
+  what the system expects, because a number on the sheet is a number people
+  count towards. Type what is on the shelf; the difference appears only
+  after you press *Done counting*.
+- **Approve it** as an administrator. One adjustment per line that
+  disagrees, each pointing back at the count. Look at **Stock → History**:
+  the movement says `Corrected by a stock count` with the balance it left.
+- **A line that agrees posts nothing.** A movement of nothing is not a
+  movement.
+- **Try to submit with a box left blank.** Refused — a blank is not a zero,
+  and "we did not get to that shelf" and "there are none" produce very
+  different adjustments.
+- **Start a second count** while one is open. Refused: two people counting
+  the same shelves against two frozen snapshots produce two different
+  truths, and approving both applies the difference twice.
+- **Open a count, then dispense something.** The expected figure does not
+  move — it was frozen when the count started, so the dispense is not
+  mistaken for a discrepancy.
+
+**Opening stock from a spreadsheet.** Start an *Opening* count and attach a
+CSV with `sku, batch_no, expiry, quantity, cost`. It tells you everything
+wrong with the file before writing anything, and refuses the whole file
+rather than importing half — a partly imported opening balance cannot be
+told from a complete one afterwards.
+
+**Alerts** appear once, when a condition starts being true. Set a reorder
+level on a product (Stock → the product → its branch settings), then
+dispense past it: one alert. Dispense again: still one, with the number
+updated. Restock above the level and it disappears, so a later recurrence
+is news again. *Seen* hides it without pretending the shelf is full.
+
+**Worth ordering** counts days of cover from what actually left the shelf
+in the last ninety days. A product nothing has moved says "not used"
+rather than a number, because "it will last forever" is a lie.
+
+**Quarantine** is what came back from a patient — off the saleable shelf,
+still on the premises. It leaves in one of three directions with a reason:
+back to the shelf, destroyed, or returned to the supplier. An expired batch
+cannot go back.
+
+**Try writing off more than RM 500 of stock at cost.** It asks for your
+password again, before anything moves. Smaller ones do not, because most
+adjustments are a box of gauze.
+
 ## The waiting-room screen
 
 ```bash

@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BatchStatus, StockMovementType } from '../../generated/prisma/enums.js';
 import {
   BadRequestError,
   ConflictError,
   NotFoundError,
+  ReauthRequiredError,
 } from '../../shared/errors/domain-errors.js';
 import { newId } from '../../shared/ids/uuid.js';
 import { Clock } from '../../shared/time/clock.js';
@@ -14,6 +15,8 @@ import { AuditAction } from '../audit/audit.actions.js';
 import { EventBus } from '../events/event-bus.service.js';
 import { DomainEvent } from '../events/domain-events.js';
 import { toSen, fromSen } from '../catalogue/money.js';
+import { APP_CONFIG, type AppConfig } from '../../config/app-config.js';
+import { SettingsService } from '../tenancy/settings/settings.service.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { LedgerService, NON_BATCHED, round3 } from './ledger.service.js';
 import { MOVEMENT_LABEL, REASON_CODES, type ReasonCode } from './movement-kinds.js';
@@ -65,7 +68,22 @@ export class StockService {
     private readonly audit: AuditService,
     private readonly events: EventBus,
     private readonly ledger: LedgerService,
+    private readonly settings: SettingsService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /**
+   * INV-R-08: has this person typed their password recently?
+   *
+   * The same window the reauth guard uses. Checked here rather than by
+   * the decorator because the requirement is conditional — most
+   * adjustments are a box of gauze and should not ask.
+   */
+  private recentlyReauthenticated(ctx: TenantContext): boolean {
+    if (!ctx.reauthAt) return false;
+    const validUntil = ctx.reauthAt.getTime() + this.config.session.reauthMinutes * 60_000;
+    return validUntil > this.clock.now().getTime();
+  }
 
   // -------------------------------------------------------------------
   // Getting stock in (INV-F-12)
@@ -256,6 +274,17 @@ export class StockService {
     const batch = await tx.productBatch.findFirst({ where: { id: input.batchId, branchId } });
     if (!batch) throw new NotFoundError('Batch');
 
+    // INV-R-08: writing off real money needs a fresh password, not just
+    // a live session. Checked before anything moves.
+    const valueAtCost = Math.round(input.quantity * Number(batch.costPrice));
+    const settings = await this.settings.at(branchId);
+    const threshold = Number(settings.inventory?.adjustReauthThresholdSen ?? 50_000);
+    if (valueAtCost >= threshold && !this.recentlyReauthenticated(ctx)) {
+      throw new ReauthRequiredError(
+        `This writes off ${fromSen(BigInt(valueAtCost))} at cost, which needs your password again.`,
+      );
+    }
+
     const result = await this.ledger.move(tx, ctx, {
       batchId: batch.id,
       type: input.type,
@@ -266,9 +295,6 @@ export class StockService {
       reasonText: input.reasonText ?? null,
     });
 
-    // INV-R-08 asks for reauth above a value threshold. The threshold is
-    // a tenant setting that does not exist yet, so the audit entry
-    // carries the value and `INV-OPEN-05` tracks the gate.
     const valueSen = Math.round(Math.abs(Number(result.movement.quantity)) * Number(batch.costPrice));
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
@@ -369,6 +395,180 @@ export class StockService {
     });
 
     return this.presentBatch(await tx.productBatch.findFirstOrThrow({ where: { id: batchId } }));
+  }
+
+  /**
+   * INV-F-15: what happens to stock that is set aside.
+   *
+   * Quarantine holds things that are off the saleable shelf but still
+   * on the premises: a patient's return, a suspected-damaged delivery.
+   * It leaves in one of three directions and never by being forgotten.
+   */
+  async releaseQuarantine(
+    ctx: TenantContext,
+    branchId: string,
+    batchId: string,
+    input: { quantity: number; to: 'STOCK' | 'DAMAGE' | 'SUPPLIER'; reason: string },
+  ) {
+    if ((input.reason ?? '').trim().length < 3) {
+      throw new BadRequestError('Say what is happening to it.', 'reason_required');
+    }
+
+    const tx = this.db.tx();
+    await this.assertBranch(tx, ctx, branchId);
+
+    const batch = await tx.productBatch.findFirst({ where: { id: batchId, branchId } });
+    if (!batch) throw new NotFoundError('Batch');
+
+    const held = Number(batch.quantityQuarantined);
+    if (!(input.quantity > 0) || input.quantity > held) {
+      throw new BadRequestError(
+        `There ${held === 1 ? 'is' : 'are'} ${held} of batch ${batch.batchNo} in quarantine.`,
+        'invalid_quantity',
+      );
+    }
+
+    // Back to the shelf is the only direction that adds to on-hand, so
+    // it is the only one that touches the ledger. The other two are
+    // already off it — they leave quarantine and the building.
+    if (input.to === 'STOCK') {
+      if (batch.expiryDate && batch.expiryDate < this.today()) {
+        throw new ConflictError(
+          `Batch ${batch.batchNo} expired on ${batch.expiryDate.toISOString().slice(0, 10)} ` +
+            'and cannot go back on the shelf.',
+          'batch_expired',
+        );
+      }
+      await this.ledger.move(tx, ctx, {
+        batchId,
+        type: StockMovementType.QUARANTINE_OUT,
+        quantity: input.quantity,
+        referenceType: 'quarantine_release',
+        referenceId: batchId,
+        reasonCode: 'found',
+        reasonText: input.reason.trim(),
+      });
+    }
+
+    await tx.productBatch.update({
+      where: { id: batchId },
+      data: { quantityQuarantined: round3(held - input.quantity) },
+    });
+
+    await this.audit.record(tx, this.audit.actorFromContext(ctx), {
+      action: AuditAction.StockQuarantineReleased,
+      entityType: 'product_batch',
+      entityId: batchId,
+      reason: input.reason.trim(),
+      before: { quarantined: held },
+      after: { quarantined: round3(held - input.quantity), to: input.to },
+    });
+
+    return this.presentBatch(await tx.productBatch.findFirstOrThrow({ where: { id: batchId } }));
+  }
+
+  /** What is being held, and why somebody needs to decide about it. */
+  async quarantine(ctx: TenantContext, branchId: string) {
+    const tx = this.db.tx();
+    await this.assertBranch(tx, ctx, branchId);
+
+    const batches = await tx.productBatch.findMany({
+      where: { branchId, quantityQuarantined: { gt: 0 } },
+    });
+    if (batches.length === 0) return { items: [] };
+
+    const products = await tx.product.findMany({
+      where: { id: { in: [...new Set(batches.map((b) => b.productId))] } },
+      select: { id: true, sku: true, name: true, dispenseUnit: true },
+    });
+    const byId = new Map(products.map((p) => [p.id, p]));
+
+    return {
+      items: batches.map((batch) => ({
+        ...this.presentBatch(batch),
+        product: byId.get(batch.productId) ?? null,
+      })),
+    };
+  }
+
+  /**
+   * INV-F-22: what to order, and how long what is here will last.
+   *
+   * Days of cover is the honest number to plan on — "forty left" means
+   * nothing without knowing whether that is a week or a year. It is
+   * computed from what actually left the shelf over ninety days rather
+   * than from a forecast, because a small clinic's usage is its own
+   * best predictor and nothing else is available.
+   */
+  async reorderSuggestions(ctx: TenantContext, branchId: string, days = 90) {
+    const tx = this.db.tx();
+    await this.assertBranch(tx, ctx, branchId);
+
+    const since = new Date(this.clock.now().getTime() - days * 86_400_000);
+
+    // One query: usage per product over the window, counting only the
+    // movements that represent something being used up.
+    const usage = await tx.$queryRaw<Array<{ product_id: string; used: string }>>`
+      SELECT product_id, SUM(-quantity) AS used
+        FROM stock_movement
+       WHERE branch_id = ${branchId}::uuid
+         AND occurred_at >= ${since}
+         AND type IN ('DISPENSE', 'CONSUME')
+       GROUP BY product_id
+    `;
+    const usedById = new Map(usage.map((row) => [row.product_id, Number(row.used)]));
+
+    const [batches, settings] = await Promise.all([
+      tx.productBatch.findMany({ where: { branchId, status: BatchStatus.ACTIVE } }),
+      tx.productBranchSetting.findMany({ where: { branchId } }),
+    ]);
+
+    const onHandById = new Map<string, number>();
+    for (const batch of batches) {
+      onHandById.set(
+        batch.productId,
+        round3((onHandById.get(batch.productId) ?? 0) + Number(batch.quantityOnHand)),
+      );
+    }
+
+    const ids = [...new Set([...onHandById.keys(), ...usedById.keys()])];
+    if (ids.length === 0) return { items: [], windowDays: days };
+
+    const products = await tx.product.findMany({ where: { id: { in: ids } } });
+    const settingBy = new Map(settings.map((s) => [s.productId, s]));
+
+    const items = products
+      .map((product) => {
+        const onHand = onHandById.get(product.id) ?? 0;
+        const used = usedById.get(product.id) ?? 0;
+        const perDay = used / days;
+        const setting = settingBy.get(product.id);
+        const reorderLevel = setting?.reorderLevel == null ? null : Number(setting.reorderLevel);
+        const reorderQty = setting?.reorderQty == null ? null : Number(setting.reorderQty);
+
+        return {
+          product: {
+            id: product.id,
+            sku: product.sku,
+            name: product.name,
+            strengthText: product.strengthText,
+            dispenseUnit: product.dispenseUnit,
+          },
+          onHand,
+          usedInWindow: round3(used),
+          perDay: Math.round(perDay * 1000) / 1000,
+          // Null rather than Infinity: "nothing has moved" is not "it
+          // will last forever", and a screen should say so.
+          daysOfCover: perDay > 0 ? Math.floor(onHand / perDay) : null,
+          reorderLevel,
+          suggestedQty: reorderQty,
+          belowReorder: reorderLevel !== null && onHand <= reorderLevel,
+        };
+      })
+      .filter((row) => row.belowReorder || (row.daysOfCover !== null && row.daysOfCover <= 30))
+      .sort((a, b) => (a.daysOfCover ?? 9999) - (b.daysOfCover ?? 9999));
+
+    return { items, windowDays: days };
   }
 
   // -------------------------------------------------------------------

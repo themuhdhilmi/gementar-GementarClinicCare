@@ -192,7 +192,7 @@ The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — 
 | [Consultation / EMR](v0-06-consultation.md) · [open items](v0-06-consultation-end-item-OPEN.md) | CON | 2 | ~45 h | Built; templates need the clinic's doctor |
 | [Prescription](v0-07-prescription.md) · [open items](v0-07-prescription-end-item-OPEN.md) | RX | 2 | ~20 h | Built; the catalogue behind it needs the clinic's doctor |
 | [Documents](v0-13-documents.md) | DOC | 2 | ~10 h | Not started |
-| [Inventory](v0-09-inventory.md) · [open items](v0-09-inventory-end-item-OPEN.md) | INV | 3 | ~45 h | Catalogue and ledger built early for RX and PRC; counts and alerts not started |
+| [Inventory](v0-09-inventory.md) · [open items](v0-09-inventory-end-item-OPEN.md) | INV | 3 | ~45 h | Built; the clinic still has to count its own shelves |
 | [Dispensing](v0-08-dispensing.md) · [open items](v0-08-dispensing-end-item-OPEN.md) | DSP | 3 | ~35 h | Built; needs a label printer before a counter can use it |
 | [Procedures](v0-10-procedures.md) · [open items](v0-10-procedures-end-item-OPEN.md) | PRC | 3 | ~15 h | Built; the catalogue and mappings need the clinic's nurse |
 | [Billing](v0-11-billing.md) · [open items](v0-11-billing-end-item-OPEN.md) | BIL | 4 | ~40 h | Built; the fee schedule needs the clinic's owner |

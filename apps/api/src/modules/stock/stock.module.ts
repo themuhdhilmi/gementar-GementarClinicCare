@@ -6,6 +6,10 @@ import { CatalogueModule } from '../catalogue/catalogue.module.js';
 import { ProductRetirementRegistry } from '../catalogue/retirement.registry.js';
 import { ProductStockLookup } from '../catalogue/stock-lookup.js';
 import { LedgerService } from './ledger.service.js';
+import { StockAlertService } from './alert.service.js';
+import { StockCountService } from './stock-count.service.js';
+import { StockImportService } from './stock-import.service.js';
+import { PatientModule } from '../patient/patient.module.js';
 import { StockService } from './stock.service.js';
 import { StockController } from './stock.controller.js';
 import { StockReconciliationJob } from './reconciliation.job.js';
@@ -24,9 +28,9 @@ import { StockReconciliationJob } from './reconciliation.job.js';
  * "there is exactly one write path" true rather than aspirational.
  */
 @Module({
-  imports: [CatalogueModule, TenancyModule],
+  imports: [CatalogueModule, TenancyModule, PatientModule],
   controllers: [StockController],
-  providers: [LedgerService, StockService, StockReconciliationJob],
+  providers: [LedgerService, StockService, StockReconciliationJob, StockAlertService, StockCountService, StockImportService],
   exports: [LedgerService],
 })
 export class StockModule implements OnModuleInit {

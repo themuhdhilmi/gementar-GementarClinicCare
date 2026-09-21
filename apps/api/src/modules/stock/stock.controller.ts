@@ -1,18 +1,38 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StockMovementType } from '../../generated/prisma/enums.js';
 import { BadRequestError } from '../../shared/errors/domain-errors.js';
 import { DbService } from '../../shared/prisma/db.service.js';
 import { Ctx, RequirePermission } from '../identity/decorators/auth.decorators.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { StockService } from './stock.service.js';
+import { StockCountService } from './stock-count.service.js';
+import { StockAlertService } from './alert.service.js';
+import { StockImportService } from './stock-import.service.js';
 import { StockReconciliationJob } from './reconciliation.job.js';
 import { MOVEMENT_LABEL, REASON_CODES } from './movement-kinds.js';
 import type { ReasonCode } from './movement-kinds.js';
 import {
+  AcknowledgeAlertDto,
   AdjustmentDto,
   BlockBatchDto,
+  CountEntryDto,
+  CountReasonDto,
   ExpiryWriteOffDto,
   MovementQueryDto,
+  OpenCountDto,
+  ReleaseQuarantineDto,
   StockInDto,
 } from './dto/stock.dto.js';
 
@@ -21,6 +41,9 @@ export class StockController {
   constructor(
     private readonly stock: StockService,
     private readonly reconciliation: StockReconciliationJob,
+    private readonly counts: StockCountService,
+    private readonly alerts: StockAlertService,
+    private readonly imports: StockImportService,
     private readonly db: DbService,
   ) {}
 
@@ -144,6 +167,147 @@ export class StockController {
   @RequirePermission('stock.adjust')
   block(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: BlockBatchDto) {
     return this.stock.blockBatch(ctx, id, body.reason);
+  }
+
+  // ------------------------------------------------- counts (INV-F-16)
+
+  @Get('branches/:branchId/counts')
+  @RequirePermission('stock.count')
+  listCounts(@Ctx() ctx: TenantContext, @Param('branchId') branchId: string) {
+    return this.counts.list(ctx, branchId);
+  }
+
+  /** Freezes what the system expects, before anybody starts counting. */
+  @Post('branches/:branchId/counts')
+  @RequirePermission('stock.count')
+  openCount(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+    @Body() body: OpenCountDto,
+  ) {
+    return this.counts.open(ctx, branchId, {
+      type: body.type,
+      blind: body.blind,
+      notes: body.notes ?? null,
+      scope: { categoryIds: body.categoryIds, productIds: body.productIds },
+    });
+  }
+
+  @Get('counts/:id')
+  @RequirePermission('stock.count')
+  readCount(@Ctx() ctx: TenantContext, @Param('id') id: string) {
+    return this.counts.read(ctx, id);
+  }
+
+  @Put('counts/:id/lines')
+  @HttpCode(200)
+  @RequirePermission('stock.count')
+  enterCount(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: CountEntryDto) {
+    return this.counts.enter(ctx, id, body.lines);
+  }
+
+  @Post('counts/:id/submit')
+  @HttpCode(200)
+  @RequirePermission('stock.count')
+  submitCount(@Ctx() ctx: TenantContext, @Param('id') id: string) {
+    return this.counts.submit(ctx, id);
+  }
+
+  /** Posts one adjustment per line that disagrees. */
+  @Post('counts/:id/approve')
+  @HttpCode(200)
+  @RequirePermission('stock.adjust')
+  approveCount(@Ctx() ctx: TenantContext, @Param('id') id: string) {
+    return this.counts.approve(ctx, id);
+  }
+
+  @Post('counts/:id/cancel')
+  @HttpCode(200)
+  @RequirePermission('stock.count')
+  cancelCount(@Ctx() ctx: TenantContext, @Param('id') id: string, @Body() body: CountReasonDto) {
+    return this.counts.cancel(ctx, id, body.reason);
+  }
+
+  /**
+   * INV-OPEN-02: an opening count from a spreadsheet.
+   *
+   * Nothing is written unless the run says so in so many words, and
+   * even then it fills in a count rather than posting stock — so the
+   * same person still has to approve it.
+   */
+  @Post('branches/:branchId/counts/import')
+  @HttpCode(200)
+  @RequirePermission('stock.count')
+  @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: 20_000_000 } }))
+  async importCount(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+    @UploadedFile() file: { buffer: Buffer } | undefined,
+    @Query('dryRun') dryRun?: string,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestError('No file was uploaded.', 'file_missing');
+    }
+    const csv = file.buffer.toString('utf8');
+    return dryRun !== 'false'
+      ? this.imports.preview(ctx, branchId, csv)
+      : this.imports.apply(ctx, branchId, csv);
+  }
+
+  // ----------------------------------------- alerts (INV-F-19, F-20)
+
+  @Get('branches/:branchId/alerts')
+  @RequirePermission('stock.read')
+  alertsFor(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+    @Query('includeAcknowledged') includeAcknowledged?: string,
+  ) {
+    return this.alerts.list(ctx, branchId, {
+      includeAcknowledged: includeAcknowledged === 'true',
+    });
+  }
+
+  @Post('branches/:branchId/alerts/acknowledge')
+  @HttpCode(200)
+  @RequirePermission('stock.read')
+  acknowledge(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+    @Body() body: AcknowledgeAlertDto,
+  ) {
+    return this.alerts.acknowledge(ctx, branchId, body.productId, body.kind);
+  }
+
+  // ------------------------------------------- quarantine (INV-F-15)
+
+  @Get('branches/:branchId/quarantine')
+  @RequirePermission('stock.read')
+  quarantine(@Ctx() ctx: TenantContext, @Param('branchId') branchId: string) {
+    return this.stock.quarantine(ctx, branchId);
+  }
+
+  @Post('branches/:branchId/quarantine/:batchId/release')
+  @HttpCode(200)
+  @RequirePermission('stock.adjust')
+  release(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+    @Param('batchId') batchId: string,
+    @Body() body: ReleaseQuarantineDto,
+  ) {
+    return this.stock.releaseQuarantine(ctx, branchId, batchId, body);
+  }
+
+  /** INV-F-22: what to order, and how long what is here will last. */
+  @Get('branches/:branchId/reorder-suggestions')
+  @RequirePermission('stock.read')
+  reorder(
+    @Ctx() ctx: TenantContext,
+    @Param('branchId') branchId: string,
+    @Query('days') days?: string,
+  ) {
+    return this.stock.reorderSuggestions(ctx, branchId, days ? Number(days) : 90);
   }
 
   /**
