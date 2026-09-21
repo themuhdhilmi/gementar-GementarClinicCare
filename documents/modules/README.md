@@ -179,6 +179,8 @@ Events are emitted after the owning transaction commits, carry `{ tenantId, bran
 
 The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — entirely in the system?* Everything here is required for that sentence to be true.
 
+> Before go-live, read [`../planning/10-production-readiness.md`](../planning/10-production-readiness.md). It cuts every register below one way — what blocks real patients, and what does not — because that question is not answerable module by module.
+
 | Module | Code | Phase | Est. | Status |
 |---|---|---|---|---|
 | [Identity & Access](v0-01-identity-access.md) · [open items](v0-01-identity-access-end-item-OPEN.md) | IAM | 0 | ~20 h | Built; open items before go-live |
@@ -191,9 +193,9 @@ The cut line: *can a patient walk in, be seen, get medicine, pay, and leave — 
 | [Prescription](v0-07-prescription.md) · [open items](v0-07-prescription-end-item-OPEN.md) | RX | 2 | ~20 h | Built; the catalogue behind it needs the clinic's doctor |
 | [Documents](v0-13-documents.md) | DOC | 2 | ~10 h | Not started |
 | [Inventory](v0-09-inventory.md) · [open items](v0-09-inventory-end-item-OPEN.md) | INV | 3 | ~45 h | Catalogue and ledger built early for RX and PRC; counts and alerts not started |
-| [Dispensing](v0-08-dispensing.md) | DSP | 3 | ~35 h | Not started |
+| [Dispensing](v0-08-dispensing.md) · [open items](v0-08-dispensing-end-item-OPEN.md) | DSP | 3 | ~35 h | Built; needs a label printer before a counter can use it |
 | [Procedures](v0-10-procedures.md) · [open items](v0-10-procedures-end-item-OPEN.md) | PRC | 3 | ~15 h | Built; the catalogue and mappings need the clinic's nurse |
-| [Billing](v0-11-billing.md) | BIL | 4 | ~40 h | Not started |
+| [Billing](v0-11-billing.md) · [open items](v0-11-billing-end-item-OPEN.md) | BIL | 4 | ~40 h | Built; the fee schedule needs the clinic's owner |
 | [Payment](v0-12-payment.md) | PAY | 4 | ~25 h | Not started |
 | [Reporting & Dashboard](v0-15-reporting-dashboard.md) | RPT | 4 | ~20 h | Not started |
 

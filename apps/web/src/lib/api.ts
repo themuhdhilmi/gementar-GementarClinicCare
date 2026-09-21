@@ -1005,6 +1005,8 @@ export function warningTone(warning: RxWarning): 'danger' | 'warning' | 'info' {
     return warning.level === 'EXACT' ? 'danger' : 'warning';
   }
   if (warning.type === 'NO_ALLERGY_RECORD') return 'warning';
+  // RX-F-04: the shelf is a logistics problem, not a safety one.
+  if (warning.type === 'OUT_OF_STOCK') return 'warning';
   return 'info';
 }
 
@@ -1052,6 +1054,9 @@ export type Product = {
   status: 'ACTIVE' | 'INACTIVE';
   /** Name, strength and form together — what a prescription line calls it. */
   label: string;
+  /** On hand at the caller's branch. Null when stock is not known at all. */
+  onHand?: number | null;
+  nearestExpiry?: string | null;
 };
 
 // ------------------------------------------------ stock (INV, v0-09 §2)
@@ -1254,4 +1259,259 @@ export type VaccinationRow = {
 /** Which procedures have to say where on the body (PRC §12). */
 export function siteRequired(category: ProcedureCategory): boolean {
   return category === 'INJECTION' || category === 'VACCINATION' || category === 'DRESSING';
+}
+
+// ---------------------------------------------- dispensing (DSP, v0-08)
+
+export type DispenseStatus = 'OPEN' | 'COMPLETED' | 'CANCELLED';
+
+export type DispenseOutcome =
+  | 'DISPENSED'
+  | 'PARTIAL'
+  | 'EXTERNAL'
+  | 'DECLINED'
+  | 'SUBSTITUTED_OUT';
+
+export type PharmacyQueueRow = {
+  encounterId: string;
+  prescriptionId: string;
+  dispenseId: string | null;
+  queueNo: string | null;
+  status: string;
+  patient: { id: string; name: string; mrn: string; dateOfBirth: string } | null;
+  items: number;
+  hasControlled: boolean;
+  amended: boolean;
+  waitingMinutes: number;
+};
+
+export type BatchPick = {
+  batchId: string;
+  batchNo: string;
+  expiryDate: string | null;
+  quantity: number;
+  available: number;
+};
+
+export type DispensedRecord = {
+  id: string;
+  quantity: number;
+  outcome: DispenseOutcome;
+  outcomeReason: string | null;
+  packRounded: boolean;
+  lineTotal: string;
+  labelPrints: number;
+  dispensedAt: string;
+  canUndo: boolean;
+  batches: Array<{
+    batchId: string;
+    quantity: number;
+    wasSuggested: boolean;
+    overrideReason: string | null;
+  }>;
+};
+
+export type DispenseSessionItem = {
+  prescriptionItemId: string;
+  version: number;
+  displayName: string;
+  genericName: string;
+  strength: string | null;
+  productId: string | null;
+  externalName: string | null;
+  isExternal: boolean;
+  isControlled: boolean;
+  prescribedQuantity: number;
+  quantityUnit: string;
+  labelText: string;
+  status: string;
+  amendedSinceOpen: boolean;
+  newSinceOpen: boolean;
+  dispensed: DispensedRecord | null;
+  suggestion: BatchPick[];
+  shortfall: number;
+  unitPrice: string | null;
+};
+
+export type DispenseSession = {
+  id: string;
+  status: DispenseStatus;
+  encounterId: string;
+  prescriptionId: string;
+  branchId: string;
+  openedAt: string;
+  completedAt: string | null;
+  counselled: boolean | null;
+  notes: string | null;
+  patient: { id: string; name: string; mrn: string; dateOfBirth: string } | null;
+  allergies: Array<{
+    id: string;
+    substance: string;
+    severity: string | null;
+    status: string;
+    reaction: string | null;
+  }>;
+  language: string;
+  notesToDispenser: string | null;
+  items: DispenseSessionItem[];
+};
+
+export type DispenseLabel = {
+  clinic: string;
+  branch: string;
+  phone: string | null;
+  patientName: string;
+  patientMrn: string;
+  dispensedAt: string;
+  product: string;
+  strength: string | null;
+  quantity: number;
+  quantityUnit: string;
+  instructions: string;
+  batches: Array<{ batchNo: string; expiry: string | null }>;
+  warnings: string[];
+  printCount: number;
+};
+
+export type ControlledRegisterRow = {
+  id: string;
+  occurredAt: string;
+  entryType: string;
+  product: { id: string; name: string; strengthText: string | null; dispenseUnit: string } | null;
+  patientName: string | null;
+  patientIc: string | null;
+  prescriberName: string | null;
+  batchNo: string | null;
+  quantityIn: number;
+  quantityOut: number;
+  balanceAfter: number;
+  performedByName: string | null;
+  witnessName: string | null;
+};
+
+/**
+ * A key that survives a retry but not a second, deliberate dispense.
+ *
+ * Generated when the button is armed rather than when it is pressed, so
+ * a double click or a dropped response replays instead of handing over
+ * twice (DSP-F-11).
+ */
+export function idempotencyKey(): string {
+  return `dsp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// ------------------------------------------------- billing (BIL, v0-11)
+
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIAL' | 'PAID' | 'VOID';
+export type InvoiceKind = 'ENCOUNTER' | 'STANDALONE';
+export type InvoiceLineType =
+  | 'CONSULTATION'
+  | 'MEDICINE'
+  | 'PROCEDURE'
+  | 'DOCUMENT'
+  | 'ITEM'
+  | 'MANUAL';
+
+export const LINE_TYPE_LABEL: Record<InvoiceLineType, string> = {
+  CONSULTATION: 'Consultation',
+  MEDICINE: 'Medicine',
+  PROCEDURE: 'Procedure',
+  DOCUMENT: 'Document',
+  ITEM: 'Item',
+  MANUAL: 'Added',
+};
+
+export type InvoiceLine = {
+  id: string;
+  lineNo: number;
+  lineType: InvoiceLineType;
+  sourceType: string | null;
+  sourceId: string | null;
+  description: string;
+  quantity: number;
+  quantityUnit: string | null;
+  unitPrice: string;
+  gross: string;
+  grossSen: number;
+  discountPct: number | null;
+  discountAmount: string;
+  discountAmountSen: number;
+  discountSource: string | null;
+  discountReason: string | null;
+  taxCode: string;
+  taxAmount: string;
+  lineTotal: string;
+  lineTotalSen: number;
+  feeRule: string | null;
+  isAuto: boolean;
+};
+
+export type Invoice = {
+  id: string;
+  invoiceNo: string | null;
+  status: InvoiceStatus;
+  kind: InvoiceKind;
+  branchId: string;
+  encounterId: string | null;
+  patientId: string | null;
+  walkupName: string | null;
+  taxMode: 'INCLUSIVE' | 'EXCLUSIVE';
+  subtotal: string;
+  discountTotal: string;
+  taxTotal: string;
+  roundingAdjustment: string;
+  grandTotal: string;
+  amountPaid: string;
+  balance: string;
+  subtotalSen: number;
+  grandTotalSen: number;
+  invoiceDiscountPct: number | null;
+  invoiceDiscountReason: string | null;
+  invoiceDiscountSource: string | null;
+  issuedAt: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  reissuedFromId: string | null;
+  reissuedAsId: string | null;
+  patientNameSnapshot: string | null;
+};
+
+export type InvoiceView = { invoice: Invoice | null; lines: InvoiceLine[] };
+
+export type BillableItemRow = {
+  id: string;
+  code: string;
+  name: string;
+  defaultPrice: string;
+  taxCode: string;
+  category: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+};
+
+export type InvoiceSummary = {
+  id: string;
+  invoiceNo: string | null;
+  status: InvoiceStatus;
+  kind: InvoiceKind;
+  patient: { id: string; name: string; mrn: string } | null;
+  walkupName: string | null;
+  grandTotal: string;
+  amountPaid: string;
+  balance: string;
+  issuedAt: string | null;
+  encounterId: string | null;
+};
+
+/** What a cashier's row should look like at a glance. */
+export function invoiceTone(status: InvoiceStatus): 'success' | 'warning' | 'danger' | 'info' {
+  switch (status) {
+    case 'PAID':
+      return 'success';
+    case 'VOID':
+      return 'danger';
+    case 'DRAFT':
+      return 'info';
+    default:
+      return 'warning';
+  }
 }

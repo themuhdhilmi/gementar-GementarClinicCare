@@ -64,6 +64,15 @@ export const TENANT_SCOPED_MODELS = new Set([
   'EncounterProcedure',
   'EncounterProcedureConsumable',
   'VaccinationRecord',
+  'Dispense',
+  'DispenseItem',
+  'DispenseItemBatch',
+  'ControlledDrugRegister',
+  'Invoice',
+  'InvoiceLine',
+  'InvoiceSeries',
+  'BillableItem',
+  'FeeSchedule',
 ]);
 
 /**

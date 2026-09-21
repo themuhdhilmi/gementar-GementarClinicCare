@@ -319,8 +319,43 @@ right. Type three letters and press Enter.
   because guessing a concentration is how a child gets ten times the dose.
 
 A patient with a prescription is routed to the pharmacy when the note is
-signed. Nothing can dispense yet, so move them along from the queue board by
-hand; that is `RX-OPEN-07`, and it lands with `v0-08-dispensing.md`.
+signed. Dispensing it is the next section.
+
+## The pharmacy counter
+
+Sign in as the dispenser and open Pharmacy. A patient appears there as soon
+as a doctor signs a note with a prescription on it.
+
+- **Open one.** Every item shows the batch to take from, chosen by earliest
+  expiry, with how many are in it and what the line costs. Press *Hand over*.
+- **Watch the stock.** Go to Stock and look at the medicine: a `DISPENSE`
+  movement for exactly what you gave, with the balance it left behind.
+- **Print the label.** It is in the patient's language — "Ambil 1 biji, 3
+  kali sehari" — with the lot number, the expiry and "keep out of reach of
+  children". Print it twice and the count goes up; the second print is
+  audited.
+- **Press Undo within fifteen minutes.** The stock goes back as a matching
+  reversal and the item is waiting again. Try it after fifteen and it tells
+  you to record a return instead.
+- **Give less than prescribed.** It asks why, and leaves the item part
+  dispensed rather than finished.
+- **Pick a different batch.** Refused unless you say why, because the one it
+  suggested expires first.
+- **Substitute.** Another brand of the same generic goes through. A
+  different medicine is refused for a nurse and allowed for a dispenser or a
+  doctor, because that is a prescribing decision.
+- **Dispense a controlled drug** — tramadol is in the seeded list. A register
+  entry is written in the same transaction with a running balance, and the
+  patient's identity number is recorded in full on purpose. A patient with no
+  identity number is refused, and the message says to fix their file.
+- **Try to finish the visit with medicine still waiting.** Refused. Deal with
+  every item first — hand it over, or mark it not taken.
+
+The register is at
+`/api/v1/branches/<branchId>/controlled-register`, and reading it is audited
+because it shows unmasked identity numbers. Nothing prints it yet
+(`DSP-OPEN-02`), and no label reaches a printer (`DSP-OPEN-01`) — the payload
+is complete and the hardware is not chosen.
 
 ## Procedures and stock
 
@@ -387,6 +422,58 @@ can run it on demand:
 curl -sb cookies.txt -X POST \
   'http://localhost:3001/api/v1/admin/stock-reconciliation'
 ```
+
+## Billing
+
+```bash
+npm run billing:seed --workspace @gementar/api
+```
+
+Adds five consultation-fee rules and seven counter items. **Every price
+is invented** — replacing them is one hour with the clinic's owner
+(`BIL-OPEN-01`), and until then the arithmetic is right and the numbers
+are not.
+
+Billing is the **cashier's** screen, not reception's. The front desk was
+split three ways: reception registers, the dispenser hands over medicine,
+the cashier takes money. Create one if you have not:
+
+```bash
+npm run user:create --workspace @gementar/api -- \
+  --email cashier@klinikpilot.test --name "Juruwang Aina" \
+  --role CASHIER --branch KL01 --password "another-long-password"
+```
+
+- **Sign a consultation.** Open Billing: the fee is already there, RM 35
+  in hours and RM 50 after six or on a Sunday. The line says which rule
+  decided it.
+- **Dispense something first.** The medicine is on the bill at the price
+  it was dispensed at — change the product's price afterwards and the
+  invoice does not move.
+- **Try to edit that line.** Refused: it came from what was done, so you
+  change it by undoing the dispense.
+- **Undo the dispense.** The line disappears from the bill.
+- **Add an item by hand** — a medical certificate from the list, or
+  anything typed out with a price.
+- **Discount the bill by 3%.** Fine. **Try 8%** — it asks why. **Try 15%**
+  — refused, because the cashier's cap is 10%, and the message says an
+  administrator has to approve it.
+- **Issue it.** A number like `KL01-INV-2026-000001`, gapless per branch
+  per year. Now try to change anything: refused, by the API and by the
+  database.
+- **Void it** (administrator, with a sentence) **and reissue.** The same
+  lines come back as a new draft, the new invoice gets the next number,
+  and the two point at each other. The voided number stays in the series.
+- **Sell something at the counter** to a walk-up with no record — a name
+  is enough.
+
+A visit cannot be finished until its bill has been issued. It is **not**
+blocked on being unpaid: nothing can take payment yet, and a guard nothing
+can clear would make every visit impossible to close. That half arrives
+with `v0-12-payment.md` (`BIL-OPEN-16`).
+
+Nothing prints — no invoice, no receipt (`BIL-OPEN-09`, waiting on
+documents).
 
 ## The waiting-room screen
 

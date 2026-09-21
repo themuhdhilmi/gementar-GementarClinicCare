@@ -35,7 +35,8 @@
     "lint:slow": "tsx scripts/check-slow-work.ts",
     "patients:seed": "tsx scripts/seed-patients.ts",
     "catalogue:seed": "tsx scripts/seed-catalogue.ts",
-    "procedures:seed": "tsx scripts/seed-procedures.ts"
+    "procedures:seed": "tsx scripts/seed-procedures.ts",
+    "billing:seed": "tsx scripts/seed-billing.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

@@ -22,6 +22,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '../audit/audit.actions.js';
 import { EventBus } from '../events/event-bus.service.js';
 import { DomainEvent } from '../events/domain-events.js';
+import { ProductStockLookup } from '../catalogue/stock-lookup.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { isFrequencyCode, perDay, type FrequencyCode } from './frequency.js';
 import { buildLabel, type Language } from './label.js';
@@ -32,6 +33,7 @@ import {
   needsOverride,
   needsSignConfirmation,
   NO_ALLERGY_RECORD,
+  outOfStockWarning,
   type AllergyRecord,
   type ItemSubstance,
   type Warning,
@@ -140,6 +142,7 @@ export class PrescriptionService {
     private readonly clock: Clock,
     private readonly audit: AuditService,
     private readonly events: EventBus,
+    private readonly stock: ProductStockLookup,
   ) {}
 
   // -------------------------------------------------------------------
@@ -258,6 +261,7 @@ export class PrescriptionService {
     const resolved = await this.resolve(tx, input, prescription.language as Language);
     const warnings = await this.evaluate(tx, safety, resolved, {
       prescriptionId: prescription.id,
+      branchId: prescription.branchId,
     });
 
     const now = this.clock.now();
@@ -322,6 +326,7 @@ export class PrescriptionService {
     const warnings = await this.evaluate(tx, safety, resolved, {
       prescriptionId: prescription.id,
       excludeItemId: itemId,
+      branchId: prescription.branchId,
     });
 
     // RX-F-15: a reason given for one drug is not a reason for another.
@@ -621,6 +626,7 @@ export class PrescriptionService {
         formula: resolved.formula,
         warnings: await this.evaluate(tx, safety, resolved, {
           prescriptionId: prescription?.id ?? null,
+          branchId: consultation.branchId,
         }),
       });
     }
@@ -693,8 +699,14 @@ export class PrescriptionService {
           doseUnit: item.doseUnit as string,
           maxDailyDose: product?.maxDailyDose == null ? null : Number(product.maxDailyDose),
           maxDailyDoseUnit: product?.maxDailyDoseUnit ?? null,
+          quantity: Number(item.quantity),
+          quantityUnit: item.quantityUnit as string,
         },
-        { prescriptionId: prescription.id, excludeItemId: item.id as string },
+        {
+          prescriptionId: prescription.id,
+          excludeItemId: item.id as string,
+          branchId: consultation.branchId,
+        },
       );
 
       const fresh = JSON.stringify(warnings) !== JSON.stringify(item.warnings);
@@ -804,6 +816,7 @@ export class PrescriptionService {
     const warnings = await this.evaluate(tx, safety, resolved, {
       prescriptionId: prescription.id,
       excludeItemId: itemId,
+      branchId: prescription.branchId,
     });
 
     if (needsSignConfirmation(warnings)) {
@@ -1002,6 +1015,37 @@ export class PrescriptionService {
     });
 
     return { cancelled: count };
+  }
+
+  /**
+   * DSP tells RX what actually happened to an item.
+   *
+   * Called from inside the dispensing transaction. RX owns the item's
+   * status because RX owns the item; dispensing owns the fact. Keeping
+   * the write here means the prescription settling to COMPLETED happens
+   * in one place rather than being reimplemented by every caller.
+   */
+  async recordDispenseOutcome(
+    tx: Tx,
+    ctx: TenantContext,
+    itemId: string,
+    status: PrescriptionItemStatus,
+  ) {
+    const item = await tx.prescriptionItem.findFirst({ where: { id: itemId } });
+    if (!item) throw new NotFoundError('Prescription item');
+
+    await tx.prescriptionItem.update({ where: { id: itemId }, data: { status } });
+
+    const prescription = await tx.prescription.findFirst({
+      where: { id: item.prescriptionId },
+      select: { id: true, patientId: true, branchId: true },
+    });
+    if (!prescription) return;
+
+    await this.settleIfFinished(tx, ctx, prescription.id, {
+      patientId: prescription.patientId,
+      branchId: prescription.branchId,
+    });
   }
 
   /** Once no item is still waiting, the prescription is done with. */
@@ -1256,6 +1300,9 @@ export class PrescriptionService {
           ? null
           : Number(product.maxDailyDose),
       maxDailyDoseUnit: product?.maxDailyDoseUnit ?? null,
+      /** Surfaced for the stock check, which asks what the shelf needs. */
+      quantity,
+      quantityUnit,
       formula: calculated?.formula ?? null,
       data: {
         productId,
@@ -1349,8 +1396,11 @@ export class PrescriptionService {
       doseUnit: string;
       maxDailyDose: number | null;
       maxDailyDoseUnit: string | null;
+      /** What the pharmacy would have to find, for the stock check. */
+      quantity?: number;
+      quantityUnit?: string;
     },
-    scope: { prescriptionId: string | null; excludeItemId?: string },
+    scope: { prescriptionId: string | null; excludeItemId?: string; branchId: string },
   ): Promise<Warning[]> {
     const warnings: Warning[] = [...matchAllergies(resolved.substance, safety.allergies)];
 
@@ -1365,6 +1415,21 @@ export class PrescriptionService {
         resolved.dailyDose,
         resolved.maxDailyDose,
         resolved.maxDailyDoseUnit,
+      );
+      if (warning) warnings.push(warning);
+    }
+
+    // RX-F-04. Only when the stock module has answered: "none on the
+    // shelf" and "nobody tracks stock" are different, and guessing the
+    // first from the second teaches prescribers to ignore the banner.
+    if (resolved.substance.productId && resolved.quantity && this.stock.available) {
+      const onHand = await this.stock.for(tx, scope.branchId, [resolved.substance.productId]);
+      const found = onHand.get(resolved.substance.productId);
+      const warning = outOfStockWarning(
+        resolved.substance.displayName,
+        resolved.quantity,
+        found?.onHand ?? 0,
+        resolved.quantityUnit ?? '',
       );
       if (warning) warnings.push(warning);
     }

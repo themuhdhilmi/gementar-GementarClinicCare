@@ -125,6 +125,34 @@ export const AuditAction = {
   /// Loud: it reverses stock and removes a charge.
   ProcedureVoided: 'procedure.voided',
   VaccinationRecorded: 'vaccination.recorded',
+
+  // Dispensing (DSP, v0-08).
+  DispenseOpened: 'dispense.opened',
+  DispenseItemDispensed: 'dispense.item_dispensed',
+  DispenseItemSubstituted: 'dispense.item_substituted',
+  DispenseItemExternal: 'dispense.item_external',
+  DispenseItemDeclined: 'dispense.item_declined',
+  DispenseUndone: 'dispense.undone',
+  DispenseReturned: 'dispense.returned',
+  DispenseCompleted: 'dispense.session_completed',
+  DispenseCancelled: 'dispense.cancelled',
+  LabelReprinted: 'dispense.label_reprinted',
+  /// The register is a legal document; reading it shows unmasked ICs.
+  ControlledRegisterViewed: 'controlled_register.viewed',
+  ControlledDispensed: 'controlled.dispensed',
+
+  // Billing (BIL, v0-11).
+  InvoiceDraftCreated: 'invoice.draft_created',
+  InvoiceLineAdded: 'invoice.manual_line_added',
+  InvoiceLineEdited: 'invoice.manual_line_edited',
+  InvoiceLineRemoved: 'invoice.manual_line_removed',
+  InvoiceDiscounted: 'invoice.discounted',
+  InvoiceIssued: 'invoice.issued',
+  InvoiceVoided: 'invoice.voided',
+  InvoiceReissued: 'invoice.reissued',
+  InvoiceReprinted: 'invoice.reprinted',
+  FeeScheduleChanged: 'billing.fee_schedule_changed',
+  BillableItemChanged: 'billing.billable_item_changed',
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

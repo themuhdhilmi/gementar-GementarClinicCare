@@ -544,6 +544,7 @@ model Patient {
   prescriptions       Prescription[]
   procedures          EncounterProcedure[]
   vaccinations        VaccinationRecord[]
+  invoices            Invoice[]
 
   @@unique([tenantId, mrn], map: "patient_tenant_mrn_key")
   @@unique([id, tenantId], map: "patient_id_tenant_key")
@@ -824,6 +825,8 @@ model Encounter {
   consultations Consultation[]
   prescriptions   Prescription[]
   procedures      EncounterProcedure[]
+  dispenses       Dispense[]
+  invoices        Invoice[]
 
   @@unique([tenantId, encounterNo], map: "encounter_tenant_no_key")
   @@unique([id, tenantId], map: "encounter_id_tenant_key")
@@ -1420,6 +1423,7 @@ model Prescription {
   encounter    Encounter    @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
   consultation Consultation @relation(fields: [consultationId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
   patient      Patient      @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  dispenses    Dispense[]
 
   @@unique([consultationId], map: "prescription_consultation_key")
   @@unique([consultationId, tenantId], map: "prescription_consultation_tenant_key")
@@ -1870,4 +1874,467 @@ model VaccinationRecord {
 
   @@index([tenantId, patientId, givenAt], map: "vaccination_record_patient_idx")
   @@map("vaccination_record")
+}
+
+// ---------------------------------------------------------------------------
+// Dispensing (DSP, v0-08-dispensing.md)
+//
+// Where a prescription meets physical stock. Everything that makes the
+// inventory trustworthy or untrustworthy happens in this module's
+// transaction: the batch is chosen, the quantity leaves the ledger, the
+// label is printed and the bill gets its lines — or none of it does.
+//
+// A prescription says what the doctor intended. A dispense says what
+// actually left the shelf, and the two differ often enough that the
+// invoice must be built from the second (DSP-R-06).
+// ---------------------------------------------------------------------------
+
+enum DispenseStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum DispenseOutcome {
+  DISPENSED
+  PARTIAL
+  /// The patient will get it somewhere else. No stock moves, nothing billed.
+  EXTERNAL
+  DECLINED
+  /// Replaced by another product; the replacement references this one.
+  SUBSTITUTED_OUT
+}
+
+enum ControlledEntryType {
+  RECEIVE
+  DISPENSE
+  ADJUST
+  RETURN
+  DESTROY
+}
+
+model Dispense {
+  id             String @id @db.Uuid
+  tenantId       String @map("tenant_id") @db.Uuid
+  branchId       String @map("branch_id") @db.Uuid
+  encounterId    String @map("encounter_id") @db.Uuid
+  prescriptionId String @map("prescription_id") @db.Uuid
+  patientId      String @map("patient_id") @db.Uuid
+
+  status DispenseStatus @default(OPEN)
+
+  openedBy String   @map("opened_by") @db.Uuid
+  openedAt DateTime @default(now()) @map("opened_at") @db.Timestamptz(3)
+
+  completedBy String?   @map("completed_by") @db.Uuid
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(3)
+
+  counselled   Boolean? 
+  counselledBy String?  @map("counselled_by") @db.Uuid
+
+  notes String? @db.VarChar(1000)
+
+  /// DSP-F-09: which version of each item the dispenser was looking at
+  /// when the session opened. A doctor amending mid-session is the case
+  /// this exists for.
+  rxVersionSeen Json @default("{}") @map("rx_version_seen") @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  prescription Prescription   @relation(fields: [prescriptionId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  encounter    Encounter      @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  items        DispenseItem[]
+
+  @@unique([id, tenantId], map: "dispense_id_tenant_key")
+  @@index([tenantId, branchId, status], map: "dispense_queue_idx")
+  @@index([tenantId, prescriptionId], map: "dispense_prescription_idx")
+  @@map("dispense")
+}
+
+model DispenseItem {
+  id         String @id @db.Uuid
+  tenantId   String @map("tenant_id") @db.Uuid
+  dispenseId String @map("dispense_id") @db.Uuid
+
+  prescriptionItemId      String @map("prescription_item_id") @db.Uuid
+  /// Which version was on the screen. A dispense against a superseded
+  /// version is exactly what DSP-F-09 has to surface.
+  prescriptionItemVersion Int    @map("prescription_item_version")
+
+  /// What actually left the shelf, which may not be what was prescribed.
+  /// Null only when nothing left it: an item the patient will have
+  /// filled elsewhere names no product of ours to record.
+  productId         String? @map("product_id") @db.Uuid
+  isSubstitute      Boolean @default(false) @map("is_substitute")
+  substituteReason  String? @map("substitute_reason") @db.VarChar(500)
+  originalProductId String? @map("original_product_id") @db.Uuid
+
+  quantity     Decimal @db.Decimal(10, 3)
+  quantityUnit String  @map("quantity_unit") @db.VarChar(20)
+  /// DSP-F-06: rounded up to whole packs, and said so on the bill.
+  packRounded  Boolean @default(false) @map("pack_rounded")
+
+  /// DSP-R-09: sen, snapshotted. A price change next week does not
+  /// rewrite an invoice that has already been printed.
+  unitPrice BigInt @map("unit_price")
+  lineTotal BigInt @map("line_total")
+
+  outcome       DispenseOutcome
+  outcomeReason String?         @map("outcome_reason") @db.VarChar(500)
+
+  /// Copied from the prescription item, because the bag in the patient's
+  /// hand and the record have to say the same thing.
+  labelText   String @map("label_text") @db.VarChar(600)
+  labelPrints Int    @default(0) @map("label_prints")
+
+  counselled Boolean?
+
+  dispensedBy String   @map("dispensed_by") @db.Uuid
+  dispensedAt DateTime @default(now()) @map("dispensed_at") @db.Timestamptz(3)
+
+  /// DSP-F-16. The row is kept; the reversal is a fact about it.
+  reversedAt     DateTime? @map("reversed_at") @db.Timestamptz(3)
+  reversedBy     String?   @map("reversed_by") @db.Uuid
+  reversalReason String?   @map("reversal_reason") @db.VarChar(500)
+
+  /// DSP-F-17: handed back after the fact. Goes to quarantine, never
+  /// back into saleable stock.
+  returnedQuantity Decimal?  @map("returned_quantity") @db.Decimal(10, 3)
+  returnedAt       DateTime? @map("returned_at") @db.Timestamptz(3)
+  returnedBy       String?   @map("returned_by") @db.Uuid
+  returnReason     String?   @map("return_reason") @db.VarChar(500)
+
+  /// DSP-F-11: a retried request returns the original result rather than
+  /// dispensing twice.
+  idempotencyKey String? @map("idempotency_key") @db.VarChar(80)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  dispense Dispense             @relation(fields: [dispenseId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  batches  DispenseItemBatch[]
+
+  @@unique([tenantId, idempotencyKey], map: "dispense_item_idempotency_key")
+  @@unique([id, tenantId], map: "dispense_item_id_tenant_key")
+  @@index([tenantId, dispenseId], map: "dispense_item_dispense_idx")
+  @@index([tenantId, prescriptionItemId], map: "dispense_item_rx_idx")
+  @@index([tenantId, productId, dispensedAt], map: "dispense_item_product_idx")
+  @@map("dispense_item")
+}
+
+/// One item may draw from several batches when no single one covers it.
+model DispenseItemBatch {
+  id             String  @id @db.Uuid
+  tenantId       String  @map("tenant_id") @db.Uuid
+  dispenseItemId String  @map("dispense_item_id") @db.Uuid
+  batchId        String  @map("batch_id") @db.Uuid
+  quantity       Decimal @db.Decimal(10, 3)
+
+  /// DSP-R-07: false when the dispenser chose a different batch, and
+  /// then the reason is required. FEFO compliance is reportable because
+  /// of this column.
+  wasSuggested   Boolean @default(true) @map("was_suggested")
+  overrideReason String? @map("override_reason") @db.VarChar(500)
+
+  stockMovementId    String  @map("stock_movement_id") @db.Uuid
+  reversalMovementId String? @map("reversal_movement_id") @db.Uuid
+
+  dispenseItem DispenseItem @relation(fields: [dispenseItemId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, dispenseItemId], map: "dispense_item_batch_item_idx")
+  @@index([tenantId, batchId], map: "dispense_item_batch_batch_idx")
+  @@map("dispense_item_batch")
+}
+
+/// DSP-F-18, F-19: append-only, with a running balance, because that is
+/// what an inspector reads.
+model ControlledDrugRegister {
+  id        String @id @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  branchId  String @map("branch_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+
+  entryType     ControlledEntryType @map("entry_type")
+  referenceType String?             @map("reference_type") @db.VarChar(40)
+  referenceId   String?             @map("reference_id") @db.Uuid
+
+  /// Snapshotted, and the identity number is stored unmasked because the
+  /// register is a legal document that has to be readable years later.
+  /// Reading it is audited.
+  patientId   String? @map("patient_id") @db.Uuid
+  patientName String? @map("patient_name") @db.VarChar(150)
+  patientIc   String? @map("patient_ic") @db.VarChar(40)
+
+  prescriberId   String? @map("prescriber_id") @db.Uuid
+  prescriberName String? @map("prescriber_name") @db.VarChar(150)
+
+  batchId String? @map("batch_id") @db.Uuid
+  batchNo String? @map("batch_no") @db.VarChar(60)
+
+  quantityIn   Decimal @default(0) @map("quantity_in") @db.Decimal(12, 3)
+  quantityOut  Decimal @default(0) @map("quantity_out") @db.Decimal(12, 3)
+  balanceAfter Decimal @map("balance_after") @db.Decimal(12, 3)
+
+  performedBy     String  @map("performed_by") @db.Uuid
+  performedByName String? @map("performed_by_name") @db.VarChar(150)
+  witnessId       String? @map("witness_id") @db.Uuid
+  witnessName     String? @map("witness_name") @db.VarChar(150)
+
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([tenantId, branchId, productId, occurredAt], map: "controlled_register_idx")
+  @@index([referenceType, referenceId], map: "controlled_register_reference_idx")
+  @@map("controlled_drug_register")
+}
+
+// ---------------------------------------------------------------------------
+// Billing (BIL, v0-11-billing.md)
+//
+// An invoice that is correct to the sen, every time, and explainable
+// line by line to a patient at the counter and to an auditor a year
+// later. Every amount here is an integer count of sen; nothing in this
+// module does floating-point arithmetic on money.
+//
+// Once issued, an invoice does not change. The two things that may move
+// afterwards are driven by payment — what has been paid, and the cash
+// rounding — and a trigger names them explicitly so nothing else can.
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum InvoiceKind {
+  ENCOUNTER
+  /// A walk-up sale at the counter with no visit behind it.
+  STANDALONE
+}
+
+enum InvoiceLineType {
+  CONSULTATION
+  MEDICINE
+  PROCEDURE
+  DOCUMENT
+  ITEM
+  MANUAL
+}
+
+enum PayerType {
+  PATIENT
+  PANEL
+  CORPORATE
+}
+
+enum TaxMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
+enum FeeTimeBand {
+  ANY
+  AFTER_HOURS
+  WEEKEND
+  PUBLIC_HOLIDAY
+}
+
+model Invoice {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+
+  encounterId String? @map("encounter_id") @db.Uuid
+  patientId   String? @map("patient_id") @db.Uuid
+  /// BIL-F-18: a walk-up with a name and no record.
+  walkupName  String? @map("walkup_name") @db.VarChar(150)
+
+  kind   InvoiceKind   @default(ENCOUNTER)
+  status InvoiceStatus @default(DRAFT)
+
+  /// Null while it is a draft. Gapless per branch per year once issued.
+  invoiceNo  String? @map("invoice_no") @db.VarChar(40)
+  seriesYear Int?    @map("series_year")
+  seriesSeq  Int?    @map("series_seq")
+
+  currency String  @default("MYR") @db.Char(3)
+  taxMode  TaxMode @default(EXCLUSIVE) @map("tax_mode")
+
+  /// All sen. `subtotal` is the sum of line gross before any discount.
+  subtotal           BigInt @default(0)
+  discountTotal      BigInt @default(0) @map("discount_total")
+  taxTotal           BigInt @default(0) @map("tax_total")
+  /// Set only by payment, for cash, and only by a few sen.
+  roundingAdjustment BigInt @default(0) @map("rounding_adjustment")
+  grandTotal         BigInt @default(0) @map("grand_total")
+  amountPaid         BigInt @default(0) @map("amount_paid")
+  balance            BigInt @default(0)
+
+  invoiceDiscountPct    Decimal? @map("invoice_discount_pct") @db.Decimal(5, 2)
+  invoiceDiscountReason String?  @map("invoice_discount_reason") @db.VarChar(500)
+  invoiceDiscountSource String?  @map("invoice_discount_source") @db.VarChar(40)
+
+  payerType    PayerType @default(PATIENT) @map("payer_type")
+  payerId      String?   @map("payer_id") @db.Uuid
+  membershipId String?   @map("membership_id") @db.Uuid
+
+  /// BIL-F-13: who this was for, frozen at the moment it was issued.
+  patientNameSnapshot     String? @map("patient_name_snapshot") @db.VarChar(150)
+  patientIdMaskedSnapshot String? @map("patient_id_masked_snapshot") @db.VarChar(40)
+
+  /// V1, e-invoicing. Present now so the column does not have to be
+  /// added to a table full of immutable rows later.
+  buyerTin              String?   @map("buyer_tin") @db.VarChar(40)
+  einvoiceStatus        String?   @map("einvoice_status") @db.VarChar(40)
+  einvoiceUuid          String?   @map("einvoice_uuid") @db.VarChar(80)
+  einvoiceLongId        String?   @map("einvoice_long_id") @db.VarChar(200)
+  einvoiceQr            String?   @map("einvoice_qr") @db.VarChar(500)
+  einvoiceSubmittedAt   DateTime? @map("einvoice_submitted_at") @db.Timestamptz(3)
+
+  issuedAt DateTime? @map("issued_at") @db.Timestamptz(3)
+  issuedBy String?   @map("issued_by") @db.Uuid
+  paidAt   DateTime? @map("paid_at") @db.Timestamptz(3)
+
+  voidedAt   DateTime? @map("voided_at") @db.Timestamptz(3)
+  voidedBy   String?   @map("voided_by") @db.Uuid
+  voidReason String?   @map("void_reason") @db.VarChar(500)
+
+  reissuedFromId String? @map("reissued_from_id") @db.Uuid
+  reissuedAsId   String? @map("reissued_as_id") @db.Uuid
+
+  notes String? @db.VarChar(1000)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lines        InvoiceLine[]
+  encounter    Encounter?    @relation(fields: [encounterId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  patient      Patient?      @relation(fields: [patientId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  reissuedFrom Invoice?      @relation("Reissue", fields: [reissuedFromId, tenantId], references: [id, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  reissuedAs   Invoice[]     @relation("Reissue")
+
+  @@unique([tenantId, invoiceNo], map: "invoice_no_key")
+  @@unique([branchId, seriesYear, seriesSeq], map: "invoice_series_key")
+  @@unique([id, tenantId], map: "invoice_id_tenant_key")
+  @@index([tenantId, branchId, status, issuedAt], map: "invoice_branch_idx")
+  @@index([tenantId, patientId, issuedAt], map: "invoice_patient_idx")
+  @@index([tenantId, encounterId], map: "invoice_encounter_idx")
+  @@map("invoice")
+}
+
+model InvoiceLine {
+  id        String @id @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  invoiceId String @map("invoice_id") @db.Uuid
+
+  lineNo   Int             @map("line_no")
+  lineType InvoiceLineType @map("line_type")
+
+  /// What produced it: a dispense item, a procedure, a consultation.
+  sourceType String? @map("source_type") @db.VarChar(40)
+  sourceId   String? @map("source_id") @db.Uuid
+
+  description  String  @db.VarChar(300)
+  quantity     Decimal @db.Decimal(12, 3)
+  quantityUnit String? @map("quantity_unit") @db.VarChar(20)
+  unitPrice    BigInt  @map("unit_price")
+  gross        BigInt
+
+  discountPct    Decimal? @map("discount_pct") @db.Decimal(5, 2)
+  /// What was taken off *this line specifically*. Kept apart from the
+  /// total below because a recompute has to be able to tell the two
+  /// apart: mistaking an allocated share for the line's own discount
+  /// applies the invoice-level discount again on the next write.
+  ownDiscountAmount BigInt @default(0) @map("own_discount_amount")
+  /// The line's own discount plus its share of any invoice-level one,
+  /// so the lines always add up to the invoice (BIL-R-03).
+  discountAmount BigInt   @default(0) @map("discount_amount")
+  discountSource String?  @map("discount_source") @db.VarChar(40)
+  discountReason String?  @map("discount_reason") @db.VarChar(500)
+  discountBy     String?  @map("discount_by") @db.Uuid
+
+  taxCode   String @default("NONE") @map("tax_code") @db.VarChar(20)
+  taxRateBp Int    @default(0) @map("tax_rate_bp")
+  taxAmount BigInt @default(0) @map("tax_amount")
+
+  lineTotal BigInt @map("line_total")
+
+  /// Which fee-schedule rule produced a consultation fee.
+  feeRule String? @map("fee_rule") @db.VarChar(80)
+  /// BIL-R-08: an automatic line is changed by changing its source.
+  isAuto  Boolean @map("is_auto")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  invoice Invoice @relation(fields: [invoiceId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([invoiceId, lineNo], map: "invoice_line_no_key")
+  @@unique([id, tenantId], map: "invoice_line_id_tenant_key")
+  @@index([tenantId, invoiceId], map: "invoice_line_invoice_idx")
+  @@index([sourceType, sourceId], map: "invoice_line_source_idx")
+  @@map("invoice_line")
+}
+
+/// BIL-R-06: the counter behind a gapless per-branch, per-year series.
+model InvoiceSeries {
+  tenantId String @map("tenant_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  year     Int
+  nextSeq  Int    @default(1) @map("next_seq")
+
+  @@id([branchId, year], map: "invoice_series_pkey")
+  @@index([tenantId], map: "invoice_series_tenant_idx")
+  @@map("invoice_series")
+}
+
+/// BIL-F-03: what a cashier can add by hand without typing a price.
+model BillableItem {
+  id           String        @id @db.Uuid
+  tenantId     String        @map("tenant_id") @db.Uuid
+  code         String        @db.VarChar(40)
+  name         String        @db.VarChar(200)
+  defaultPrice BigInt        @default(0) @map("default_price")
+  taxCode      String        @default("NONE") @map("tax_code") @db.VarChar(20)
+  category     String?       @db.VarChar(80)
+  status       ProductStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([tenantId, code], map: "billable_item_code_key")
+  @@index([tenantId, status], map: "billable_item_status_idx")
+  @@map("billable_item")
+}
+
+/// BIL-F-05: what a consultation costs. Most specific match wins.
+model FeeSchedule {
+  id       String @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+
+  /// Null means "any". The more of these a row fills in, the more
+  /// specific it is, and specificity decides which rule applies.
+  branchId      String?  @map("branch_id") @db.Uuid
+  encounterType String?  @map("encounter_type") @db.VarChar(40)
+  doctorId      String?  @map("doctor_id") @db.Uuid
+  timeBand      FeeTimeBand @default(ANY) @map("time_band")
+
+  fee     BigInt
+  taxCode String @default("NONE") @map("tax_code") @db.VarChar(20)
+
+  effectiveFrom DateTime  @default(now()) @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  /// A tie-break the clinic can reach for when two rules are equally
+  /// specific. Higher wins.
+  priority      Int       @default(0)
+
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([tenantId, branchId, encounterType], map: "fee_schedule_match_idx")
+  @@map("fee_schedule")
 }

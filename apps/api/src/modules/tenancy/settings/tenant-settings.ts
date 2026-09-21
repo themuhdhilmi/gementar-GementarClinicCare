@@ -30,6 +30,20 @@ const billing = z
       .boolean()
       .default(true)
       .describe('Round cash totals to the nearest 5 sen, as Malaysian coinage requires.'),
+    discountReasonThresholdPct: z
+      .number()
+      .int()
+      .min(0)
+      .max(100)
+      .default(5)
+      .describe('A discount this large or larger has to say why (BIL §12).'),
+    taxMode: z
+      .enum(['INCLUSIVE', 'EXCLUSIVE'])
+      .default('EXCLUSIVE')
+      .describe(
+        'Whether listed prices already contain tax. Most GP work is not SST-taxable, ' +
+          'so this rarely matters; when it does, inclusive pricing never changes what the patient pays.',
+      ),
   })
   .strict();
 

@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   BatchStatus,
-  ConsultationStatus,
   Laterality,
   ProcedureCategory,
   ProcedureStatus,
@@ -23,6 +22,7 @@ import { requireTenantId } from '../../shared/prisma/tenant-scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '../audit/audit.actions.js';
 import { EventBus } from '../events/event-bus.service.js';
+import { ChargeRegistry } from '../events/charge.registry.js';
 import { DomainEvent } from '../events/domain-events.js';
 import { fromSen } from '../catalogue/money.js';
 import { LedgerService } from '../stock/ledger.service.js';
@@ -74,6 +74,7 @@ export class ProcedureService {
     private readonly audit: AuditService,
     private readonly events: EventBus,
     private readonly ledger: LedgerService,
+    private readonly charges: ChargeRegistry,
   ) {}
 
   // -------------------------------------------------------------------
@@ -385,6 +386,21 @@ export class ProcedureService {
       });
     }
 
+    // BIL-R-06: billed from what was done, at the price snapshotted
+    // when it was ordered (PRC-R-02), inside this transaction.
+    await this.charges.record(tx, ctx, {
+      encounterId: row.encounterId,
+      branchId: row.branchId,
+      patientId: row.patientId,
+      lineType: 'PROCEDURE',
+      sourceType: 'encounter_procedure',
+      sourceId: row.id,
+      description: row.nameSnapshot,
+      quantity: 1,
+      unitPriceSen: row.priceSnapshot,
+      occurredAt: now,
+    });
+
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
       action: AuditAction.ProcedurePerformed,
       entityType: 'encounter_procedure',
@@ -541,6 +557,11 @@ export class ProcedureService {
         voidedAt: now,
         voidReason: reason.trim(),
       },
+    });
+
+    await this.charges.remove(tx, ctx, {
+      sourceType: 'encounter_procedure',
+      sourceId: id,
     });
 
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {

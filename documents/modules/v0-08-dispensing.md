@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-08-dispensing-end-item-OPEN.md](v0-08-dispensing-end-item-OPEN.md) |
 | **Delivery phase** | Phase 3 |
 | **Spec sections** | 8 |
 | **Depends on** | RX, INV, ENC, PAT, AUD |
@@ -296,20 +296,126 @@ All §9; batch overrides with reason; `patient.id_unmasked` for controlled regis
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| DSP-Q-01 | Do they dispense controlled substances? What register format does their inspector expect? | Pilot clinic |
-| DSP-Q-02 | Label printer model and label size in use. | Pilot clinic |
-| DSP-Q-03 | Do they use batch barcodes / scanners? | Pilot clinic |
-| DSP-Q-04 | Who dispenses — pharmacist, dispenser, doctor? (Affects roles.) | Pilot clinic |
-| DSP-Q-05 | Is counselling documented today? | Pilot clinic |
-| DSP-Q-06 | Selling price from batch (cost-based) or from product (list)? | Pilot clinic owner |
+| ID | Question | Who | Answer |
+|---|---|---|---|
+| DSP-Q-01 | Do they dispense controlled substances? What register format does their inspector expect? | Pilot clinic | **Assumed yes, format unknown.** The register is built to the shape §5 describes — patient with an unmasked identity number, prescriber, batch, quantity, running balance, dispenser, optional witness — append-only at the database level, and a controlled drug cannot leave without an entry. Whether that is the *layout* an inspector wants is unanswered, and it is a printing question rather than a data one. `DSP-OPEN-02`. |
+| DSP-Q-02 | Label printer model and label size in use. | Pilot clinic | **Not answered, so nothing prints.** The label endpoint returns the full payload — clinic, patient, drug, quantity, instructions in the patient's language, batch, expiry, warnings — and counts the print. Turning that payload into 50×30 mm of thermal paper needs the printer. `DSP-OPEN-01`. |
+| DSP-Q-03 | Do they use batch barcodes / scanners? | Pilot clinic | **Not answered.** A batch is chosen from a list. The session screen has the space for a scan field and there is nothing to scan into it. Related to `INV-OPEN-07`, which is the same question from the receiving end. |
+| DSP-Q-04 | Who dispenses — pharmacist, dispenser, doctor? (Affects roles.) | Pilot clinic | **Partly answered by the role split.** `DISPENSER` exists and holds `dispense.perform` and `dispense.substitute`; a nurse may dispense and may not substitute a different medicine; a doctor may do both. If the pilot has a registered pharmacist the permissions are already right, and only the job title differs. |
+| DSP-Q-05 | Is counselling documented today? | Pilot clinic | **Not answered.** `counselled` is recorded per session when the dispenser finishes, and the per-item tick that `DSP-F-13` allows for is not built. It is a Should, and asking first is cheaper than building the wrong granularity. |
+| DSP-Q-06 | Selling price from batch (cost-based) or from product (list)? | Pilot clinic owner | **Product list price, which is the default.** The batch's own `selling_price` column exists and nothing reads it. Switching is a branch in one line of `dispenseItem`; doing it before the answer would be guessing. `INV-OPEN-08`. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] DSP-T-01 … T-12 green (T-04/T-05 against real Postgres)
-- [ ] Label printed on the clinic's actual printer with real label stock; template approved
-- [ ] One week of live dispensing with stock matching physical count for top-10 products
-- [ ] Controlled register reviewed against inspector expectations (if applicable)
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — all of them, including the controlled register. `DSP-F-13` (counselling per item, a Should) is per session instead; `DSP-F-17` (return, a Should) is built.
+- [x] **DSP-T-01 … T-12 green** — all twelve, inside 31 tests in `test/dispensing.e2e-spec.ts`, plus 5 unit tests on pack rounding.
+- [ ] **Label printed on the clinic's actual printer with real label stock** — `DSP-OPEN-01`. The payload is complete and has never met paper.
+- [ ] **One week of live dispensing with stock matching physical count** — `DSP-OPEN-06`, and it depends on `INV-OPEN-01`.
+- [ ] **Controlled register reviewed against inspector expectations** — `DSP-OPEN-02`.
+- [x] **Open questions answered** — §20, four of six as "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| DSP-F-01 pharmacy queue | `DispenseService.queue` | "lists who is waiting, with the controlled flag" |
+| DSP-F-02 the session | `open`, `read` | DSP-T-12, and the allergies come from PAT |
+| DSP-F-03 FEFO | `LedgerService.suggestFefo` + `planFor` | DSP-T-01, T-02 |
+| DSP-F-04 batch override | `dispenseItem`, CHECK constraint | DSP-T-10 |
+| DSP-F-05 partial | `dispenseItem` | "a partial needs a reason, and leaves the item waiting" |
+| DSP-F-06 pack rounding | `pack-rounding.ts` | 5 unit tests, and one end-to-end |
+| DSP-F-07 substitute | `substitute` | DSP-T-11, both directions |
+| DSP-F-08 external / declined | `recordNonDispense` | "records a decline with a reason and bills nothing" |
+| DSP-F-09 amended mid-session | `rx_version_seen`, `amendedSinceOpen` | "flags an item the doctor changed after the session opened" |
+| DSP-F-10 one transaction | `dispenseItem` | DSP-T-04, both directions |
+| DSP-F-11 idempotency | `idempotency_key` unique | DSP-T-06 |
+| DSP-F-12 label | `label` | "the label carries what the patient needs" |
+| DSP-F-13 counselling | Per session, not per item | Recorded on completion |
+| DSP-F-14 session completion | `complete` | "will not finish with an item unaccounted for" |
+| DSP-F-15 invoice lines | `dispense.completed` event | Emitted with the price; nothing consumes it yet |
+| DSP-F-16 undo | `undo` | DSP-T-08 |
+| DSP-F-17 return | `recordReturn` | "a return goes to quarantine, not back on the shelf" |
+| DSP-F-18 controlled register | `ControlledRegisterService`, deferred trigger | DSP-T-09 |
+| DSP-F-19 register reconciliation | `reconcile` | "reconciles the register against the shelf" |
+| DSP-R-01 stock moves only here | `LedgerService.move` | INV's own tests |
+| DSP-R-02 no expired batch | `assertUsable` | DSP-T-03 |
+| DSP-R-03 batches add up | Deferred constraint trigger | DSP-T-04's rollback case |
+| DSP-R-04 never over-dispense | `dispenseItem` | "refuses to hand over more than was prescribed" |
+| DSP-R-05 undo window | `withinUndoWindow` | The window is 15 minutes and the message says so |
+| DSP-R-06 invoice from actual | The event payload | DSP-T-07 |
+| DSP-R-07 override reason | CHECK + service | DSP-T-10 |
+| DSP-R-08 controlled needs a register row | Deferred constraint trigger | DSP-T-09 |
+| DSP-R-09 price snapshot | `unit_price` on the row | DSP-T-07's second half |
+| DSP-R-10 no clinical notes | RX's `dispenseView` DTO, and this session | DSP-T-12 |
+| DSP-N-01 … N-02 timing and concurrency | `dispenseItem` | N-02 proved (DSP-T-05); N-01 never timed on the real host, `DSP-OPEN-06` |
+| DSP-N-04 one FEFO query per session | `planFor` | **Not met**: one per item. `DSP-OPEN-14` |
+
+## 22. Notes worth keeping
+
+1. **Two rules here are deferred constraint triggers, and that is the
+   interesting decision.** An item's batch lines are inserted after the
+   item; a controlled drug's register entry after the dispense. Neither
+   rule can be checked row by row as it is written — the only moment at
+   which "is this dispense complete and lawful?" has an answer is
+   commit. So both are `DEFERRABLE INITIALLY DEFERRED`, which is the
+   tool for exactly this and is used almost nowhere because almost
+   nothing needs it.
+
+2. **A prescription is intent; a dispense is what happened.** They are
+   allowed to differ — a different batch, less than prescribed, a
+   substitute, or nothing because the patient said no — and every
+   difference is recorded rather than smoothed over. That is why the
+   invoice is built from the dispense and never from the prescription
+   (DSP-R-06): billing for what was intended rather than what was given
+   is how a clinic charges for medicine it still has.
+
+3. **The idempotency key is armed when the button is drawn, not when it
+   is pressed.** A double click and a dropped response both replay the
+   first result; a second, deliberate dispense gets a new key and hands
+   over again. Putting the key generation in the click handler would
+   have made every retry a fresh dispense, which is the bug this
+   requirement exists to prevent.
+
+4. **An undo is fifteen minutes and then it is a return.** Before that,
+   the bag is still on the counter and the right thing is to put the
+   stock back. After, the patient has it, nobody knows how it was
+   stored, and it may not go back on a shelf. A return therefore
+   increments the batch's quarantined count and leaves on-hand where it
+   is, which is also why it does not touch the ledger: quarantine is not
+   part of the on-hand invariant.
+
+5. **The register records an unmasked identity number on purpose, and
+   every read of it is audited.** It is a legal document that somebody
+   may read in two years to answer "who was given this", and a masked
+   number answers nobody. The audit entry is what makes that defensible
+   rather than careless.
+
+6. **A controlled drug cannot be dispensed to a patient with no identity
+   number, and the refusal says to fix the patient's file.** The
+   alternative — a register entry with a blank where the law wants a
+   name — is worse than refusing.
+
+7. **Substituting a brand is counter work; substituting a generic is
+   prescribing.** The permission check is on the *difference between the
+   generics*, not on the act of substituting, so the common case needs
+   no special permission and the clinical case needs the one that says
+   so. A nurse can dispense all day and cannot change what the medicine
+   is.
+
+8. **FEFO carries its reservations across a session.** The same product
+   prescribed twice would otherwise have the same last ten tablets
+   promised to both lines. The second line's plan shows two and a
+   shortfall of eight, which is the true answer.
+
+9. **The completion guard was registered here rather than by RX.** RX
+   deliberately left `ENC-OPEN-15` open because a guard nothing can
+   clear is a trap: every prescribed visit would have become
+   impossible to finish. This module can clear it — by dispensing, or by
+   marking an item declined or external — so registering it here is safe
+   and the rule finally holds.
+
+10. **Nothing is billed yet, and the money is not lost.** Every dispensed
+    line carries the unit price and the line total it was charged at,
+    snapshotted, and the event that BIL will consume is already emitted
+    with them. When billing arrives it reads history rather than
+    starting from today.

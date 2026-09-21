@@ -299,7 +299,7 @@ All §9; overrides carry full warning payload; `clinical.viewed` on full read (d
 | RX-F-01 items from the catalogue, external allowed | `PrescriptionService.resolve`, `prescription_item_names_something` | "takes an external item", "refuses an item that names nothing" |
 | RX-F-02 the fields | `ItemInput`, `frequency.ts` | The closed lists are served to the client from `/prescriptions/options` |
 | RX-F-03 quantity auto-calc | `quantity.ts` | 14 unit tests, including that it divides by the strength rather than multiplying |
-| RX-F-04 stock awareness | `ProductStockLookup`, filled in by `StockModule` | "a product search says how many are on the shelf" (INV suite) |
+| RX-F-04 stock awareness | `ProductStockLookup`, `outOfStockWarning`, the panel's search rows | "a product search says how many are on the shelf" (INV suite), and "says when the shelf cannot cover it, and prescribes anyway" |
 | RX-F-05 editable in draft, active on sign | `activateForConsultation` | "makes the items real all at once" |
 | RX-F-06 post-sign changes version | `amendItem`, `prescription_item_is_immutable` trigger | RX-T-06 |
 | RX-F-07 label per language | `label.ts` | RX-T-10, and 11 more unit tests |

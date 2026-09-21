@@ -83,6 +83,28 @@ export const DomainEvent = {
   ProcedureCancelled: 'procedure.cancelled',
   ProcedureVoided: 'procedure.voided',
   VaccinationRecorded: 'vaccination.recorded',
+
+  // Dispensing (DSP, v0-08).
+  DispenseOpened: 'dispense.opened',
+  DispenseCompleted: 'dispense.completed',
+  DispensePartial: 'dispense.partial',
+  DispenseItemSubstituted: 'dispense.item_substituted',
+  DispenseItemExternal: 'dispense.item_external',
+  DispenseItemDeclined: 'dispense.item_declined',
+  DispenseUndone: 'dispense.undone',
+  DispenseReturned: 'dispense.returned',
+  DispenseSessionCompleted: 'dispense.session_completed',
+  ControlledDispensed: 'controlled.dispensed',
+
+  // Billing (BIL, v0-11).
+  InvoiceDraftCreated: 'invoice.draft_created',
+  InvoiceLineAdded: 'invoice.line_added',
+  InvoiceLineRemoved: 'invoice.line_removed',
+  InvoiceDiscounted: 'invoice.discounted',
+  InvoiceIssued: 'invoice.issued',
+  InvoiceVoided: 'invoice.voided',
+  InvoiceReissued: 'invoice.reissued',
+  InvoiceStatusChanged: 'invoice.status_changed',
 } as const;
 
 export type DomainEventName = (typeof DomainEvent)[keyof typeof DomainEvent];

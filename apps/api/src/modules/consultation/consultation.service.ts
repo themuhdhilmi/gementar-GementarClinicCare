@@ -21,6 +21,7 @@ import { requireTenantId } from '../../shared/prisma/tenant-scope.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '../audit/audit.actions.js';
 import { EventBus } from '../events/event-bus.service.js';
+import { ChargeRegistry } from '../events/charge.registry.js';
 import { DomainEvent } from '../events/domain-events.js';
 import type { TenantContext } from '../tenancy/tenant-context.js';
 import { EncounterService } from '../encounter/encounter.service.js';
@@ -102,6 +103,7 @@ export class ConsultationService {
     private readonly encounters: EncounterService,
     private readonly triage: TriageService,
     private readonly signHooks: ConsultationSignRegistry,
+    private readonly charges: ChargeRegistry,
   ) {}
 
   // ------------------------------------------------------------- reading
@@ -514,6 +516,28 @@ export class ConsultationService {
       });
     }
 
+    // BIL-F-02: the consultation fee. This module does not know what a
+    // visit costs — the fee schedule does — so it says what happened
+    // and billing prices it, inside this transaction.
+    const encounterForFee = await tx.encounter.findFirst({
+      where: { id: consultation.encounterId },
+      select: { type: true },
+    });
+    await this.charges.record(tx, ctx, {
+      encounterId: consultation.encounterId,
+      branchId: consultation.branchId,
+      patientId: consultation.patientId,
+      lineType: 'CONSULTATION',
+      sourceType: 'consultation',
+      sourceId: id,
+      description: 'Consultation',
+      quantity: 1,
+      unitPriceSen: null,
+      encounterType: encounterForFee?.type ?? null,
+      doctorId: consultation.doctorId,
+      occurredAt: now,
+    });
+
     await this.audit.record(tx, this.audit.actorFromContext(ctx), {
       action: AuditAction.ConsultationSigned,
       entityType: 'consultation',
@@ -578,6 +602,8 @@ export class ConsultationService {
     // Whatever this consultation ordered is abandoned with it. The
     // pharmacy must not be left holding an order for a visit that did
     // not happen.
+    await this.charges.remove(tx, ctx, { sourceType: 'consultation', sourceId: id });
+
     await this.signHooks.runCancel(
       tx,
       ctx,

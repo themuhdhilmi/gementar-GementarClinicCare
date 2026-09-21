@@ -447,6 +447,18 @@ describe('INV — stock', () => {
       expect(refused.body.detail).toContain('on the shelf');
     });
 
+    it('TEN-F-07: a branch with stock on its shelves cannot be closed', async () => {
+      const product = await addProduct();
+      await stockIn([{ productId: product, batchNo: 'BR-1', expiry: inYears(2), quantity: 4 }]);
+
+      const refused = await request(harness.server)
+        .post(`${API}/branches/${branch}/deactivate`)
+        .set('Cookie', admin)
+        .send({ reason: 'Closing this branch' })
+        .expect(422);
+      expect(refused.body.detail).toContain('batches of stock on the shelves');
+    });
+
     it('lets it go once the shelf is empty', async () => {
       const product = await addProduct();
       await stockIn([{ productId: product, batchNo: 'P-1', expiry: inYears(2), quantity: 2 }]);

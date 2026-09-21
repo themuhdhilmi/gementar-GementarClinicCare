@@ -15,6 +15,7 @@ import {
   type RxFavourite,
   type RxOptions,
   type RxWarning,
+  expiryTone,
 } from '@/lib/api';
 import { useAsyncEffect } from '@/lib/use-async';
 import { Alert, Button, Field, Input, Select } from './ui';
@@ -61,6 +62,8 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
   const [favourites, setFavourites] = useState<RxFavourite[]>([]);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<Product[]>([]);
+  /** Null until a search has run; false when stock is not tracked at all. */
+  const [stockKnown, setStockKnown] = useState<boolean | null>(null);
   const [draft, setDraft] = useState<(PrescriptionItemInput & { label: string }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -91,10 +94,11 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
     async () => {
       const text = query.trim();
       if (text.length < 2) return;
-      const found = await api<{ items: Product[] }>(
+      const found = await api<{ items: Product[]; stockKnown: boolean }>(
         `/products?type=MEDICINE&q=${encodeURIComponent(text)}`,
       );
       setHits(found.items);
+      setStockKnown(found.stockKnown);
     },
     [query],
     { debounceMs: 150 },
@@ -212,9 +216,35 @@ export function PrescriptionPanel({ consultationId, editable, onChange }: Props)
                         <span className="block text-xs text-muted">{product.genericName}</span>
                       )}
                     </span>
-                    {product.isControlled && (
-                      <span className="shrink-0 text-xs font-medium text-danger">Controlled</span>
-                    )}
+                    <span className="shrink-0 text-right text-xs">
+                      {product.isControlled && (
+                        <span className="block font-medium text-danger">Controlled</span>
+                      )}
+                      {/* RX-F-04. "Not known" and "none" are different
+                          answers, and a prescriber told "0 on hand" who
+                          then finds a full box learns not to believe the
+                          number. */}
+                      {stockKnown === false ? (
+                        <span className="block text-muted">stock not known</span>
+                      ) : product.onHand === 0 ? (
+                        <span className="block font-medium text-warning">none in stock</span>
+                      ) : (
+                        <span className="block text-muted">
+                          {product.onHand} {product.dispenseUnit} on hand
+                        </span>
+                      )}
+                      {product.nearestExpiry && (
+                        <span
+                          className={
+                            expiryTone(product.nearestExpiry) === 'warning'
+                              ? 'block text-warning'
+                              : 'block text-muted'
+                          }
+                        >
+                          exp {product.nearestExpiry.slice(0, 7)}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 </li>
               ))}

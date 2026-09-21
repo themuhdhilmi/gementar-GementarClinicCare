@@ -166,6 +166,31 @@ export function maxDoseWarning(
   };
 }
 
+/**
+ * RX-F-04: the shelf cannot cover this.
+ *
+ * Amber, never blocking. A doctor prescribing something the clinic has
+ * run out of is making a clinical decision that is still correct — the
+ * pharmacy substitutes it, or the patient gets it elsewhere. What would
+ * be wrong is letting them find out at the counter.
+ */
+export function outOfStockWarning(
+  displayName: string,
+  needed: number,
+  onHand: number,
+  unit: string,
+): Warning | null {
+  if (onHand >= needed) return null;
+  return {
+    type: 'OUT_OF_STOCK',
+    onHand,
+    message:
+      onHand <= 0
+        ? `There is no ${displayName} on the shelf at this branch. It can still be prescribed; the pharmacy will substitute it or send the patient elsewhere.`
+        : `Only ${onHand} ${unit} of ${displayName} on the shelf, and this needs ${needed}.`,
+  };
+}
+
 export const NO_ALLERGY_RECORD: Warning = {
   type: 'NO_ALLERGY_RECORD',
   message:

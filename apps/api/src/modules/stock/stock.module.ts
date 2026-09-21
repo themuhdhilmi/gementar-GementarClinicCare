@@ -1,5 +1,7 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { BatchStatus } from '../../generated/prisma/enums.js';
+import { BranchDeactivationRegistry } from '../tenancy/branch-deactivation.registry.js';
+import { TenancyModule } from '../tenancy/tenancy.module.js';
 import { CatalogueModule } from '../catalogue/catalogue.module.js';
 import { ProductRetirementRegistry } from '../catalogue/retirement.registry.js';
 import { ProductStockLookup } from '../catalogue/stock-lookup.js';
@@ -22,7 +24,7 @@ import { StockReconciliationJob } from './reconciliation.job.js';
  * "there is exactly one write path" true rather than aspirational.
  */
 @Module({
-  imports: [CatalogueModule],
+  imports: [CatalogueModule, TenancyModule],
   controllers: [StockController],
   providers: [LedgerService, StockService, StockReconciliationJob],
   exports: [LedgerService],
@@ -32,6 +34,7 @@ export class StockModule implements OnModuleInit {
     private readonly retirement: ProductRetirementRegistry,
     private readonly lookup: ProductStockLookup,
     private readonly ledger: LedgerService,
+    private readonly deactivation: BranchDeactivationRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -55,6 +58,26 @@ export class StockModule implements OnModuleInit {
           branches === 1
             ? `there are still ${total} of them on the shelf`
             : `there are still ${total} of them on the shelf, across ${branches} branches`,
+      };
+    });
+
+    /**
+     * TEN-F-07: a branch with medicine on its shelves cannot be closed.
+     *
+     * Closing it would strand the stock: the batches are branch-scoped,
+     * nothing would show them, and the value would quietly leave the
+     * books. Move it or write it off first, deliberately.
+     */
+    this.deactivation.add('stock on hand', async (tx, branchId) => {
+      const batches = await tx.productBatch.count({
+        where: { branchId, quantityOnHand: { gt: 0 }, status: BatchStatus.ACTIVE },
+      });
+      if (batches === 0) return null;
+      // The registry prints "<count> <reason>", so the reason is a noun
+      // phrase and carries no number of its own.
+      return {
+        reason: batches === 1 ? 'batch of stock on the shelf' : 'batches of stock on the shelves',
+        count: batches,
       };
     });
 

@@ -158,8 +158,14 @@ describe('tenant scoping extension', () => {
 
   it('refuses a model nobody has classified', async () => {
     const { query } = capture();
+    // Deliberately a name no module will ever add. An earlier version
+    // used `Invoice`, which stopped being unclassified the day billing
+    // was built — and a test that silently starts asserting nothing is
+    // worse than no test.
     await expect(
-      inTenant(() => scopedOperation({ model: 'Invoice', operation: 'findMany', args: {}, query })),
+      inTenant(() =>
+        scopedOperation({ model: 'NotAModelAnybodyWillAdd', operation: 'findMany', args: {}, query }),
+      ),
     ).rejects.toThrow(/not classified/i);
   });
 

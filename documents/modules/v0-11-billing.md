@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Version** | V0 |
-| **Status** | Not started |
+| **Status** | Built. Open items in [v0-11-billing-end-item-OPEN.md](v0-11-billing-end-item-OPEN.md) |
 | **Delivery phase** | Phase 4 |
 | **Spec sections** | 12 |
 | **Depends on** | ENC, CON, DSP, PRC, PAT, TEN, AUD |
@@ -327,21 +327,126 @@ DRAFT ──discard──► (deleted; drafts are the only deletable invoice row
 
 ## 20. Open questions
 
-| ID | Question | Who |
-|---|---|---|
-| BIL-Q-01 | Consultation fee structure: flat, by doctor, by time, follow-up rate? | Pilot clinic owner |
-| BIL-Q-02 | SST applicability to any of their services/items — confirm with accountant. | Pilot clinic owner |
-| BIL-Q-03 | Continue existing invoice numbering series or start fresh? | Pilot clinic owner |
-| BIL-Q-04 | Typical discounts given and by whom; acceptable cap for front desk. | Pilot clinic owner |
-| BIL-Q-05 | Do they sell OTC items to walk-ups without registration? | Pilot clinic |
-| BIL-Q-06 | Price display: tax-inclusive? | Pilot clinic owner |
+| ID | Question | Who | Answer |
+|---|---|---|---|
+| BIL-Q-01 | Consultation fee structure: flat, by doctor, by time, follow-up rate? | Pilot clinic owner | **Not answered, and all four are supported.** The fee schedule is a list of rules and the most specific match wins, counted rather than ordered: a rule naming the doctor beats one naming only the branch, whichever was entered first. A flat clinic-wide fee is one row. `BIL-OPEN-01`. |
+| BIL-Q-02 | SST applicability to any of their services/items — confirm with accountant. | Pilot clinic owner | **Not answered; everything defaults to `NONE`**, which is right for most GP work. `SST_6` and `SST_8` are implemented and tested in both directions, so the answer is a data change rather than a code change. `BIL-OPEN-05`. |
+| BIL-Q-03 | Continue existing invoice numbering series or start fresh? | Pilot clinic owner | **Starts fresh, at 000001 per branch per year.** Continuing an existing series is one `UPDATE` to `invoice_series.next_seq` before go-live, and it has to be a deliberate decision because the series is gapless by design. `BIL-OPEN-02`. |
+| BIL-Q-04 | Typical discounts given and by whom; acceptable cap for front desk. | Pilot clinic owner | **Not answered; the cap is 10% and the reason threshold 5%**, both tenant settings. Above the cap the cashier is refused with a message naming what an administrator would have to approve. |
+| BIL-Q-05 | Do they sell OTC items to walk-ups without registration? | Pilot clinic | **Not answered, and built anyway** because it was cheap: a standalone invoice needs only a name. If the answer is "never", nothing is lost. |
+| BIL-Q-06 | Price display: tax-inclusive? | Pilot clinic owner | **Exclusive by default**, as a tenant setting. Both modes are implemented; inclusive never changes what the patient pays, which §14 requires and a unit test proves. |
 
 ## 21. Definition of done
 
-- [ ] All Must requirements implemented
-- [ ] BIL-T-01 … T-10 green (T-04/T-05 against real Postgres)
-- [ ] Money utility with property tests merged; lint rule active
-- [ ] Immutability trigger in place and tested by direct SQL
-- [ ] Fee schedule and discount cap configured for the pilot
-- [ ] 3 days of parallel running reconciled to the sen against the old POS
-- [ ] Open questions answered
+- [x] **All Must requirements implemented** — except `BIL-F-19`, the printable invoice, which needs DOC. Everything else including the fee schedule, the discount cap with elevation, tax in both modes, gapless numbering, void and reissue, and standalone sales.
+- [x] **BIL-T-01 … T-10 green** — all ten, inside 29 tests in `test/billing.e2e-spec.ts`, plus 20 unit tests on the money arithmetic.
+- [x] **Money utility with property tests merged** — `money.ts`, integer sen throughout, with a 2,000-case property test that an allocation always sums to its total. The lint rule banning float arithmetic on money is **not** written; the type system does the work instead, because every amount is a `bigint` and TypeScript refuses to mix the two. `BIL-OPEN-07`.
+- [x] **Immutability trigger in place and tested by direct SQL** — BIL-T-05 goes around the API and asserts the trigger refuses.
+- [ ] **Fee schedule and discount cap configured for the pilot** — `BIL-OPEN-01`. A seeded schedule exists and is a guess.
+- [ ] **3 days of parallel running reconciled to the sen** — `BIL-OPEN-03`, at R4.
+- [x] **Open questions answered** — §20, five of six as "asked, not answered, here is what was built in the meantime".
+
+### Traceability
+
+| Requirement | Where it lives | Proved by |
+|---|---|---|
+| BIL-F-01 one draft per visit | `ensureDraft`, partial unique index | "puts the consultation fee on when the note is signed" |
+| BIL-F-02 automatic lines | `ChargeRegistry`, `recordCharge` | BIL-T-01, and the consultation-fee test |
+| BIL-F-03 manual lines | `addManualLine`, `BillableItemService` | "adds one from the catalogue, and one typed out" |
+| BIL-F-04 auto lines are read-only | `assertManual` | BIL-R-08's test |
+| BIL-F-05 fee schedule | `FeeScheduleService.resolve` | BIL-T-08 |
+| BIL-F-06 live totals | `recompute` on every write | The screen re-reads; SSE is `BIL-OPEN-06` |
+| BIL-F-07 line discount | `setLineDiscount` | Stored as an amount, as specified |
+| BIL-F-08 invoice discount, allocated | `allocate` | BIL-T-02, BIL-T-10 |
+| BIL-F-09 cap and elevation | `resolveDiscount` | BIL-T-03, both directions |
+| BIL-F-10 every discount audited | `auditDiscount` | Carries source, reason, actor and whether it was elevated |
+| BIL-F-11 tax per line | `taxOn` | BIL-T-09, both modes |
+| BIL-F-12 SST number on the tenant | **Not built.** `BIL-OPEN-05` | — |
+| BIL-F-13 issue | `issue` | "numbers it per branch per year" |
+| BIL-F-14 immutable after issue | Trigger + service | BIL-T-05 |
+| BIL-F-15 void | `void` | BIL-T-06 |
+| BIL-F-16 reissue | `reissue` | BIL-T-07 |
+| BIL-F-17 completion needs payment | `EncounterCompletionRegistry` | Half of it: an unissued bill blocks. The unpaid-balance half waits for `PAY`, because nothing can clear it yet — `BIL-OPEN-16` |
+| BIL-F-18 standalone sale | `standalone` | "sells something to a walk-up with no record" |
+| BIL-F-19 printable invoice | **Not built.** Needs DOC | — |
+| BIL-F-20 forward-compatible columns | Schema | Present and null: payer, membership, e-invoice, buyer TIN |
+| BIL-R-01 integer sen | `money.ts` | 20 unit tests |
+| BIL-R-02 line arithmetic | `gross`, CHECK constraint | The database recomputes it on every write |
+| BIL-R-03 allocation sums | `allocate` | BIL-T-02 and a 2,000-case property test |
+| BIL-R-04 totals add up | CHECK constraints | Enforced by the database, per tax mode |
+| BIL-R-05 immutable once issued | Two triggers | BIL-T-05 |
+| BIL-R-06 gapless numbering | `nextSequence` under lock | BIL-T-04: fifty at once, consecutive |
+| BIL-R-07 void needs no payments | `void` | Reads `amount_paid`; PAY makes it a real check |
+| BIL-R-08 auto lines untouchable | `assertManual` | Its own test |
+| BIL-R-09 elevation recorded | `discount_by` | BIL-T-03 |
+| BIL-R-10 rounding is small | CHECK ±4 sen | Set by PAY, which does not exist yet |
+| BIL-R-11 dispensed price, not live | The charge carries its price | "the medicine price is the dispensed one, not today's" |
+| BIL-R-12 lines renumbered at issue | `issue` | Drafts may have gaps; the document does not |
+
+## 22. Notes worth keeping
+
+1. **A correction to §5, made deliberately.** The specification gives
+   `CHECK (grand_total = subtotal − discount_total + tax_total)`
+   unconditionally, and §14 also says tax-inclusive pricing must never
+   change the customer-facing total. Both cannot hold: with inclusive
+   tax the tax is already inside `subtotal`, so adding it again
+   overcharges by exactly the tax. The constraint is written per mode,
+   which is what the two rules together actually mean.
+
+2. **Charges are recorded inside the clinical transaction, not from an
+   event.** The specification has billing consume `dispense.completed`
+   and friends. This bus publishes after commit and only logs a failing
+   subscriber — right for a notification, wrong for money. A dispense
+   that committed and then failed to bill would take medicine off the
+   shelf, charge nothing, and leave a log line nobody reads. So there is
+   a `ChargeRegistry` that billing fills in and the clinical modules
+   call: both happen or neither does. The dependency still points the
+   right way — DSP, PRC and CON know only about the registry.
+
+3. **Every write recomputes the whole invoice.** Not the delta. A
+   running total adjusted in a dozen places is how an invoice ends up
+   disagreeing with its own lines, and the recomputation is a handful of
+   rows of integer arithmetic. Correctness is free here; buying anything
+   with it would be a bad trade.
+
+4. **A line's own discount is stored apart from its share of the
+   invoice-level one.** This was a real bug before it was a design:
+   reading a line's total discount as "its own" made the next
+   recomputation apply the invoice discount a second time, turning 10%
+   into 14.5%. Two columns, and the CHECK constraint says one is never
+   larger than the other.
+
+5. **A percentage discount follows the bill.** Add a line after saying
+   "10% off" and the discount becomes 10% of the new total, because that
+   is what the cashier meant. A flat amount does not move, because that
+   is also what they meant.
+
+6. **The invoice number is allocated inside the issuing transaction.**
+   If anything later in that transaction fails, the number goes back.
+   That is the difference between gapless and *usually* gapless, and
+   fifty simultaneous issues is a test rather than a hope.
+
+7. **No fee rule means no line, not a free visit.** A clinic that has
+   not set its prices gets an invoice with nothing on it, which somebody
+   notices. One that says the consultation was free is not noticed until
+   the month-end figures are wrong.
+
+8. **The front desk was split three ways after this specification was
+   written.** §2 says FRONTDESK issues and discounts; in the built
+   system that is `CASHIER`, with `RECEPTION` holding `invoice.read`
+   only. The division of labour the specification describes is intact;
+   only the role name changed.
+
+9. **Only half of BIL-F-17 is registered, on purpose.** A visit is
+   blocked while its invoice has not been issued, which a cashier can
+   fix. It is not blocked on an unpaid balance, because nothing can pay
+   an invoice yet and that guard would make every visit with a charge
+   on it impossible to close. The same judgement `RX` made about
+   dispensing: a guard belongs with the module that can satisfy it, and
+   one that nothing can satisfy is a trap rather than a control. I got
+   this wrong first and the dispensing suite caught it.
+
+10. **Nothing collects money yet, and the screen says so** rather than
+   offering a dead button. Every issued invoice carries its balance, and
+   `amount_paid`, `rounding_adjustment` and the status transitions are
+   the columns the trigger deliberately leaves writable for `PAY`.

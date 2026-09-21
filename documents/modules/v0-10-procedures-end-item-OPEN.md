@@ -33,7 +33,7 @@ list and what each one uses. `PRC-OPEN-01`.
 
 | # | Item | Lands with |
 |---|---|---|
-| **PRC-OPEN-07** | **Nothing is charged.** `procedure.performed` carries the price snapshot and `procedure.voided` carries what to take off, which is exactly what `PRC-R-07` specifies. Nothing consumes either. The charge sits on the row as `price_snapshot` in the meantime, so no revenue is lost — it is simply not invoiced yet. | `v0-11-billing.md`. |
+| ~~**PRC-OPEN-07**~~ | ~~**Nothing is charged.**~~ **Closed 2026-09-21.** A performed procedure becomes an invoice line at its snapshot price, inside the performing transaction; voiding it takes the line off. Collecting the money is `v0-12-payment.md`. | Done. |
 | **PRC-OPEN-08** | **Voiding after an invoice is issued is not handled (§14).** Today a void inside 24 hours always succeeds, because there are no invoices for it to contradict. When there are, a void against an issued invoice has to become a credit note. | `v0-11-billing.md`. The 24-hour window is the placeholder that keeps this from mattering yet, and it should be revisited at the same time. |
 | **PRC-OPEN-09** | **No printable immunisation record (PRC-F-11).** The data is complete — vaccine, batch, expiry, site, who gave it, when — and shows on the patient's record. There is no certificate. | `v0-13-documents.md`, and V1 for the schedule and reminders. |
 

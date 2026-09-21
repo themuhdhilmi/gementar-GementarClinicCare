@@ -18,6 +18,8 @@ import { CatalogueModule } from './modules/catalogue/catalogue.module.js';
 import { PrescriptionModule } from './modules/prescription/prescription.module.js';
 import { StockModule } from './modules/stock/stock.module.js';
 import { ProcedureModule } from './modules/procedure/procedure.module.js';
+import { DispensingModule } from './modules/dispensing/dispensing.module.js';
+import { BillingModule } from './modules/billing/billing.module.js';
 
 @Module({
   imports: [
@@ -35,6 +37,8 @@ import { ProcedureModule } from './modules/procedure/procedure.module.js';
     PrescriptionModule,
     StockModule,
     ProcedureModule,
+    DispensingModule,
+    BillingModule,
     ConsultationModule,
     ScheduleModule.forRoot(),
   ],

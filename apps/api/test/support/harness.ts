@@ -267,6 +267,12 @@ export class Harness {
       'stock_movement',
       'procedure_price_history',
       'vaccination_record',
+      // Append-only, and immutable once dispensed.
+      'controlled_drug_register',
+      'dispense_item',
+      // Immutable once issued.
+      'invoice',
+      'invoice_line',
     ];
     let disabled = false;
     try {
@@ -286,6 +292,17 @@ export class Harness {
           // of an item points at the one it superseded, and that key is
           // RESTRICT rather than NO ACTION, so it cannot be deferred to
           // the end of the statement: the replacements go first.
+          // Billing, children before their parents.
+          'invoice_line',
+          'invoice',
+          'invoice_series',
+          'billable_item',
+          'fee_schedule',
+          // Dispensing, children before their parents.
+          'controlled_drug_register',
+          'dispense_item_batch',
+          'dispense_item',
+          'dispense',
           // Procedures, children before their parents.
           'vaccination_record',
           'encounter_procedure_consumable',
@@ -340,6 +357,13 @@ export class Harness {
         ]) {
           // No WHERE clause on purpose: row-level security is the filter, which
           // is one more place the policies get exercised.
+          //
+          // This depends on `app.auth_bypass` being OFF here, and it is
+          // only off because it is switched on *after* this loop. The
+          // `user` table carries an auth_bypass policy as well as a
+          // tenant one, so with the bypass on a `DELETE FROM "user"`
+          // is not scoped to anything and takes every clinic's staff
+          // with it. Do not move the set_config below above this loop.
           await client.query(`DELETE FROM ${table}`).catch(() => undefined);
         }
       }

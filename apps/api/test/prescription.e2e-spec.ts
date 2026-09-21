@@ -155,15 +155,21 @@ describe('RX — prescribing', () => {
   }
 
 
-  /** Walks an encounter off the board, the way the queue screen does. */
+  /**
+   * Closes a visit so the patient can have another.
+   *
+   * The patient is at `PHARMACY_WAITING` and never collects: since DSP
+   * exists, the visit cannot be *completed* while medicine is still
+   * waiting, and it is too late to cancel. "Did not answer" is both the
+   * legal transition and the honest description, and dispensing it
+   * properly is DSP's suite's job rather than this one's.
+   */
   async function finish(encounterId: string) {
-    for (const to of ['DISPENSING', 'COMPLETED']) {
-      await request(harness.server)
-        .post(`${API}/encounters/${encounterId}/transition`)
-        .set('Cookie', doctor)
-        .send({ to })
-        .expect(200);
-    }
+    await request(harness.server)
+      .post(`${API}/encounters/${encounterId}/transition`)
+      .set('Cookie', doctor)
+      .send({ to: 'NO_SHOW', note: 'Test fixture: patient did not collect' })
+      .expect(200);
   }
 
   async function sign(consultationId: string, body: Record<string, unknown> = {}, status = 200) {
@@ -455,6 +461,22 @@ describe('RX — prescribing', () => {
       expect(added.body.warnings.map((w: { type: string }) => w.type)).toContain(
         'NO_ALLERGY_RECORD',
       );
+    });
+
+    it('RX-F-04: says when the shelf cannot cover it, and prescribes anyway', async () => {
+      const { consultationId, patientId } = await consulting();
+      await recordNkda(patientId);
+
+      // Nothing has ever been received for these products in this suite,
+      // so the shelf is empty and the warning must say so.
+      const added = await addItem(consultationId, course());
+      const stock = added.body.warnings.find((w: { type: string }) => w.type === 'OUT_OF_STOCK');
+      expect(stock).toBeTruthy();
+      expect(stock.onHand).toBe(0);
+      expect(stock.message).toContain('can still be prescribed');
+
+      // Amber, not blocking: the doctor's decision stands.
+      await sign(consultationId);
     });
 
     it('RX-F-16: warns above the recorded maximum daily dose', async () => {
