@@ -31,6 +31,10 @@ export class TenancyController {
   @Audited(AuditAction.TenantSettingsChanged)
   @RequirePermission('admin.settings')
   async patchSettings(@Ctx() ctx: TenantContext, @Body() dto: PatchSettingsDto) {
-    return { settings: await this.tenants.patchSettings(ctx, dto.settings) };
+    return {
+      settings: await this.tenants.patchSettings(ctx, dto.settings, {
+        acknowledge: dto.acknowledge,
+      }),
+    };
   }
 }

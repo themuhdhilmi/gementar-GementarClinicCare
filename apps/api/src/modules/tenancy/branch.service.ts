@@ -24,12 +24,17 @@ import {
 } from './letterhead.js';
 import {
   applyPatch,
+  resolveSettings,
   settingsPatchSchema,
   explainSettingsIssues,
   type TenantSettings,
 } from './settings/tenant-settings.js';
 import { SettingsService } from './settings/settings.service.js';
-import { SettingsRejectedError } from './settings/settings-errors.js';
+import {
+  SettingsChangeBlockedError,
+  SettingsRejectedError,
+} from './settings/settings-errors.js';
+import { SettingsChangeRegistry } from './settings-change.registry.js';
 
 export type BranchSummary = {
   id: string;
@@ -100,6 +105,7 @@ export class BranchService {
     private readonly events: EventBus,
     private readonly deactivation: BranchDeactivationRegistry,
     private readonly settings: SettingsService,
+    private readonly settingsChanges: SettingsChangeRegistry,
   ) {}
 
   async listByIds(tx: Tx, ids: readonly string[]): Promise<BranchSummary[]> {
@@ -316,6 +322,7 @@ export class BranchService {
     ctx: TenantContext,
     branchId: string,
     patch: unknown,
+    options: { acknowledge?: boolean } = {},
   ): Promise<TenantSettings> {
     const tx = this.db.tx();
     const parsed = settingsPatchSchema.safeParse(patch);
@@ -323,6 +330,28 @@ export class BranchService {
 
     const before = await this.getDetail(tx, branchId);
     const settings = applyPatch(before.settings as Record<string, unknown>, parsed.data);
+
+    /**
+     * Would this change strand work that is already in progress?
+     *
+     * Compared as *resolved* settings rather than as the branch's own
+     * overrides: a branch layer is sparse, and asking what shape a half
+     * a settings object implies would give the wrong answer about which
+     * stations are going away.
+     */
+    if (!options.acknowledge) {
+      const tenantLayer = (
+        await tx.tenant.findFirst({ select: { settings: true } })
+      )?.settings as Record<string, unknown> | null;
+      const blockers = await this.settingsChanges.blockers(
+        tx,
+        resolveSettings(tenantLayer, before.settings as Record<string, unknown>),
+        resolveSettings(tenantLayer, settings),
+        branchId,
+      );
+      if (blockers.length > 0) throw new SettingsChangeBlockedError(blockers);
+    }
+
     await tx.branch.update({
       where: { id: branchId },
       data: { settings: settings as object, updatedBy: ctx.userId },

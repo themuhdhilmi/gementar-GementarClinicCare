@@ -31,7 +31,8 @@ export type IconName =
   | "search"
   | "plus"
   | "chevronRight"
-  | "alert";
+  | "alert"
+  | "display";
 
 const PATHS: Record<IconName, string> = {
   home: "M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5M9.5 20v-6h5v6",
@@ -64,6 +65,7 @@ const PATHS: Record<IconName, string> = {
   chevronRight: "m9 6 6 6-6 6",
   alert:
     "M12 8v5M12 16.5v.01M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z",
+  display: "M3 5h18v11H3zM9 20h6M12 16v4",
 };
 
 export function Icon({

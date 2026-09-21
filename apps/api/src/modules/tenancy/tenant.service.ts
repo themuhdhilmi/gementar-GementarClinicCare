@@ -12,13 +12,18 @@ import {
   applyPatch,
   describeSettings,
   explainSettingsIssues,
+  resolveSettings,
   settingsPatchSchema,
   SETTINGS_SCHEMA_VERSION,
   type TenantSettings,
 } from './settings/tenant-settings.js';
 import { SettingsService } from './settings/settings.service.js';
 import { describeModuleFlags } from './settings/module-flags.js';
-import { SettingsRejectedError } from './settings/settings-errors.js';
+import {
+  SettingsChangeBlockedError,
+  SettingsRejectedError,
+} from './settings/settings-errors.js';
+import { SettingsChangeRegistry } from './settings-change.registry.js';
 
 @Injectable()
 export class TenantService {
@@ -28,6 +33,7 @@ export class TenantService {
     private readonly audit: AuditService,
     private readonly events: EventBus,
     private readonly settings: SettingsService,
+    private readonly settingsChanges: SettingsChangeRegistry,
   ) {}
 
   /** Login-time lookup: runs before any tenant is known, so platform scope. */
@@ -129,13 +135,36 @@ export class TenantService {
   }
 
   /** TEN-F-04: validated against the schema; unknown keys are refused. */
-  async patchSettings(ctx: TenantContext, patch: unknown): Promise<TenantSettings> {
+  async patchSettings(
+    ctx: TenantContext,
+    patch: unknown,
+    options: { acknowledge?: boolean } = {},
+  ): Promise<TenantSettings> {
     const tx = this.db.tx();
     const parsed = settingsPatchSchema.safeParse(patch);
     if (!parsed.success) throw new SettingsRejectedError(explainSettingsIssues(parsed.error));
 
     const tenant = await this.getCurrent(tx, ctx.tenantId);
-    const settings = applyPatch(tenant.settings as Record<string, unknown>, parsed.data);
+    const before = tenant.settings as Record<string, unknown>;
+    const settings = applyPatch(before, parsed.data);
+
+    /**
+     * Would this change strand work that is already in progress?
+     *
+     * Asked of the modules that own the work rather than answered here:
+     * tenancy knows what a setting is and nothing about queues. The
+     * commonest case is switching a station off in the middle of the
+     * afternoon while patients are still standing in it.
+     */
+    if (!options.acknowledge) {
+      const blockers = await this.settingsChanges.blockers(
+        tx,
+        resolveSettings(before, null),
+        resolveSettings(settings, null),
+        null,
+      );
+      if (blockers.length > 0) throw new SettingsChangeBlockedError(blockers);
+    }
 
     await tx.tenant.update({
       where: { id: ctx.tenantId },

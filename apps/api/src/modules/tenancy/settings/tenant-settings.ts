@@ -85,6 +85,14 @@ const queue = z
       .boolean()
       .default(false)
       .describe('Patients pay first and collect medicine afterwards, rather than the other way round.'),
+    proceduresEnabled: z
+      .boolean()
+      .default(false)
+      .describe(
+        'This clinic does procedures — dressings, nebulisers, injections — as a step of their ' +
+          'own, with a queue and a screen. Leave it off and a procedure is still recorded; it ' +
+          'simply has no line of its own.',
+      ),
     combinedCounter: z
       .boolean()
       .default(false)

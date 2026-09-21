@@ -22,7 +22,9 @@ import { EncounterService, readable } from './encounter.service.js';
 import { QueueStreamService } from './queue-stream.service.js';
 import {
   STATION_STATUSES,
+  STATION_WAITING,
   callTargetFor,
+  stationsFor,
   type Station,
 } from './transitions.js';
 
@@ -44,6 +46,15 @@ export type QueueRow = {
   callCount: number;
   skipCount: number;
   calledAt: string | null;
+  /**
+   * Whether "call next" could reach this row.
+   *
+   * False for the patient already in the chair. The board shows them,
+   * because the station is dealing with them, but they are not in the
+   * line — and a screen that cannot tell the difference labels its call
+   * button with the wrong person's number.
+   */
+  callable: boolean;
 };
 
 type Row = {
@@ -131,6 +142,7 @@ export class QueueService {
     );
 
     const now = this.clock.now();
+    const callable = new Set<EncounterStatus>(STATION_WAITING[station]);
     return rows.map((row) => {
       const waitingMinutes = Math.floor(
         (now.getTime() - row.status_since.getTime()) / 60_000,
@@ -162,6 +174,7 @@ export class QueueService {
         callCount: row.call_count,
         skipCount: row.skip_count,
         calledAt: row.called_at ? row.called_at.toISOString() : null,
+        callable: callable.has(row.status),
       };
     });
   }
@@ -188,7 +201,9 @@ export class QueueService {
     }
 
     const tx = this.db.tx();
-    const statuses = STATION_STATUSES[station];
+    // The waiting list, not the board: the patient already in the chair
+    // must not be picked up again by the button that calls the next one.
+    const statuses = STATION_WAITING[station];
 
     const [head] = await tx.$queryRawUnsafe<
       Array<{ id: string; status: EncounterStatus }>
@@ -577,20 +592,13 @@ export class QueueService {
    * rather than two halves of the same person's work.
    */
   async boardShape(branchId: string): Promise<Station[]> {
-    const { triageRequired, combinedCounter } = await this.settings.group(
-      branchId,
-      'queue',
-    );
-
-    const stations: Station[] = ['reception'];
-    if (triageRequired !== 'NEVER') stations.push('triage');
-    stations.push('doctor');
-    stations.push(
-      ...((combinedCounter
-        ? ['counter']
-        : ['pharmacy', 'cashier']) as Station[]),
-    );
-    return stations;
+    const { triageRequired, combinedCounter, proceduresEnabled } =
+      await this.settings.group(branchId, 'queue');
+    return stationsFor({
+      triageRequired,
+      combinedCounter,
+      proceduresEnabled,
+    });
   }
 
   /**

@@ -84,7 +84,11 @@ export class BranchesController {
     @Param('id') id: string,
     @Body() dto: PatchSettingsDto,
   ) {
-    return { settings: await this.branches.patchSettings(ctx, id, dto.settings) };
+    return {
+      settings: await this.branches.patchSettings(ctx, id, dto.settings, {
+        acknowledge: dto.acknowledge,
+      }),
+    };
   }
 
   /** TEN-F-10: the text around a printed document. */

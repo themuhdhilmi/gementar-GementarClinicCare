@@ -411,18 +411,77 @@ export const OPEN_STATUSES: readonly EncounterStatus[] = Object.values(
   S,
 ).filter((status) => !TERMINAL_STATUSES.includes(status));
 
-/** Which board a waiting encounter appears on (ENC-F-15). */
+/**
+ * What a station's board shows: its whole workload (ENC-F-15).
+ *
+ * Both the people waiting *and* the person being dealt with now. A
+ * doctor's board that showed only `DOCTOR_WAITING` left the patient
+ * actually in the room off the screen, so the board went blank at the
+ * exact moment the doctor was busiest — and the "write the note" button
+ * the board offers for a patient in consultation could never appear.
+ *
+ * `procedure` is deliberately the exception: `PROCEDURE_DONE` means the
+ * procedure is finished and the patient is moving on, not that somebody
+ * is working on them, so it belongs on no board.
+ */
 export const STATION_STATUSES: Readonly<
   Record<Station, readonly EncounterStatus[]>
 > = {
   reception: OPEN_STATUSES,
-  triage: [S.TRIAGE_WAITING],
-  doctor: [S.DOCTOR_WAITING],
+  triage: [S.TRIAGE_WAITING, S.TRIAGE_IN_PROGRESS],
+  doctor: [S.DOCTOR_WAITING, S.IN_CONSULTATION],
   procedure: [S.PROCEDURE_WAITING],
   pharmacy: [S.PHARMACY_WAITING, S.DISPENSING],
   cashier: [S.PAYMENT_WAITING],
   counter: [S.PHARMACY_WAITING, S.DISPENSING, S.PAYMENT_WAITING],
 };
+
+/**
+ * What "call next" may take from: the people actually waiting.
+ *
+ * Distinct from the board, and it has to be. Taking the head of the
+ * *board* means the patient already in the chair sorts first — they
+ * have been in that status longest — so pressing "call next" re-calls
+ * the person in front of you instead of calling the next one in.
+ */
+export const STATION_WAITING: Readonly<
+  Record<Station, readonly EncounterStatus[]>
+> = {
+  reception: [],
+  triage: [S.TRIAGE_WAITING],
+  doctor: [S.DOCTOR_WAITING],
+  procedure: [S.PROCEDURE_WAITING],
+  pharmacy: [S.PHARMACY_WAITING],
+  cashier: [S.PAYMENT_WAITING],
+  counter: [S.PHARMACY_WAITING, S.PAYMENT_WAITING],
+};
+
+/**
+ * Which stations a clinic with these settings actually has (ENC-F-05).
+ *
+ * One function, used both by the board that draws the tabs and by the
+ * guard that refuses to switch a station off while somebody is standing
+ * in it. Two copies of this rule would eventually disagree, and the way
+ * you would find out is a nurse losing her queue mid-morning.
+ *
+ * Deliberately pure and settings-shaped rather than branch-shaped, so
+ * it can be asked "what *would* the shape be" about a change that has
+ * not been saved yet.
+ */
+export function stationsFor(settings: {
+  triageRequired?: string | null;
+  combinedCounter?: boolean | null;
+  proceduresEnabled?: boolean | null;
+}): Station[] {
+  const stations: Station[] = ['reception'];
+  if (settings.triageRequired !== 'NEVER') stations.push('triage');
+  stations.push('doctor');
+  // A clinic that orders no procedures should not have a procedure tab
+  // that is empty every day of its life.
+  if (settings.proceduresEnabled) stations.push('procedure');
+  stations.push(...(settings.combinedCounter ? ['counter'] : ['pharmacy', 'cashier']) as Station[]);
+  return stations;
+}
 
 /**
  * Stations that are a way of looking at the board rather than a place a

@@ -14,7 +14,91 @@ export const FLOW_SETTING_KEYS = [
   "requireDispenseBeforeComplete",
   "requirePaymentBeforeComplete",
   "combinedCounter",
+  "proceduresEnabled",
 ] as const;
+
+/**
+ * The shapes a clinic actually takes, named.
+ *
+ * Three switches make twelve combinations, and an owner setting this up
+ * for the first time should not have to reason about twelve of anything
+ * — they should recognise their own clinic in a list and press it. The
+ * switches stay underneath for anyone whose clinic is not on the list,
+ * which is why "Custom" is a real answer rather than an apology.
+ *
+ * Each preset sets *every* key it mentions, so picking one always lands
+ * somewhere predictable rather than half-inheriting the last shape.
+ */
+export const FLOW_PRESETS = [
+  {
+    key: "single-room",
+    name: "Single room",
+    hint: "One doctor, one helper. No triage, and one window for medicine and money.",
+    monitors: 2,
+    settings: {
+      triageRequired: "NEVER",
+      combinedCounter: true,
+      paymentBeforeDispense: false,
+      proceduresEnabled: false,
+    },
+  },
+  {
+    key: "standard-gp",
+    name: "Standard GP",
+    hint: "Triage when the nurse wants it, decided per patient. One counter at the end.",
+    monitors: 3,
+    settings: {
+      triageRequired: "OPTIONAL",
+      combinedCounter: true,
+      paymentBeforeDispense: false,
+      proceduresEnabled: false,
+    },
+  },
+  {
+    key: "separate-counters",
+    name: "Separate pharmacy and cashier",
+    hint: "Two or more doctors. Everyone is triaged, and medicine and money are different windows.",
+    monitors: 5,
+    settings: {
+      triageRequired: "ALWAYS",
+      combinedCounter: false,
+      paymentBeforeDispense: false,
+      proceduresEnabled: true,
+    },
+  },
+  {
+    key: "pay-first",
+    name: "Pay first",
+    hint: "The bill is settled before the medicine is handed over.",
+    monitors: 4,
+    settings: {
+      triageRequired: "OPTIONAL",
+      combinedCounter: false,
+      paymentBeforeDispense: true,
+      proceduresEnabled: false,
+    },
+  },
+] as const;
+
+/** Which preset these settings are, if any. */
+function presetOf(queue: Queue): string | null {
+  return (
+    FLOW_PRESETS.find((preset) =>
+      Object.entries(preset.settings).every(
+        ([key, value]) =>
+          (queue[key] ?? DEFAULTS[key as keyof typeof DEFAULTS]) === value,
+      ),
+    )?.key ?? null
+  );
+}
+
+/** What the server falls back to, so an unset key still compares. */
+const DEFAULTS = {
+  triageRequired: "OPTIONAL",
+  combinedCounter: false,
+  paymentBeforeDispense: false,
+  proceduresEnabled: false,
+} as const;
 
 type Queue = Record<string, SettingValue | null | undefined>;
 
@@ -57,11 +141,13 @@ export function PatientFlow({
   disabled: boolean;
   onChange: (key: string, value: SettingValue) => void;
 }) {
+  const current = presetOf(queue);
   const triage = String(queue["triageRequired"] ?? "OPTIONAL");
   const payFirst = queue["paymentBeforeDispense"] === true;
   const oneCounter = queue["combinedCounter"] === true;
   const mustDispense = queue["requireDispenseBeforeComplete"] !== false;
   const mustPay = queue["requirePaymentBeforeComplete"] !== false;
+  const procedures = queue["proceduresEnabled"] === true;
 
   const stations: Station[] = [
     {
@@ -107,8 +193,22 @@ export function PatientFlow({
     {
       key: "procedure",
       name: "Procedure",
-      state: "sometimes",
-      because: "Only when the doctor orders one.",
+      state: procedures ? "sometimes" : "never",
+      because: procedures
+        ? "Only when the doctor orders one — and it has a queue and a screen of its own."
+        : "Recorded when the doctor orders one, but with no line of its own.",
+      control: (
+        <Select
+          value={procedures ? "yes" : "no"}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange("proceduresEnabled", event.target.value === "yes")
+          }
+        >
+          <option value="yes">A room with its own queue</option>
+          <option value="no">No queue of its own</option>
+        </Select>
+      ),
     },
   ];
 
@@ -205,6 +305,56 @@ export function PatientFlow({
       title="What a visit goes through"
       description="The route a patient takes, and the parts of it this clinic can change."
     >
+      <div className="mb-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+          Start from a shape
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {FLOW_PRESETS.map((preset) => {
+            const on = current === preset.key;
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                disabled={disabled}
+                aria-pressed={on}
+                title={preset.hint}
+                onClick={() => {
+                  for (const [key, value] of Object.entries(preset.settings)) {
+                    onChange(key, value as SettingValue);
+                  }
+                }}
+                className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 ${
+                  on
+                    ? "border-primary bg-primary-soft text-primary-ink"
+                    : "border-line hover:bg-surface-muted"
+                }`}
+              >
+                <span className="block font-medium">{preset.name}</span>
+                <span className="block text-xs text-muted">
+                  {preset.monitors} screens
+                </span>
+              </button>
+            );
+          })}
+          <span
+            className={`rounded-lg border px-3 py-2 text-sm ${
+              current === null
+                ? "border-primary bg-primary-soft text-primary-ink"
+                : "border-dashed border-line text-muted"
+            }`}
+          >
+            <span className="block font-medium">Custom</span>
+            <span className="block text-xs text-muted">set below</span>
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          {current
+            ? FLOW_PRESETS.find((preset) => preset.key === current)?.hint
+            : "This clinic's flow is not one of the four. Everything below still applies."}
+        </p>
+      </div>
+
       {/* The whole point: the resulting flow, in one line, updating as
           the controls change. */}
       <p className="rounded-md bg-surface-muted px-3 py-2.5 text-sm">

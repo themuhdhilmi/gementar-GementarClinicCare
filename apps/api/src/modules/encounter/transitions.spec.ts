@@ -6,6 +6,7 @@ import {
   ENCOUNTER_TRANSITIONS,
   OPEN_STATUSES,
   STATION_STATUSES,
+  STATION_WAITING,
   TERMINAL_STATUSES,
   VIEW_STATIONS,
   allowedFrom,
@@ -249,6 +250,47 @@ describe('The transition table (§6, ENC-R-01)', () => {
     // and demanded of nobody, which is a rule that does nothing.
     for (const rule of ALL_TRANSITIONS.filter((r) => r.back)) {
       expect(rule.forceOnly, `${rule.from} → ${rule.to}`).toBeFalsy();
+    }
+  });
+
+  it('a board shows the patient being dealt with, not just the line', () => {
+    // The bug this pins: a doctor with somebody in the room saw an empty
+    // board, because IN_CONSULTATION was on no board at all.
+    expect(STATION_STATUSES.doctor).toContain(EncounterStatus.IN_CONSULTATION);
+    expect(STATION_STATUSES.triage).toContain(
+      EncounterStatus.TRIAGE_IN_PROGRESS,
+    );
+    expect(STATION_STATUSES.pharmacy).toContain(EncounterStatus.DISPENSING);
+  });
+
+  it('never offers to call somebody who is already being dealt with', () => {
+    // `call next` takes the head of the *waiting* list. Taking the head
+    // of the board would pick the patient in the chair — they have been
+    // in that status longest — and re-call the person in front of you.
+    for (const station of Object.keys(STATION_WAITING) as Array<
+      keyof typeof STATION_WAITING
+    >) {
+      for (const status of STATION_WAITING[station]) {
+        expect(
+          STATION_STATUSES[station],
+          `${station} can call ${status}, which is not even on its board`,
+        ).toContain(status);
+        expect(
+          callTargetFor(station, status) !== null || station === 'cashier' ||
+            station === 'counter',
+          `${station} would call ${status} nowhere`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('the waiting list is never the whole board', () => {
+    // Where a station has an in-progress state, the two lists must
+    // differ — otherwise the guard above is vacuous.
+    for (const station of ['triage', 'doctor', 'pharmacy'] as const) {
+      expect(STATION_WAITING[station].length).toBeLessThan(
+        STATION_STATUSES[station].length,
+      );
     }
   });
 

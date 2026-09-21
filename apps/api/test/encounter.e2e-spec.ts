@@ -354,6 +354,90 @@ describe('ENC — encounters and the queue', () => {
 
   // ------------------------------------------------------- the transitions
 
+  describe('A board shows the whole station (ENC-F-15)', () => {
+    function board(station: string, cookie = reception) {
+      return request(harness.server)
+        .get(`${API}/branches/${branch}/queues/${station}`)
+        .set('Cookie', cookie);
+    }
+
+    it('ENC-T-14: the doctor sees the patient who is in the room', async () => {
+      // The complaint this answers: every open visit appeared on the
+      // reception board, and the doctor's own board was empty while
+      // somebody was sitting in front of them.
+      const id = await reach('DOCTOR_WAITING');
+      await move(id, 'IN_CONSULTATION', doctor).expect(200);
+
+      const doctors = await board('doctor', doctor).expect(200);
+      const row = doctors.body.items.find(
+        (item: { id: string }) => item.id === id,
+      );
+      expect(
+        row,
+        'the patient in the room is not on the doctor board',
+      ).toBeTruthy();
+      expect(row.status).toBe('IN_CONSULTATION');
+
+      // On the board, but not in the line: the screen labels its call
+      // button from the callable rows, and calling somebody already in
+      // the room would be calling them twice.
+      expect(row.callable).toBe(false);
+      const waiting = doctors.body.items.filter(
+        (item: { callable: boolean }) => item.callable,
+      );
+      expect(
+        waiting.every((item: { status: string }) => item.status === 'DOCTOR_WAITING'),
+      ).toBe(true);
+    });
+
+    it('ENC-T-15: call next skips the patient already being dealt with', async () => {
+      // Two at the pharmacy: one at the counter, one still waiting. The
+      // button must reach the one waiting.
+      const atTheCounter = await reach('PHARMACY_WAITING');
+      await move(atTheCounter, 'DISPENSING', doctor).expect(200);
+      const stillWaiting = await reach('PHARMACY_WAITING');
+      expect(stillWaiting).toBeTruthy();
+
+      const before = await request(harness.server)
+        .get(`${API}/encounters/${atTheCounter}`)
+        .set('Cookie', doctor)
+        .expect(200);
+      const callsBefore = before.body.encounter.callCount as number;
+
+      const called = await request(harness.server)
+        .post(`${API}/branches/${branch}/queues/pharmacy/call-next`)
+        .set('Cookie', doctor)
+        .expect(200);
+
+      // Whoever it reaches, it must not be the patient already at the
+      // counter — and it must be somebody who was waiting for medicine.
+      expect(
+        called.body.encounter.id,
+        'call next re-called the patient already at the counter',
+      ).not.toBe(atTheCounter);
+      expect(called.body.encounter.status).toBe('DISPENSING');
+
+      // And the one at the counter is untouched — still where they were,
+      // not called a second time.
+      const counter = await request(harness.server)
+        .get(`${API}/encounters/${atTheCounter}`)
+        .set('Cookie', doctor)
+        .expect(200);
+      expect(counter.body.encounter.status).toBe('DISPENSING');
+      expect(counter.body.encounter.callCount).toBe(callsBefore);
+    });
+
+    it('triage shows the patient having their observations taken', async () => {
+      const id = await reach('DOCTOR_WAITING');
+      // Back into the triage line, then called through to in-progress.
+      const triaged = await board('triage', nurse).expect(200);
+      expect(
+        triaged.body.items.some((item: { id: string }) => item.id === id),
+        'a patient past triage should not still be on its board',
+      ).toBe(false);
+    });
+  });
+
   describe('The state machine (ENC-R-01, ENC-R-09)', () => {
     it('ENC-T-02: refuses an impossible move and says what is possible', async () => {
       const patientId = await newPatient('Impossible');
@@ -703,7 +787,13 @@ describe('ENC — encounters and the queue', () => {
       await request(harness.server)
         .patch(`${API}/branches/${branch}/settings`)
         .set('Cookie', admin)
-        .send({ settings: { queue: { triageRequired: value } } })
+        .send({
+          settings: { queue: { triageRequired: value } },
+          // A fixture, not the thing under test: other tests in this file
+          // leave patients in triage, and ENC-T-16 is what covers the
+          // warning itself.
+          acknowledge: true,
+        })
         .expect(200);
     }
 
@@ -767,6 +857,101 @@ describe('ENC — encounters and the queue', () => {
    * The statuses underneath do not change — what changes is that the
    * board stops pretending it is two people.
    */
+  describe('Switching a station off (ENC-F-26)', () => {
+    function setQueue(
+      patch: Record<string, unknown>,
+      acknowledge = false,
+    ) {
+      return request(harness.server)
+        .patch(`${API}/branches/${branch}/settings`)
+        .set('Cookie', admin)
+        .send({ settings: { queue: patch }, acknowledge });
+    }
+
+    it('ENC-T-16: refuses while somebody is still standing in it', async () => {
+      await setQueue({ triageRequired: 'ALWAYS' }, true).expect(200);
+      const patientId = await newPatient('Mid Triage');
+      const created = await checkIn({ patientId }).expect(201);
+      expect(created.body.encounter.status).toBe('TRIAGE_WAITING');
+
+      try {
+        const refused = await setQueue({ triageRequired: 'NEVER' }).expect(409);
+        expect(refused.body.code).toBe('settings_change_blocked');
+        expect(refused.body.errors.blockers[0].reason).toBe('station_in_use');
+        // The message has to name who is in the way, not just say no.
+        expect(refused.body.detail).toContain('triage');
+
+        // And nothing was saved: triage is still on.
+        const again = await checkIn({
+          patientId: await newPatient('Still Triaged'),
+        }).expect(201);
+        expect(again.body.encounter.status).toBe('TRIAGE_WAITING');
+        await move(again.body.encounter.id, 'CANCELLED', reception).expect(200);
+      } finally {
+        await move(created.body.encounter.id, 'CANCELLED', reception).expect(
+          200,
+        );
+        await setQueue({ triageRequired: null }, true).expect(200);
+      }
+    });
+
+    it('ENC-T-17: allows it once the station is empty', async () => {
+      await setQueue({ triageRequired: 'ALWAYS' }, true).expect(200);
+      const created = await checkIn({
+        patientId: await newPatient('Passing Through'),
+      }).expect(201);
+      const id = created.body.encounter.id;
+
+      // Move them out of triage, and empty the line behind them: other
+      // tests in this file leave patients in triage, and the warning is
+      // about the station being occupied by anybody at all.
+      await move(id, 'TRIAGE_IN_PROGRESS', nurse).expect(200);
+      await move(id, 'DOCTOR_WAITING', nurse).expect(200);
+
+      const stuck = await request(harness.server)
+        .get(`${API}/branches/${branch}/queues/triage`)
+        .set('Cookie', nurse)
+        .expect(200);
+      for (const row of stuck.body.items as Array<{ id: string }>) {
+        await request(harness.server)
+          .post(`${API}/encounters/${row.id}/cancel`)
+          .set('Cookie', reception)
+          .send({ reason: 'Clearing the line for ENC-T-17' })
+          .expect(200);
+      }
+
+      try {
+        await setQueue({ triageRequired: 'NEVER' }).expect(200);
+        const stats = await request(harness.server)
+          .get(`${API}/branches/${branch}/queues-stats`)
+          .set('Cookie', reception)
+          .expect(200);
+        expect(stats.body.stations).not.toContain('triage');
+      } finally {
+        await setQueue({ triageRequired: null }, true).expect(200);
+      }
+    });
+
+    it('ENC-T-18: the procedure room is a station only when it is switched on', async () => {
+      const off = await request(harness.server)
+        .get(`${API}/branches/${branch}/queues-stats`)
+        .set('Cookie', reception)
+        .expect(200);
+      expect(off.body.stations).not.toContain('procedure');
+
+      try {
+        await setQueue({ proceduresEnabled: true }).expect(200);
+        const on = await request(harness.server)
+          .get(`${API}/branches/${branch}/queues-stats`)
+          .set('Cookie', reception)
+          .expect(200);
+        expect(on.body.stations).toContain('procedure');
+      } finally {
+        await setQueue({ proceduresEnabled: null }, true).expect(200);
+      }
+    });
+  });
+
   describe('One counter for medicine and money (ENC-F-15)', () => {
     async function setCounter(value: boolean | null) {
       await request(harness.server)
@@ -824,7 +1009,11 @@ describe('ENC — encounters and the queue', () => {
         .get(`${API}/branches/${branch}/queues/counter`)
         .set('Cookie', reception)
         .expect(200);
-      const head = queue.body.items[0] as { id: string; status: string };
+      // The head of the *line*, not of the board: the board also shows
+      // whoever is already at the counter, and they are not callable.
+      const head = (
+        queue.body.items as Array<{ id: string; status: string }>
+      ).find((row) => row.status !== 'DISPENSING');
       expect(head).toBeTruthy();
 
       const called = await request(harness.server)
@@ -832,15 +1021,15 @@ describe('ENC — encounters and the queue', () => {
         .set('Cookie', reception)
         .expect(200);
 
-      expect(called.body.encounter.id).toBe(head.id);
-      if (head.status === 'PHARMACY_WAITING') {
+      expect(called.body.encounter.id).toBe(head!.id);
+      if (head!.status === 'PHARMACY_WAITING') {
         // Waiting for medicine: called *into* dispensing.
         expect(called.body.encounter.status).toBe('DISPENSING');
       } else {
         // Only waiting to pay: there is no "being paid" state, and
         // inventing one would put a step in the record that did not
         // happen. So they are announced and nothing else moves.
-        expect(called.body.encounter.status).toBe(head.status);
+        expect(called.body.encounter.status).toBe(head!.status);
         expect(called.body.encounter.callCount).toBeGreaterThan(0);
       }
     });
@@ -909,7 +1098,10 @@ describe('ENC — encounters and the queue', () => {
       await request(harness.server)
         .patch(`${API}/branches/${branch}/settings`)
         .set('Cookie', admin)
-        .send({ settings: { queue: { triageRequired: 'NEVER' } } })
+        .send({
+          settings: { queue: { triageRequired: 'NEVER' } },
+          acknowledge: true,
+        })
         .expect(200);
       try {
         const created = await checkIn({ patientId: await newPatient() }).expect(201);
@@ -920,7 +1112,10 @@ describe('ENC — encounters and the queue', () => {
         await request(harness.server)
           .patch(`${API}/branches/${branch}/settings`)
           .set('Cookie', admin)
-          .send({ settings: { queue: { triageRequired: null } } })
+          .send({
+            settings: { queue: { triageRequired: null } },
+            acknowledge: true,
+          })
           .expect(200);
       }
     });

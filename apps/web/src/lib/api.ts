@@ -597,6 +597,12 @@ export type QueueRow = {
   callCount: number;
   skipCount: number;
   calledAt: string | null;
+  /**
+   * Whether "call next" could reach this row. False for the patient the
+   * station is already dealing with: the board shows them, but they are
+   * not in the line.
+   */
+  callable: boolean;
 };
 
 export type Encounter = {

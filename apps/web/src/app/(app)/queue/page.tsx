@@ -153,7 +153,9 @@ export default function QueuePage() {
 
   if (!me) return null;
   const callable = station !== "reception";
-  const next = rows[0];
+  // The head of the *line*, not of the board: the board also shows the
+  // patient already with this station, and they are not callable.
+  const next = rows.find((row) => row.callable);
 
   const columns: Array<Column<QueueRow>> = [
     {
@@ -361,7 +363,7 @@ export default function QueuePage() {
             <Button
               size="lg"
               loading={busy}
-              disabled={rows.length === 0}
+              disabled={!next}
               onClick={() =>
                 void act("Called.", () =>
                   api(

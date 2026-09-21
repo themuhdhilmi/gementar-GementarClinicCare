@@ -1,5 +1,13 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsObject, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsObject,
+  IsOptional,
+  IsString,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 // No DTO here carries a tenant id: the tenant comes from the session
 // (TEN-R-01). `npm run lint:dto` fails the build if one ever does.
@@ -17,6 +25,20 @@ export class UpdateTenantDto {
 export class PatchSettingsDto {
   @IsObject()
   settings!: Record<string, unknown>;
+
+  /**
+   * Save it anyway, having been told who is still standing in the
+   * station being switched off (ENC-F-26).
+   *
+   * The warning exists so the change is not made by accident, not to
+   * stop it: a clinic that wants triage off at three in the afternoon
+   * is entitled to have it off, and refusing until the building is
+   * empty would mean the setting could never be changed on a working
+   * day. What it must not be is silent.
+   */
+  @IsOptional()
+  @IsBoolean()
+  acknowledge?: boolean;
 }
 
 export class CreateBranchDto {

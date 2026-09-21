@@ -47,6 +47,17 @@ export default function ClinicPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * ENC-F-26: the change is fine, the timing is not.
+   *
+   * Held rather than shown as an error, because the answer is a
+   * decision — move those patients on, or go ahead knowing they are
+   * there — and an error message cannot offer either.
+   */
+  const [blocked, setBlocked] = useState<{
+    detail: string;
+    count: number;
+  } | null>(null);
 
   const load = useCallback(async () => {
     const next = await api<TenantOverview>("/tenant");
@@ -80,12 +91,36 @@ export default function ClinicPage() {
       await load();
       setNotice(`${what} saved.`);
     } catch (caught) {
+      if (
+        caught instanceof ApiError &&
+        caught.code === "settings_change_blocked"
+      ) {
+        const blockers =
+          ((caught.problem.errors as { blockers?: unknown } | undefined)
+            ?.blockers as Array<{ detail: string; count: number }>) ?? [];
+        setBlocked({
+          detail: blockers.map((b) => b.detail).join(" "),
+          count: blockers.reduce((sum, b) => sum + b.count, 0),
+        });
+        return;
+      }
       setError(
         caught instanceof ApiError ? caught.message : "Something went wrong.",
       );
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Save the flow, having been told who is still standing in it. */
+  function saveSettings(acknowledge = false) {
+    setBlocked(null);
+    return save("Settings", () =>
+      api("/tenant/settings", {
+        method: "PATCH",
+        body: { settings: draft, ...(acknowledge ? { acknowledge: true } : {}) },
+      }),
+    );
   }
 
   const groups = [...new Set(data.schema.fields.map((field) => field.group))];
@@ -239,19 +274,37 @@ export default function ClinicPage() {
         </Card>
       ))}
 
+      {blocked && (
+        <Alert
+          tone="warning"
+          title="Somebody is still standing there"
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => void saveSettings(true)}
+                loading={busy}
+              >
+                Change it anyway
+              </Button>
+              <Button variant="ghost" onClick={() => setBlocked(null)}>
+                Leave it as it is
+              </Button>
+            </>
+          }
+        >
+          {blocked.detail} Changing the flow now will not lose them — they stay
+          on the reception board — but the screen that was looking after them
+          will disappear.
+        </Alert>
+      )}
+
       {!readOnly && (
         <div className="flex items-center gap-3">
           <Button
             loading={busy}
             disabled={!changed}
-            onClick={() =>
-              void save("Settings", () =>
-                api("/tenant/settings", {
-                  method: "PATCH",
-                  body: { settings: draft },
-                }),
-              )
-            }
+            onClick={() => void saveSettings()}
           >
             Save settings
           </Button>

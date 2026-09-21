@@ -47,6 +47,15 @@ export const NAV: NavGroup[] = [
         icon: "patients",
         needs: "patient.read",
       },
+      // The full-screen station consoles (ENC-F-25). In the rail because
+      // somebody has to set a counter monitor up once, and then never
+      // comes back here — the monitor stays on its own screen.
+      {
+        href: "/station",
+        label: "Station screen",
+        icon: "display",
+        needs: "patient.read",
+      },
     ],
   },
   {

@@ -78,6 +78,9 @@ Replacing the whiteboard and the shouted queue number is the first thing the pil
 | ENC-F-22 | Board shows elapsed time in current status; rows turn amber at branch-configurable thresholds (default 30 min) and red at 60. | Should |
 | ENC-F-23 | Patient privacy on the display: queue number and first name + initial only (branch setting: number only). | Must |
 | ENC-F-24 | Sending a patient back: every station that can hold a patient offers a move to the step before it — triage to its own queue, procedures, pharmacy, dispensing and the cashier back to the doctor's queue. Backward moves across a station are refused without a written reason, which is shown on the visit and on the audit trail. The patient keeps the `status_since` they had when they last entered that status, so they do not queue twice for the same step. | Must |
+| ENC-F-25 | Station consoles: a full-screen page per station (`/station/:station`), outside the application's navigation, for a monitor that stands at one place all day. One large "call next", the line in type readable standing up, and the station's own working screen one press away. Reception has no call button — it is a view over the floor, not a line. | Should |
+| ENC-F-26 | Switching a station off warns rather than surprises: if patients are still in a status no remaining station would watch, the change is refused with 409 and names how many and where. An explicit `acknowledge` on the request saves it anyway. Compared as status *coverage*, not station names, so moving to a combined counter — which watches the same two queues — is never blocked. | Should |
+| ENC-F-27 | Flow presets: four named shapes (Single room, Standard GP, Separate pharmacy and cashier, Pay first) that set the flow switches together, with Custom for anything else. The procedure room is a station a clinic switches on, rather than one that is always there and always empty. | Should |
 
 ## 4. Key workflows
 
@@ -395,6 +398,9 @@ nothing.
 | ENC-F-20, F-23 the display | `DisplayService`, `app/display/[token]` | ENC-T-07, 5 display tests |
 | ENC-F-21 … F-22 statistics, thresholds | `QueueService.stats`, `waitTone` | Board tests |
 | ENC-F-24 sending back | `back`/`requiresReason` in `transitions.ts`, the reason guard in `EncounterService.transition` | ENC-T-11, T-12, T-13 and 4 table tests |
+| ENC-F-25 station consoles | `app/(station)/station`, `useQueueStream` | Covered by the board tests it reads from |
+| ENC-F-26 station in use | `SettingsChangeRegistry`, the check in `EncounterModule` | ENC-T-16, T-17 |
+| ENC-F-27 presets, procedure room | `FLOW_PRESETS`, `stationsFor`, `proceduresEnabled` | ENC-T-18 |
 | ENC-R-01 … R-10 | Service, triggers, partial index | The database refuses each independently |
 
 ## 22. Notes worth keeping
